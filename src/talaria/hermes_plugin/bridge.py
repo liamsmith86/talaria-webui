@@ -101,6 +101,12 @@ def wire(app, adapter):
             )
         try:
             action = request.match_info.get("action", "capabilities")
+            if action == "runs":
+                from .context import start_run, supports_context_runs
+
+                if not supports_context_runs(adapter):
+                    return web.json_response({"error": "Profile context unavailable."}, status=404)
+                return await start_run(adapter, request)
             if action == "models":
                 from .models import model_options
 
@@ -118,15 +124,20 @@ def wire(app, adapter):
                 and "expected_active_ids" in inspect.signature(db.rewind_to_message).parameters
             )
             if action == "capabilities":
+                from .context import load_context, supports_context_runs
                 from .identity import inspect_home
 
                 identity = await asyncio.to_thread(inspect_home, str(get_hermes_home()))
+                context_runs = supports_context_runs(adapter)
+                context = await asyncio.to_thread(load_context) if context_runs else None
                 return web.json_response(
                     {
                         "version": 1,
                         "response_details": True,
                         "context_usage": True,
                         "model_details": True,
+                        "context_runs": context_runs,
+                        "profile_context": context.public() if context else {},
                         "rewind": can_rewind,
                         "agent": {"name": identity.name},
                     }
@@ -212,6 +223,7 @@ def wire(app, adapter):
     for prefix in (PREFIX, f"/p/{{profile}}{PREFIX}"):
         app.router.add_get(f"{prefix}/capabilities", dispatch)
         app.router.add_get(f"{prefix}/{{action:models}}", dispatch)
+        app.router.add_post(f"{prefix}/{{action:runs}}", dispatch)
         app.router.add_get(
             f"{prefix}/sessions/{{session_id}}/{{action:context|response}}", dispatch
         )

@@ -53,10 +53,10 @@ def test_unreadable_directory_is_optional(tmp_path, monkeypatch):
     assert files.inspect_home("").status == "disabled"
     assert files.inspect_home(str(tmp_path / "missing")).status == "not_found"
 
-    def denied(path):
+    def denied(path, limit):
         raise PermissionError("Private server details")
 
-    monkeypatch.setattr(files, "_read", denied)
+    monkeypatch.setattr(files, "read_text", denied)
     details = files.inspect_home(str(tmp_path))
     assert details.status == "unreadable" and not details.name
     assert "Private server details" not in json.dumps(details.public())

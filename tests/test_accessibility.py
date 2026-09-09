@@ -18,7 +18,10 @@ pytestmark = pytest.mark.skipif(not AXE, reason="Set TALARIA_AXE_PATH to a local
 @pytest.mark.parametrize("theme", ["light", "dark"])
 @pytest.mark.parametrize("palette", ["blue", "sage", "violet", "rose"])
 def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
-    live_app[1].extension = {}
+    live_app[1].extension = {
+        "context_runs": True,
+        "profile_context": {"instructions": "ready", "prefill": "unavailable"},
+    }
     monkeypatch.setattr(
         installation,
         "public_info",

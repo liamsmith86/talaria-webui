@@ -56,15 +56,32 @@ def project_details(action, result):
 async def discover(client):
     try:
         result = await client.request("GET", f"{PREFIX}/capabilities", timeout=3)
+        if not isinstance(result, dict):
+            return {}
         if type(result.get("version")) is int and result["version"] == 1:
             agent = result.get("agent")
             name = agent.get("name") if isinstance(agent, dict) else None
+            context = result.get("profile_context")
+            context = context if isinstance(context, dict) else {}
             return {
                 "version": 1,
                 "agent": {"name": name[:80] if isinstance(name, str) else ""},
+                "profile_context": {
+                    key: context.get(key)
+                    if isinstance(context.get(key), str)
+                    and context[key] in {"ready", "not_configured", "unavailable"}
+                    else "unavailable"
+                    for key in ("instructions", "prefill")
+                },
                 **{
                     key: result.get(key) is True
-                    for key in ("response_details", "context_usage", "model_details", "rewind")
+                    for key in (
+                        "response_details",
+                        "context_usage",
+                        "model_details",
+                        "context_runs",
+                        "rewind",
+                    )
                 },
             }
     except APIError:

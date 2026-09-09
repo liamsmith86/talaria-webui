@@ -1,10 +1,10 @@
 """Identity projection inside Hermes. No paths or file contents cross the API."""
 
-import os
 import re
-import stat
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+from .files import read_text
 
 MAX_BYTES = 64 * 1024
 IDENTITY_FILES = ("IDENTITY.md", "SOUL.md")
@@ -37,19 +37,6 @@ def identity_name(content: str) -> str:
     return _name(introduction[1]) if introduction else ""
 
 
-def _read(path: Path) -> str:
-    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, flags)
-    with os.fdopen(fd, "rb") as file:
-        info = os.fstat(file.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_BYTES:
-            raise ValueError("Unsupported identity file")
-        data = file.read(MAX_BYTES + 1)
-        if len(data) > MAX_BYTES:
-            raise ValueError("Oversized identity file")
-        return data.decode("utf-8-sig")
-
-
 def inspect_home(directory: str) -> AccessDetails:
     if not directory:
         return AccessDetails()
@@ -68,7 +55,7 @@ def inspect_home(directory: str) -> AccessDetails:
             if path.is_symlink():
                 status = "unsupported"
                 continue
-            content = _read(path)
+            content = read_text(path, MAX_BYTES)
             if name := identity_name(content):
                 return AccessDetails("ready", name, filename)
         except FileNotFoundError:

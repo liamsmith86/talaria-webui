@@ -244,6 +244,8 @@ async def fork(request: Request):
 
 
 async def start_run(request: Request):
+    from .extensions import PREFIX
+
     data = await body(request, MAX_CHAT_BODY)
     sid = identifier(text_field(data, "session_id", 256))
     prompt = text_field(data, "input", 800_000).strip()
@@ -278,12 +280,19 @@ async def start_run(request: Request):
             >= 16
         ):
             raise APIError("There are too many active conversations. Wait for one to finish.", 429)
-        result = await state.hermes.request(
-            "POST",
-            "/v1/runs",
-            json=payload,
-            headers={"Idempotency-Key": idem, "X-Hermes-Session-Key": f"talaria:{sid}"},
-        )
+        path = f"{PREFIX}/runs" if state.extensions.get("context_runs") else "/v1/runs"
+        options = {
+            "json": payload,
+            "headers": {"Idempotency-Key": idem, "X-Hermes-Session-Key": f"talaria:{sid}"},
+        }
+        try:
+            result = await state.hermes.request("POST", path, **options)
+        except APIError as exc:
+            if path == "/v1/runs" or exc.status != 404:
+                raise
+            # An absent extension cannot have admitted a run. Other failures stay
+            # on the same recovery path; never retry an ambiguous dispatch elsewhere.
+            result = await state.hermes.request("POST", "/v1/runs", **options)
         run_id = identifier(result.get("run_id", ""))
         state.profiles.attach(state, run_id)
     return JSONResponse(result, status_code=202)

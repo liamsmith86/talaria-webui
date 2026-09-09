@@ -7,6 +7,8 @@ export function ExtendedAccess({ onSaved }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const available = app.caps.talaria_extensions?.version === 1;
+  const inherited = app.caps.talaria_extensions?.context_runs;
+  const context = app.caps.talaria_extensions?.profile_context || {};
   async function refresh() {
     setBusy(true);
     setError("");
@@ -26,8 +28,8 @@ export function ExtendedAccess({ onSaved }) {
       <span class="quiet-badge">Optional</span>
     </div>
     <p class="dialog-intro">
-      The Talaria plugin adds agent identity, response details, context usage,
-      and conversation editing through your Hermes connection.
+      The Talaria plugin inherits your agent’s instructions and prefill, and adds
+      response details, context usage, and conversation editing.
     </p>
     <div class="access-status" role="status">
       <${Icon} name=${available ? "check" : "info"} size=${16} /><span
@@ -36,6 +38,30 @@ export function ExtendedAccess({ onSaved }) {
           : "Talaria plugin not detected"}</span
       >
     </div>
+    ${available && inherited && html`
+      <dl class="settings-facts">
+        ${[
+          ["Agent instructions", context.instructions],
+          ["Prefill messages", context.prefill],
+        ].map(([label, status]) => html`<div>
+          <dt>${label}</dt>
+          <dd>${status === "ready"
+            ? "Inherited"
+            : status === "not_configured" ? "Not configured" : "Unavailable"}</dd>
+        </div>`)}
+      </dl>
+      <p class="field-help">
+        Applied on each turn without adding messages to your saved conversation.
+      </p>
+      ${(context.instructions === "unavailable" || context.prefill === "unavailable") &&
+      html`<p class="field-help" role="status">
+        Some profile context could not be loaded. Check its configuration in Hermes,
+        then check again.
+      </p>`}
+    `}
+    ${available && !inherited && html`<p class="field-help">
+      Update the Talaria plugin in Hermes to inherit agent instructions and prefill.
+    </p>`}
     ${!available &&
     html`<p class="field-help">
       Install and enable the Talaria plugin in Hermes, then restart its gateway.

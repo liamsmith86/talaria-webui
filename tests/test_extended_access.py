@@ -221,13 +221,22 @@ def test_observation_store_is_bounded_and_profile_scoped(tmp_path):
 @pytest.mark.skipif(
     not os.getenv("HERMES_SOURCE"), reason="Set HERMES_SOURCE for native contract checks"
 )
-def test_native_hermes_contract(tmp_path):
+@pytest.mark.parametrize(
+    "contract,provider",
+    [
+        ("hermes_contract.py", "openai"),
+        ("hermes_context_contract.py", "openai"),
+        ("hermes_context_contract.py", "openrouter"),
+    ],
+)
+def test_native_hermes_contract(tmp_path, contract, provider):
     source = Path(os.environ["HERMES_SOURCE"])
     result = subprocess.run(
         [
             str(source / "venv/bin/python3"),
-            str(Path(__file__).with_name("hermes_contract.py")),
+            str(Path(__file__).with_name(contract)),
             str(tmp_path),
+            provider,
         ],
         env={
             **os.environ,
