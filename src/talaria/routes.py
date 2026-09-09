@@ -1,0 +1,252 @@
+"""Validated browser routes over the public Hermes API."""
+
+import asyncio
+import json
+import secrets
+from dataclasses import replace
+
+from starlette.requests import Request
+from starlette.responses import JSONResponse, StreamingResponse
+
+from . import __version__, auth, config
+from .hermes import APIError, Hermes, identifier
+from .relay import Relay
+
+
+async def body(request: Request) -> dict:
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > 1024 * 1024:
+            raise APIError("This message is too large. Keep it under 1 MB.", 413, "too_large")
+    try:
+        value = json.loads(raw)
+        if not isinstance(value, dict):
+            raise ValueError
+        return value
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise APIError("Invalid request.", 400, "invalid_request") from exc
+
+
+def text_field(data: dict, key: str, limit: int, default: str = "") -> str:
+    value = data.get(key, default)
+    if not isinstance(value, str) or len(value) > limit or "\x00" in value:
+        raise APIError(f"Invalid {key.replace('_', ' ')}.", 400, "invalid_request")
+    return value
+
+
+async def bootstrap(request: Request):
+    logged_in = auth.authenticated(request)
+    settings = request.app.state.settings
+    return JSONResponse(
+        {
+            "version": __version__,
+            "authenticated": logged_in,
+            "csrf": auth.csrf_token(request) if logged_in else None,
+            "connected": bool(settings.api_key) if logged_in else False,
+        }
+    )
+
+
+async def login(request: Request):
+    data = await body(request)
+    state = request.app.state
+    address = request.client.host if request.client else "local"
+    if not state.limiter.allow(address):
+        raise APIError("Too many attempts. Please try again in five minutes.", 429)
+    password = text_field(data, "password", 1024)
+    if not await asyncio.to_thread(auth.verify_password, password, state.settings.password_hash):
+        state.limiter.fail(address)
+        raise APIError("That password didn’t match. Please try again.", 401, "login_failed")
+    cookie = auth.issue_cookie(state.settings)
+    response = JSONResponse({"ok": True})
+    response.set_cookie(
+        auth.COOKIE,
+        cookie,
+        max_age=auth.TTL,
+        httponly=True,
+        secure=state.settings.secure,
+        samesite="strict",
+        path="/",
+    )
+    return response
+
+
+async def logout(request: Request):
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(auth.COOKIE, path="/")
+    return response
+
+
+async def connection(request: Request):
+    state = request.app.state
+    if request.method == "GET":
+        return JSONResponse(
+            {"url": state.settings.hermes_url, "key_set": bool(state.settings.api_key)}
+        )
+    data = await body(request)
+    try:
+        url = config.validate_url(text_field(data, "url", 2048))
+    except ValueError as exc:
+        raise APIError(str(exc), 400, "invalid_url") from exc
+    key = text_field(data, "api_key", 4096)
+    if not key and url == state.settings.hermes_url:
+        key = state.settings.api_key
+    if not key or any(ord(c) < 32 for c in key):
+        raise APIError("Enter the API key from your Hermes API server.", 400)
+    client = Hermes(url, key)
+    try:
+        caps = await client.request("GET", "/v1/capabilities")
+        if caps.get("platform") != "hermes-agent" and not caps.get("features"):
+            raise APIError("This address did not return Hermes capabilities.", 400)
+        if request.method == "PUT":
+            async with state.connection_lock:
+                if any(not c.finished for c in state.relay.channels.values()):
+                    raise APIError(
+                        "Wait for active conversations to finish before changing Hermes.", 409
+                    )
+                settings = replace(state.settings, hermes_url=url, api_key=key)
+                await asyncio.to_thread(config.save, state.config_path, settings)
+                await state.relay.close()
+                await state.hermes.close()
+                state.settings, state.hermes = settings, client
+                state.relay = Relay(client)
+                state.capabilities = caps
+                client = None
+        return JSONResponse({"ok": True, "capabilities": caps})
+    finally:
+        if client:
+            await client.close()
+
+
+async def capabilities(request: Request):
+    state = request.app.state
+    caps = await state.hermes.request("GET", "/v1/capabilities")
+    state.capabilities = caps
+    return JSONResponse(caps)
+
+
+async def model_options(request: Request):
+    return JSONResponse(await request.app.state.hermes.request("GET", "/api/model/options"))
+
+
+async def sessions(request: Request):
+    client = request.app.state.hermes
+    if request.method == "GET":
+        try:
+            offset = min(max(int(request.query_params.get("offset", "0")), 0), 1_000_000)
+        except ValueError as exc:
+            raise APIError("Invalid page.", 400) from exc
+        return JSONResponse(
+            await client.request(
+                "GET",
+                "/api/sessions",
+                params={"limit": 100, "offset": offset, "include_children": "false"},
+            )
+        )
+    data = await body(request)
+    payload = {"title": text_field(data, "title", 160, "New conversation"), "source": "api_server"}
+    return JSONResponse(
+        await client.request("POST", "/api/sessions", json=payload), status_code=201
+    )
+
+
+async def session(request: Request):
+    sid = identifier(request.path_params["session_id"])
+    payload = {}
+    if request.method == "PATCH":
+        data = await body(request)
+        title = text_field(data, "title", 160).strip()
+        if not title:
+            raise APIError("Give this conversation a name.", 400)
+        payload["json"] = {"title": title}
+    return JSONResponse(
+        await request.app.state.hermes.request(request.method, f"/api/sessions/{sid}", **payload)
+    )
+
+
+async def messages(request: Request):
+    sid = identifier(request.path_params["session_id"])
+    return JSONResponse(
+        await request.app.state.hermes.request("GET", f"/api/sessions/{sid}/messages")
+    )
+
+
+async def fork(request: Request):
+    sid = identifier(request.path_params["session_id"])
+    data = await body(request)
+    payload = {"title": text_field(data, "title", 160, "Branched conversation")}
+    return JSONResponse(
+        await request.app.state.hermes.request("POST", f"/api/sessions/{sid}/fork", json=payload),
+        status_code=201,
+    )
+
+
+async def start_run(request: Request):
+    data = await body(request)
+    sid = identifier(text_field(data, "session_id", 256))
+    prompt = text_field(data, "input", 800_000).strip()
+    if not prompt:
+        raise APIError("Write a message first.", 400)
+    payload = {"session_id": sid, "input": prompt}
+    for key in ("model", "provider"):
+        value = text_field(data, key, 256)
+        if value:
+            payload[key] = value
+    idem = text_field(data, "request_id", 128) or secrets.token_hex(16)
+    identifier(idem)
+    state = request.app.state
+    async with state.connection_lock:
+        if len([c for c in state.relay.channels.values() if not c.finished]) >= 16:
+            raise APIError("There are too many active conversations. Wait for one to finish.", 429)
+        result = await state.hermes.request(
+            "POST",
+            "/v1/runs",
+            json=payload,
+            headers={"Idempotency-Key": idem, "X-Hermes-Session-Key": f"talaria:{sid}"},
+        )
+        run_id = identifier(result.get("run_id", ""))
+        state.relay.attach(run_id)
+    return JSONResponse(result, status_code=202)
+
+
+async def run(request: Request):
+    rid = identifier(request.path_params["run_id"])
+    return JSONResponse(await request.app.state.hermes.request("GET", f"/v1/runs/{rid}"))
+
+
+async def control(request: Request):
+    rid, action = identifier(request.path_params["run_id"]), request.path_params["action"]
+    data = await body(request)
+    if action == "stop":
+        payload = {}
+    elif action == "steer":
+        payload = {"input": text_field(data, "input", 50_000).strip()}
+        if not payload["input"]:
+            raise APIError("Write your guidance first.", 400)
+    elif action == "approval":
+        choice = data.get("choice")
+        if choice not in {"once", "session", "always", "deny"}:
+            raise APIError("Choose one of the available approval options.", 400)
+        payload = {"choice": choice}
+        if data.get("request_id"):
+            payload["request_id"] = text_field(data, "request_id", 256)
+    else:
+        raise APIError("Unknown action.", 404)
+    return JSONResponse(
+        await request.app.state.hermes.request("POST", f"/v1/runs/{rid}/{action}", json=payload)
+    )
+
+
+async def events(request: Request):
+    rid = identifier(request.path_params["run_id"])
+    try:
+        cursor = max(0, int(request.headers.get("last-event-id", "0")))
+    except ValueError as exc:
+        raise APIError("Invalid event cursor.", 400) from exc
+    channel = request.app.state.relay.attach(rid)
+    return StreamingResponse(
+        request.app.state.relay.stream(channel, cursor),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
