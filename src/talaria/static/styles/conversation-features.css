@@ -390,6 +390,14 @@
   border: 1px solid var(--line);
   border-radius: 9px;
 }
+.image-retention-note {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 11px;
+}
+.message.user .image-retention-note {
+  text-align: right;
+}
 .child-facts {
   display: flex;
   flex-wrap: wrap;

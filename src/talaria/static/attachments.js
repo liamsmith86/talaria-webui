@@ -1,4 +1,4 @@
-// Browser drafts and pending submission receipts only. Hermes stores sent images.
+// Drafts, submission receipts, and a bounded cache of originals Hermes may omit.
 const MAX_IMAGE = 2 * 1024 * 1024;
 export const MAX_IMAGES_TOTAL = 6 * 1024 * 1024;
 const TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
@@ -50,6 +50,160 @@ export async function pendingStorage(key, value) {
         ),
       );
   });
+}
+
+const CACHE_LIMIT = 32 * 1024 * 1024;
+export async function cacheMessageImages(
+  session,
+  messageId,
+  images,
+  receipt = null,
+) {
+  const db = await openDatabase();
+  const key = `image.${session}.${messageId}`;
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction("pending", "readwrite");
+    const records = transaction.objectStore("pending");
+    const request = records.get("image-index");
+    request.onsuccess = () => {
+      try {
+        const previous = Array.isArray(request.result) ? request.result : [];
+        const index = previous.filter((item) => item.key !== key);
+        index.push({
+          key,
+          session,
+          messageId,
+          bytes: images.reduce((n, image) => n + image.url.length, 0),
+        });
+        let size = index.reduce((n, item) => n + item.bytes, 0);
+        while (index.length > 100 || size > CACHE_LIMIT) {
+          const oldest = index.shift();
+          size -= oldest.bytes;
+          records.delete(oldest.key);
+        }
+        if (receipt) records.delete(receipt);
+        records.put(images, key);
+        records.put(index, "image-index");
+      } catch {
+        transaction.abort();
+      }
+    };
+    transaction.oncomplete = resolve;
+    transaction.onabort = transaction.onerror = () =>
+      reject(
+        new Error(
+          "This browser could not retain the image. Download a copy to keep it.",
+        ),
+      );
+  });
+}
+export async function browserAttachments(session, ids = null) {
+  const index = await pendingStorage("image-index");
+  if (!Array.isArray(index)) return [];
+  const rows = index
+    .filter(
+      (item) => item.session === session && (!ids || ids.has(item.messageId)),
+    )
+    .slice(-100);
+  return (
+    await Promise.all(
+      rows.map(async (item) => ({
+        message_id: item.messageId,
+        images: await pendingStorage(item.key),
+      })),
+    )
+  ).filter((item) => Array.isArray(item.images) && item.images.length);
+}
+export async function forgetImages(session) {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction("pending", "readwrite");
+    const records = transaction.objectStore("pending");
+    const request = records.get("image-index");
+    const receipts = records.getAllKeys(
+      IDBKeyRange.bound(`run.${session}.`, `run.${session}.\uffff`),
+    );
+    receipts.onsuccess = () =>
+      receipts.result.forEach((key) => records.delete(key));
+    request.onsuccess = () => {
+      const index = Array.isArray(request.result) ? request.result : [];
+      for (const item of index)
+        if (item.session === session) records.delete(item.key);
+      records.put(
+        index.filter((item) => item.session !== session),
+        "image-index",
+      );
+    };
+    transaction.oncomplete = resolve;
+    transaction.onabort = transaction.onerror = reject;
+  });
+}
+export async function withCachedImages(session, messages) {
+  if (!messages.some((message) => placeholderCount(message?.content)))
+    return messages;
+  const records = await browserAttachments(
+    session,
+    new Set(messages.map((message) => message.id)),
+  ).catch(() => []);
+  const images = new Map(records.map((item) => [item.message_id, item.images]));
+  return messages.map((message) =>
+    images.has(message.id)
+      ? { ...message, browserImages: images.get(message.id) }
+      : message,
+  );
+}
+export function placeholderCount(content) {
+  if (typeof content !== "string") return 0;
+  return (
+    content
+      .trimEnd()
+      .match(/(?:^|\n)(?:\[screenshot\]\n?)+$/)?.[0]
+      .match(/\[screenshot\]/g)?.length || 0
+  );
+}
+export function withoutImagePlaceholders(content) {
+  return typeof content === "string"
+    ? content.trimEnd().replace(/(?:^|\n)(?:\[screenshot\]\n?)+$/, "")
+    : content;
+}
+export function currentImageMessage(history, live) {
+  if (!live?.userImages?.length || typeof live.imageBoundary !== "number")
+    return null;
+  const projected = [
+    live.userText,
+    ...live.userImages.map(() => "[screenshot]"),
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const candidates = history.filter((message) => {
+    if (
+      message.role !== "user" ||
+      typeof message.id !== "number" ||
+      message.id <= live.imageBoundary
+    )
+      return false;
+    if (message.content === projected) return true;
+    const images = imageParts(message.content);
+    return (
+      images.length === live.userImages.length &&
+      images.every((image, i) => image.url === live.userImages[i].url)
+    );
+  });
+  return candidates.length === 1 ? candidates[0] : null;
+}
+export function messageImages(message) {
+  const native = imageParts(message.content);
+  if (native.length) return native;
+  if (Array.isArray(message.browserImages))
+    return message.browserImages.map((image) => ({ ...image, cached: true }));
+  return Array.from(
+    { length: Math.min(4, placeholderCount(message.content)) },
+    (_, i) => ({
+      name: `Image ${i + 1}`,
+      unavailable:
+        "Hermes saved an image placeholder. The original is not available in this browser.",
+    }),
+  );
 }
 export function imageParts(content) {
   if (!Array.isArray(content)) return [];

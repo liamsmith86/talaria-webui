@@ -8,7 +8,7 @@ import {
   writeStorage,
 } from "./lib.js";
 import { api } from "./api.js";
-import { pendingStorage } from "./attachments.js";
+import { pendingStorage, forgetImages } from "./attachments.js";
 import {
   state,
   update,
@@ -199,6 +199,7 @@ export function SessionDialog({ mode, session, onClose }) {
         writeStorage(`draft.${session.id}`, "");
         pendingStorage(`draft.${session.id}`, null).catch(() => {});
         pendingStorage(`run.${session.id}`, null).catch(() => {});
+        forgetImages(session.id).catch(() => {});
         if (state.active === session.id) newConversation();
       }
       await refreshSessions();

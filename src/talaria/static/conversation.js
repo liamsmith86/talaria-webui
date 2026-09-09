@@ -19,7 +19,11 @@ import {
   openSession,
 } from "./store.js";
 import { plainContent, duration, money, numberValue } from "./content.js";
-import { imageParts } from "./attachments.js";
+import {
+  currentImageMessage,
+  messageImages,
+  withoutImagePlaceholders,
+} from "./attachments.js";
 import { Images } from "./images.js";
 import { ConversationFind } from "./conversation-find.js";
 export { plainContent } from "./content.js";
@@ -260,11 +264,13 @@ ${request.command ||
 }
 
 function historyItems(history, live) {
+  const currentImage = currentImageMessage(history, live);
   const items = [];
   const calls = new Map();
   const lastUser = history.findLastIndex((m) => m?.role === "user");
   const currentChildren =
-    plainContent(history[lastUser]?.content) === live?.userText
+    withoutImagePlaceholders(plainContent(history[lastUser]?.content)) ===
+    live?.userText
       ? (live?.tools || []).filter((t) => t.kind === "agent")
       : [];
   for (const [position, message] of history.entries()) {
@@ -333,8 +339,16 @@ function historyItems(history, live) {
       for (const tool of tools) calls.set(tool.id, tool);
       items.push({
         role: message.role,
-        text: plainContent(message.content),
-        images: imageParts(message.content),
+        text:
+          message === currentImage
+            ? live.userText
+            : withoutImagePlaceholders(plainContent(message.content)),
+        images: messageImages(
+          message === currentImage
+            ? { ...message, browserImages: live.userImages }
+            : message,
+        ),
+        isCurrentImage: message === currentImage,
         tools,
         time: message.timestamp || message.created_at,
         reasoning: message.reasoning || message.reasoning_content || "",
@@ -361,7 +375,7 @@ export function Conversation({ app }) {
   const live = app.lives[app.active];
   const items = useMemo(
     () => historyItems(app.history, live),
-    [app.history, live?.persisted],
+    [app.history, live?.persisted, live?.userImages],
   );
   const streaming =
     live &&
@@ -378,11 +392,11 @@ export function Conversation({ app }) {
   const showUser =
     live &&
     !live.persisted &&
-    (app.history.length <= live.baseHistoryLength ||
-      lastUser?.text !== live.userText ||
-      (live.userImages?.length &&
-        JSON.stringify(lastUser?.images?.map((m) => m.url)) !==
-          JSON.stringify(live.userImages.map((m) => m.url))));
+    !live.userPersisted &&
+    (live.userImages?.length
+      ? !items.some((message) => message.isCurrentImage)
+      : app.history.length <= live.baseHistoryLength ||
+        lastUser?.text !== live.userText);
   async function loadEarlier() {
     if (olderBusy) return;
     const el = scroll.current,

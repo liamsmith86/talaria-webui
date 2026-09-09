@@ -13,17 +13,24 @@ import {
   refreshReadiness,
 } from "./store.js";
 import { readStorage, writeStorage } from "./lib.js";
-import { pendingStorage } from "./attachments.js";
+import {
+  pendingStorage,
+  cacheMessageImages,
+  currentImageMessage,
+  placeholderCount,
+  withoutImagePlaceholders,
+} from "./attachments.js";
 import { plainContent } from "./content.js";
 
 const sources = new Map();
 const terminal = new Set(["completed", "failed", "cancelled", "interrupted"]);
+const receiptKey = (sid, requestId) => `run.${sid}.${requestId}`;
 function publish(sid, live) {
   update({ lives: { ...state.lives, [sid]: live } }, true);
 }
 function remember() {
   const entries = Object.entries(state.lives)
-    .filter(([, r]) => !terminal.has(r.status) || r.uncertain)
+    .filter(([, r]) => !terminal.has(r.status) || r.uncertain || r.imageReceipt)
     .slice(-16)
     .map(([sid, r]) => [
       sid,
@@ -31,6 +38,7 @@ function remember() {
         id: r.id,
         requestId: r.requestId,
         userText: r.userText,
+        imageReceipt: !!r.imageReceipt,
         ...(!r.id
           ? {
               ...(r.payload?.images?.length
@@ -200,13 +208,24 @@ export async function sendMessage(
     ...(reasoning !== "auto" ? { reasoning } : {}),
     ...(images.length ? { images: images.map(({ url }) => ({ url })) } : {}),
   };
-  if (images.length) await pendingStorage(`run.${sid}`, { payload, images });
+  let imageBoundary = null;
+  if (images.length) {
+    const before = await api(`/sessions/${encodeURIComponent(sid)}/messages`);
+    imageBoundary = before.data?.length ? before.data.at(-1)?.id : 0;
+    await pendingStorage(receiptKey(sid, requestId), {
+      payload,
+      images,
+      imageBoundary,
+    });
+  }
   const live = {
     id: null,
     requestId,
     userText: text,
     baseHistoryLength: state.history.length,
     userImages: images,
+    imageBoundary,
+    imageReceipt: images.length > 0,
     text: "",
     tools: [],
     status: "starting",
@@ -219,7 +238,6 @@ export async function sendMessage(
     const result = await api("/runs", { method: "POST", body: payload });
     publish(sid, { ...state.lives[sid], id: result.run_id, status: "running" });
     remember();
-    if (images.length) pendingStorage(`run.${sid}`, null).catch(() => {});
     subscribe(sid);
     return sid;
   } catch (error) {
@@ -232,7 +250,10 @@ export async function sendMessage(
     failed.submissionFailed = canRetry(failed);
     if (failed.uncertain && !failed.submissionFailed)
       failed.error = receiptError;
-    if (!failed.uncertain) pendingStorage(`run.${sid}`, null).catch(() => {});
+    if (!failed.uncertain) {
+      failed.imageReceipt = false;
+      pendingStorage(receiptKey(sid, requestId), null).catch(() => {});
+    }
     publish(sid, failed);
     remember();
     throw error;
@@ -257,7 +278,6 @@ export async function retrySubmission(sid) {
       recovered: true,
     });
     remember();
-    pendingStorage(`run.${sid}`, null).catch(() => {});
     subscribe(sid);
   } catch (error) {
     const failed = {
@@ -328,7 +348,44 @@ export function subscribe(sid) {
 }
 
 async function settle(sid, live) {
-  const history = await refreshHistory(sid);
+  const history = await refreshHistory(sid, false);
+  const imageMessage = currentImageMessage(history, live);
+  let imageSaved = !live.imageReceipt;
+  if (imageMessage && placeholderCount(imageMessage.content)) {
+    try {
+      await cacheMessageImages(
+        imageMessage.session_id || sid,
+        imageMessage.id,
+        live.userImages,
+        receiptKey(sid, live.requestId),
+      );
+      imageSaved = true;
+    } catch (error) {
+      toast(error.message);
+    }
+    imageMessage.browserImages = live.userImages;
+  }
+  if (
+    live.imageReceipt &&
+    imageMessage &&
+    !placeholderCount(imageMessage.content)
+  ) {
+    await pendingStorage(receiptKey(sid, live.requestId), null).catch(() => {});
+    imageSaved = true;
+  }
+  if (live.imageReceipt && !imageMessage)
+    toast(
+      "Hermes received the image, but its transcript could not be linked to the original in this browser.",
+    );
+  if (state.lives[sid]?.id !== live.id) return;
+  if (state.active === sid) update({ history }, true);
+  publish(sid, {
+    ...state.lives[sid],
+    imageReceipt: !imageSaved,
+    ...(imageMessage && imageSaved
+      ? { userImages: [], userPersisted: true, payload: undefined }
+      : {}),
+  });
   const final = [...history]
     .reverse()
     .find((m) => m.role === "assistant" && m.content);
@@ -337,15 +394,17 @@ async function settle(sid, live) {
   if (
     content &&
     ((live.text && content.trim() === live.text.trim()) ||
-      (live.needsHistory && plainContent(lastUser?.content) === live.userText))
+      (live.needsHistory &&
+        withoutImagePlaceholders(plainContent(lastUser?.content)) ===
+          live.userText))
   ) {
     publish(sid, {
       ...state.lives[sid],
       persisted: true,
-      userImages: [],
-      payload: undefined,
+      ...(imageSaved ? { userImages: [], payload: undefined } : {}),
     });
   }
+  remember();
   await refreshSessions();
   refreshSessionDetails(sid).catch(() => {});
   refreshReadiness();
@@ -363,13 +422,17 @@ export async function restoreRuns() {
   for (const [sid, record] of Object.entries(saved).slice(0, 16)) {
     try {
       if (record.imageReceipt) {
-        const receipt = await pendingStorage(`run.${sid}`).catch(() => null);
+        const receipt =
+          (await pendingStorage(receiptKey(sid, record.requestId)).catch(
+            () => null,
+          )) || (await pendingStorage(`run.${sid}`).catch(() => null));
         if (receipt)
           Object.assign(record, {
             payload: receipt.payload,
             userImages: receipt.images,
+            imageBoundary: receipt.imageBoundary,
           });
-        else {
+        else if (!record.id) {
           publish(sid, {
             ...record,
             text: "",

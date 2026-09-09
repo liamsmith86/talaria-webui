@@ -7,6 +7,7 @@ import struct
 import zlib
 
 import httpx
+import pytest
 from playwright.sync_api import expect
 
 from talaria.hermes import APIError
@@ -334,7 +335,11 @@ def test_image_draft_history_display_and_download(page, live_app):
     expect(page.locator(".attachment-chip")).to_have_count(0)
 
 
-def test_pasted_images_recover_an_ambiguous_submission_without_duplication(page, live_app):
+@pytest.mark.parametrize("retained_by_hermes", [True, False])
+def test_pasted_images_recover_an_ambiguous_submission_without_duplication(
+    page, live_app, retained_by_hermes
+):
+    live_app[1].persist_image_originals = retained_by_hermes
     page.get_by_label("Message Hermes").evaluate(
         """(el, data) => {
       const transfer = new DataTransfer();
@@ -365,6 +370,134 @@ def test_pasted_images_recover_an_ambiguous_submission_without_duplication(page,
     page.get_by_role("button", name=re.compile("^New conversation")).click()
     expect(page.locator(".attachment-chip")).to_have_count(0)
     expect(page.get_by_label("Message Hermes")).to_have_value("")
+
+
+def test_browser_images_survive_native_placeholders_and_export_without_changing_history(
+    page, live_app
+):
+    peer = live_app[1]
+    peer.persist_image_originals = False
+    sid = seed(peer, count=2)
+    peer.messages[sid][0]["content"] = "Inspect this image\n[screenshot]"
+    page.reload()
+    page.get_by_role("button", name="Design notes", exact=True).click()
+    expect(page.locator(".image-unavailable")).to_have_count(1)
+    page.get_by_label("File attachment").set_input_files(
+        {"name": "saved.png", "mimeType": "image/png", "buffer": png()}
+    )
+    expect(page.locator(".attachment-chip")).to_have_count(1)
+    send(page, "Inspect this image")
+    expect(page.locator(".message-image img")).to_have_count(1)
+    page.reload()
+    expect(page.locator(".message-image img")).to_have_count(1)
+    expect(page.locator(".image-retention-note")).to_have_text("Original kept in this browser")
+    expect(page.locator(".image-unavailable")).to_have_count(1)
+    assert peer.messages[sid][-2]["content"] == "Inspect this image\n[screenshot]"
+    page.get_by_role("button", name="Conversation options", exact=True).click()
+    page.get_by_role("button", name="Download transcript", exact=True).click()
+    with page.expect_download() as downloaded:
+        page.get_by_role("button", name=re.compile("^JSON")).click()
+    content = json.loads(downloaded.value.path().read_text())
+    assert content["messages"] == peer.messages[sid]
+    assert len(content["browser_attachments"]) == 1
+    assert content["browser_attachments"][0]["message_id"] == peer.messages[sid][-2]["id"]
+    assert content["browser_attachments"][0]["images"][0]["url"] == IMAGE
+    other_context = page.context.browser.new_context()
+    other = other_context.new_page()
+    other.goto(live_app[0])
+    other.get_by_label("Password", exact=True).fill("test-password")
+    other.get_by_role("button", name="Step inside").click()
+    other.get_by_role("button", name="Design notes", exact=True).click()
+    expect(other.locator(".message-image")).to_have_count(0)
+    expect(other.locator(".image-unavailable")).to_have_count(2)
+    other_context.close()
+    page.get_by_role("button", name="Conversation options", exact=True).click()
+    page.get_by_role("button", name="Delete conversation", exact=True).click()
+    page.get_by_role("dialog").get_by_role("button", name="Delete conversation", exact=True).click()
+    expect(page.locator(".topbar-title")).to_have_text("New conversation")
+    assert (
+        page.evaluate(
+            "async sid => (await import('/static/attachments.js')).browserAttachments(sid)", sid
+        )
+        == []
+    )
+
+
+def test_native_image_preview_survives_reload_during_a_run_and_stop(page, live_app):
+    live_app[1].persist_image_originals = False
+    page.get_by_label("File attachment").set_input_files(
+        {"name": "ongoing.png", "mimeType": "image/png", "buffer": png()}
+    )
+    expect(page.locator(".attachment-chip")).to_have_count(1)
+    page.get_by_label("Message Hermes").fill("A slow image review")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.get_by_role("button", name="Stop response")).to_be_visible()
+    page.reload()
+    expect(page.locator(".message-image img")).to_have_count(1)
+    expect(page.locator(".image-unavailable")).to_have_count(0)
+    page.get_by_role("button", name="Stop response").click()
+    expect(page.get_by_role("button", name="Stop response")).to_have_count(0)
+    page.reload()
+    try:
+        expect(page.locator(".message-image img")).to_have_count(1)
+    except AssertionError as error:
+        diagnostic = page.evaluate("""async () => {
+            const {state} = await import('/static/store.js');
+            const {pendingStorage} = await import('/static/attachments.js');
+            const live = state.lives[state.active];
+            return {active:state.active, cached:await pendingStorage('image-index'),
+              live:live && {id:live.id, status:live.status, receipt:live.imageReceipt,
+                images:live.userImages?.length, boundary:live.imageBoundary},
+              history:state.history.map(m => ({id:m.id, content:m.content,
+                images:m.browserImages?.length}))};
+        }""")
+        raise AssertionError(diagnostic) from error
+    assert len(live_app[1].runs) == 1
+
+
+def test_interrupted_cache_write_keeps_the_original_until_recovery(page, live_app):
+    live_app[1].persist_image_originals = False
+    page.evaluate("""() => {
+        const original = IDBObjectStore.prototype.put;
+        IDBObjectStore.prototype.put = function (value, key) {
+            if (key.startsWith('image.')) {
+                IDBObjectStore.prototype.put = original;
+                throw new DOMException('Interrupted cache write', 'AbortError');
+            }
+            return original.call(this, value, key);
+        };
+    }""")
+    page.get_by_label("File attachment").set_input_files(
+        {"name": "interrupted.png", "mimeType": "image/png", "buffer": png()}
+    )
+    expect(page.locator(".attachment-chip")).to_have_count(1)
+    send(page, "Keep this original")
+    expect(page.locator(".toast")).to_contain_text("could not retain the image")
+    page.reload()
+    expect(page.locator(".message-image img")).to_have_count(1)
+    page.reload()
+    expect(page.locator(".message-image img")).to_have_count(1)
+    assert len(live_app[1].runs) == 1
+
+
+def test_browser_image_cache_evicts_older_originals_within_its_budget(page):
+    # PNG padding represents accepted, large originals without a decoder dependency.
+    original = "data:image/png;base64," + base64.b64encode(png() + b"\0" * 1024 * 1024).decode()
+    result = page.evaluate(
+        """async url => {
+        const {cacheMessageImages, pendingStorage} = await import('/static/attachments.js');
+        const images = Array.from({length:4}, (_, i) => ({url, name:`Image ${i}`, size:1048576}));
+        for (let i=0; i<8; i++) await cacheMessageImages('cache-budget', i, images);
+        const index = await pendingStorage('image-index');
+        return {bytes:index.reduce((n, item) => n + item.bytes, 0),
+          oldest:await pendingStorage('image.cache-budget.0'),
+          newest:(await pendingStorage('image.cache-budget.7')).length};
+    }""",
+        original,
+    )
+    assert result["bytes"] <= 32 * 1024 * 1024
+    assert result.get("oldest") is None
+    assert result["newest"] == 4
 
 
 def test_bad_image_is_explained_and_text_remains_usable(page):

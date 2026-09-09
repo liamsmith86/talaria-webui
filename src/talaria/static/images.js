@@ -9,7 +9,7 @@ function Thumbnail({ image, onOpen }) {
         ? html`<a href=${image.href} target="_blank" rel="noopener noreferrer"
             >Open image</a
           >`
-        : "Image unavailable in this transcript"}</span
+        : image.unavailable || "Image unavailable in this transcript"}</span
     >`;
   return html`<button
     class="message-image"
@@ -37,6 +37,10 @@ export function Images({ images }) {
           onOpen=${() => setSelected(image)}
         />`,
     )}
+    ${images.some((image) => image.cached) &&
+    html`<small class="image-retention-note"
+      >Original kept in this browser</small
+    >`}
     ${selected &&
     html`<${Dialog} title=${selected.name} wide className="image-dialog" onClose=${() => setSelected(null)}><img src=${selected.url} alt=${selected.name}/><a class="text-button image-download" href=${selected.url} download=${selected.name}>Download image</a></${Dialog}>`}
   </div>`;

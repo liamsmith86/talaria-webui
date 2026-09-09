@@ -235,6 +235,11 @@ export function Composer({ app, model, onModel, draftSuggestion }) {
           </div>`,
       )}
     </div>`}
+    ${images.length > 0 &&
+    html`<p class="attachment-progress">
+      Some Hermes versions save only image placeholders. Talaria keeps recent
+      originals in this browser; download images you want to keep.
+    </p>`}
     ${attaching &&
     html`<p class="attachment-progress" role="status">
       Preparing attachments…

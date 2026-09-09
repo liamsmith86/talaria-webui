@@ -69,6 +69,7 @@ def test_theme_accessibility(page, live_app, theme, palette):
     expect(page.locator(".find-count")).to_have_text("1 of 1")
     audit("conversation-find")
     page.get_by_role("button", name="Close find").click()
+    live_app[1].persist_image_originals = False
     page.get_by_label("File attachment").set_input_files(
         {"name": "sample.png", "mimeType": "image/png", "buffer": png()}
     )
@@ -77,7 +78,7 @@ def test_theme_accessibility(page, live_app, theme, palette):
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.locator(".message-image")).to_have_count(1)
     expect(page.get_by_role("button", name="Stop response")).to_have_count(0)
-    page.get_by_role("button", name="Open Image 1", exact=True).click()
+    page.get_by_role("button", name="Open sample.png", exact=True).click()
     audit("image-preview")
     page.get_by_role("button", name="Close dialog").click()
     page.get_by_label("Message Hermes").fill("Delegate this check")

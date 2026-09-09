@@ -4,6 +4,7 @@ import { api } from "./api.js";
 import { update, pinSession, supports } from "./store.js";
 import { running } from "./runs.js";
 import { count, money, numberValue, sourceLabel } from "./content.js";
+import { browserAttachments } from "./attachments.js";
 
 export function ConversationMenu({ session, onClose, readOnly = false }) {
   const [busy, setBusy] = useState(false);
@@ -129,7 +130,21 @@ export function TranscriptDownload({ session, onClose }) {
           detail.error || "The transcript could not be downloaded. Try again.",
         );
       }
-      const url = URL.createObjectURL(await response.blob());
+      const attachments =
+        format === "json"
+          ? await browserAttachments(session.id).catch(() => [])
+          : [];
+      let blob;
+      if (attachments.length) {
+        const transcript = await response.json();
+        const ids = new Set(transcript.messages.map((message) => message.id));
+        const retained = attachments.filter((item) => ids.has(item.message_id));
+        if (retained.length) transcript.browser_attachments = retained;
+        blob = new Blob([JSON.stringify(transcript, null, 2)], {
+          type: "application/json",
+        });
+      } else blob = await response.blob();
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
       link.download = `${(session.title || "Conversation").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").slice(0, 100)}.${format === "json" ? "json" : "md"}`;
@@ -143,7 +158,7 @@ export function TranscriptDownload({ session, onClose }) {
     }
   }
   return html`<${Dialog} title="Download transcript" onClose=${onClose}>
-    <p class="dialog-intro">Includes all saved messages, including earlier history. A response still in progress appears once Hermes saves it.</p>
+    <p class="dialog-intro">Includes all saved messages, including earlier history. A response still in progress appears once Hermes saves it. JSON also includes any image originals retained in this browser.</p>
     <div class="download-formats">
       <button disabled=${!!busy} onClick=${() => download("markdown")}><${Icon} name="file"/><span><strong>Markdown</strong><small>A readable transcript. Images are noted in the text.</small></span><${Icon} name="download" size=${18}/></button>
       <button disabled=${!!busy} onClick=${() => download("json")}><${Icon} name="terminal"/><span><strong>JSON</strong><small>Original message structure, tools, and image content.</small></span><${Icon} name="download" size=${18}/></button>

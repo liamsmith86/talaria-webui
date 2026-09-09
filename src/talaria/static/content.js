@@ -24,7 +24,7 @@ export function duration(v) {
   if (numberValue(v) === null) return "";
   return v < 60
     ? `${Number(v.toFixed(1))}s`
-    : `${Math.floor(v / 60)}m ${Math.round(v % 60)}s`;
+    : `${Math.floor(Math.round(v) / 60)}m ${Math.round(v) % 60}s`;
 }
 export function sourceLabel(value) {
   if (typeof value !== "string" || !value) return "";

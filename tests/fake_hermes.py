@@ -24,6 +24,7 @@ class FakeHermes:
         self.approval_choices = ["once", "session", "deny"]
         self.default_model = "hermes-test"
         self.default_provider = "test"
+        self.persist_image_originals = True
         self.discovery_overrides = {}
         self.calls = []
         self.app = Starlette(
@@ -223,7 +224,20 @@ class FakeHermes:
                 "provider": body.get("provider"),
                 "approved": False,
             }
-            self.messages[body["session_id"]].append({"role": "user", "content": content})
+            messages = self.messages[body["session_id"]]
+            stored = content
+            if isinstance(content, list) and not self.persist_image_originals:
+                stored = "\n".join(
+                    p.get("text", "") if p.get("type") == "text" else "[screenshot]"
+                    for p in content
+                )
+            messages.append(
+                {
+                    "id": max((m.get("id", 0) for m in messages), default=0) + 1,
+                    "role": "user",
+                    "content": stored,
+                }
+            )
             queue = self.runs[rid]["_queue"] = asyncio.Queue()
             self.runs[rid]["_task"] = asyncio.create_task(self.produce(self.runs[rid], queue))
             return JSONResponse({"run_id": rid, "status": "started"}, 202)
@@ -331,7 +345,14 @@ class FakeHermes:
             yield event("message.delta", delta=output[i : i + 15])
             await asyncio.sleep(0.25 if slow else 0.015)
         run["status"], run["output"] = "completed", output
-        self.messages[run["session_id"]].append({"role": "assistant", "content": output})
+        messages = self.messages[run["session_id"]]
+        messages.append(
+            {
+                "id": max((m.get("id", 0) for m in messages), default=0) + 1,
+                "role": "assistant",
+                "content": output,
+            }
+        )
         self.sessions[run["session_id"]].update(
             input_tokens=345,
             output_tokens=123,

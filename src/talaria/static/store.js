@@ -1,5 +1,6 @@
 import { useEffect, useState, readStorage, writeStorage } from "./lib.js";
 import { api, setCSRF } from "./api.js";
+import { withCachedImages } from "./attachments.js";
 import {
   modelInventory,
   readModelChoices,
@@ -232,6 +233,10 @@ export async function openSession(id, parent = null) {
   writeStorage("last-session", id);
   try {
     const result = await api(`/sessions/${encodeURIComponent(id)}/messages`);
+    const history = await withCachedImages(
+      result.session_id || id,
+      result.data || [],
+    );
     if (generation === navigation) {
       const canonical = result.session_id || id;
       if (canonical !== id) {
@@ -245,7 +250,7 @@ export async function openSession(id, parent = null) {
       }
       update({
         active: canonical,
-        history: result.data || [],
+        history,
         loading: false,
         historyHasMore: !!result.has_more,
         historyOffset: result.next_offset || (result.data || []).length,
@@ -259,24 +264,32 @@ export async function openSession(id, parent = null) {
     }
   }
 }
-export async function refreshHistory(id) {
+export async function refreshHistory(id, commit = true) {
   const result = await api(`/sessions/${encodeURIComponent(id)}/messages`);
-  if (state.active === id)
+  const history = await withCachedImages(
+    result.session_id || id,
+    result.data || [],
+  );
+  if (commit && state.active === id)
     update({
-      history: result.data || [],
+      history,
       historyHasMore: !!result.has_more,
       historyOffset: result.next_offset || (result.data || []).length,
     });
-  return result.data || [];
+  return history;
 }
 export async function loadOlderMessages() {
   const id = state.active;
   const result = await api(
     `/sessions/${encodeURIComponent(id)}/messages?offset=${state.historyOffset}`,
   );
+  const history = await withCachedImages(
+    result.session_id || id,
+    result.data || [],
+  );
   if (state.active === id)
     update({
-      history: [...(result.data || []), ...state.history],
+      history: [...history, ...state.history],
       historyHasMore: !!result.has_more,
       historyOffset: result.next_offset,
     });
