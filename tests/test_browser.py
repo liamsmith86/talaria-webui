@@ -12,6 +12,9 @@ def screenshot(page, name):
 def test_chat_and_settings(page, live_app):
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
+    expect(page.get_by_role("button", name="Choose model", exact=True)).to_contain_text(
+        "hermes-test"
+    )
     screenshot(page, "desktop-welcome")
     page.get_by_label("Message Hermes").fill("Help me plan a thoughtful interface")
     page.get_by_role("button", name="Send message", exact=True).click()
@@ -22,6 +25,7 @@ def test_chat_and_settings(page, live_app):
     page.reload()
     expect(page.get_by_role("heading", name="A thoughtful place to start")).to_be_visible()
     page.get_by_role("button", name="Your space").click()
+    page.get_by_role("tab", name="Appearance", exact=True).click()
     page.get_by_role("button", name="Dark", exact=True).click()
     page.get_by_role("button", name="Sage", exact=True).click()
     expect(page.locator("html")).to_have_attribute("data-theme", "dark")
@@ -51,6 +55,7 @@ def test_mobile(page):
     screenshot(page, "mobile-welcome")
     page.get_by_role("button", name="Open sidebar").click()
     page.get_by_role("button", name="Your space").click()
+    expect(page.get_by_role("dialog", name="Settings", exact=True)).to_be_visible()
     screenshot(page, "mobile-settings")
     page.get_by_role("button", name="Close dialog").click()
     page.get_by_role("button", name="Close sidebar", exact=True).first.click()

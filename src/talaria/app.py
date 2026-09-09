@@ -10,7 +10,7 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import auth, routes
+from . import auth, metadata, routes
 from .config import Settings
 from .hermes import APIError, Hermes
 from .relay import Relay
@@ -102,6 +102,9 @@ def create_app(settings: Settings, config_path: Path, *, transport=None) -> Star
             Route("/api/connection/test", routes.connection, methods=["POST"]),
             Route("/api/capabilities", routes.capabilities),
             Route("/api/models", routes.model_options),
+            Route("/api/agent", metadata.details),
+            Route("/api/hermes-access", routes.hermes_access, methods=["GET", "PUT"]),
+            Route("/api/hermes-access/test", routes.hermes_access, methods=["POST"]),
             Route("/api/sessions", routes.sessions, methods=["GET", "POST"]),
             Route("/api/sessions/{session_id}/messages", routes.messages),
             Route("/api/sessions/{session_id}/fork", routes.fork, methods=["POST"]),

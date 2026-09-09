@@ -176,7 +176,7 @@ export function Sidebar({ app }) {
               class=${`connection-dot ${app.connected ? "connected" : ""}`}
             ></span
             >${app.connected
-              ? "Connected to Hermes"
+              ? `Connected to ${app.agent.name}`
               : "Connection needed"}</small
           ></span
         ><${Icon} name="settings" size=${18} />

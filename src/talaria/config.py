@@ -18,6 +18,7 @@ class Settings:
     public_url: str = ""
     host: str = "127.0.0.1"
     port: int = 8766
+    hermes_home: str = ""
 
     @property
     def secure(self) -> bool:

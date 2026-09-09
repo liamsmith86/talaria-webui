@@ -32,8 +32,6 @@ export function writeStorage(key, value) {
     /* Storage is optional. */
   }
 }
-export const shortModel = (name = "") =>
-  name.split("/").at(-1).replace(/[-_]/g, " ");
 export const humanTime = (stamp) =>
   new Date(typeof stamp === "number" ? stamp * 1000 : stamp).toLocaleTimeString(
     [],

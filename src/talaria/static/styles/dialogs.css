@@ -161,38 +161,6 @@
 .swatch.rose {
   background: #b55b6b;
 }
-.setting-links {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding-bottom: 16px;
-}
-.setting-links button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 4px;
-  font-size: 12px;
-}
-.setting-links button span {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-.setting-links button:hover {
-  color: var(--accent-text);
-}
-.settings-footnote {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--faint);
-  font-size: 9px;
-  padding-top: 20px;
-}
-.settings-footnote > span {
-  font-size: 9px;
-}
 .model-list {
   max-height: 380px;
   overflow: auto;

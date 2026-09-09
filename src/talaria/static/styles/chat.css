@@ -69,7 +69,7 @@
   min-width: 0;
   color: var(--muted);
 }
-.model-button span {
+.model-caption {
   max-width: 220px;
   text-overflow: ellipsis;
   overflow: hidden;
@@ -121,14 +121,11 @@
   background: var(--accent);
   animation: breathe 1.8s infinite;
 }
-.composer-footnote {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
+.composer-hint {
   color: var(--faint);
-  font-size: 9px;
-  padding: 13px 2px 0;
-  letter-spacing: 0.02px;
+  text-align: right;
+  font-size: 10px;
+  padding: 12px 2px 0;
 }
 .conversation-viewport {
   flex: 1;

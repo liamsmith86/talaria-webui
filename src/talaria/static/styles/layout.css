@@ -226,8 +226,7 @@ kbd {
   margin-top: 5px;
   font-weight: 400;
 }
-.connection-dot,
-.tiny-dot {
+.connection-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
@@ -266,17 +265,6 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.private-label {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--faint);
-  font-size: 10px;
-  letter-spacing: 0.05px;
-}
-.private-label .tiny-dot {
-  background: #83a182;
 }
 .welcome {
   flex: 1;

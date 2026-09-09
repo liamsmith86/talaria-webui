@@ -96,12 +96,12 @@ def test_long_history_and_malicious_markdown(page, live_app):
 
 def test_connection_setup_without_exposing_key(page, live_app):
     page.get_by_role("button", name="Your space").click()
-    page.get_by_role("button", name="Hermes connection").click()
+    page.get_by_role("tab", name="Connection", exact=True).click()
     expect(page.get_by_label("API key", exact=True)).to_have_value("")
     page.get_by_role("button", name="Test connection", exact=True).click()
     expect(page.get_by_text("Hermes is ready.", exact=True)).to_be_visible()
     page.get_by_role("button", name="Save connection").click()
-    expect(page.get_by_role("dialog")).to_have_count(0)
+    expect(page.locator(".toast")).to_have_text("Connected to Hermes")
     path = live_app[2].state.config_path
     assert path.exists() and path.stat().st_mode & 0o077 == 0
     assert "test-hermes-key" not in page.content()

@@ -5,7 +5,6 @@ import {
   useState,
   Icon,
   IconButton,
-  shortModel,
   readStorage,
   writeStorage,
 } from "./lib.js";
@@ -19,6 +18,7 @@ export function Composer({ app, model, onModel, draftSuggestion }) {
   const input = useRef();
   const active = running(app.active, app.lives);
   const live = app.lives[app.active];
+  const displayedModel = model || app.defaultModel;
   const key = `draft.${app.active || "new"}`;
   const currentKey = useRef(key);
   currentKey.current = key;
@@ -124,11 +124,19 @@ export function Composer({ app, model, onModel, draftSuggestion }) {
         /><span class="toolbar-divider" /><button
           class="model-button"
           type="button"
+          aria-label="Choose model"
+          title=${displayedModel
+            ? `${displayedModel.providerLabel} · ${displayedModel.id}${!model ? " · Default" : ""}`
+            : "Use the default model configured in Hermes"}
           onClick=${onModel}
           disabled=${active || !app.connected}
         >
-          <span>${model ? shortModel(model.id) : "Hermes default"}</span
-          ><${Icon} name="chevron" size=${14} />
+          <span class="model-caption"
+            ><small>${displayedModel?.providerLabel || "Hermes"}</small
+            ><span>${displayedModel?.id || "Configured model"}</span></span
+          >
+          ${!model && html`<span class="default-badge">Default</span>`}
+          <${Icon} name="chevron" size=${14} />
         </button>
       </div>
       <div class="composer-right">

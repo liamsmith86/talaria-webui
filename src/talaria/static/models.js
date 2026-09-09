@@ -1,0 +1,112 @@
+import { readStorage, writeStorage } from "./lib.js";
+
+// Project only supported catalog fields; incomplete discovery must not break chat.
+const text = (value) =>
+  typeof value === "string" && value.length <= 256 ? value.trim() : "";
+const record = (value) =>
+  value && typeof value === "object" && !Array.isArray(value);
+const providerId = (p) =>
+  text(p.slug) || text(p.id) || text(p.provider) || text(p.name);
+const providerName = (p) => text(p.name) || text(p.label) || providerId(p);
+
+export function modelInventory(data) {
+  data = record(data) ? data : {};
+  const providers = Array.isArray(data.providers)
+    ? data.providers.filter(record).slice(0, 200)
+    : [];
+  const models = providers
+    .filter((p) => p.authenticated !== false || p.is_current === true)
+    .flatMap((p) =>
+      (Array.isArray(p.models) ? p.models.slice(0, 2000) : [])
+        .map((m) => {
+          const id =
+            typeof m === "string"
+              ? text(m)
+              : record(m)
+                ? text(m.id) || text(m.model) || text(m.name)
+                : "";
+          return {
+            id,
+            provider: providerId(p),
+            label: record(m) ? text(m.name) || text(m.label) || id : id,
+            providerLabel: providerName(p),
+          };
+        })
+        .filter((m) => m.id),
+    );
+  const configuredProvider = text(data.provider);
+  const provider =
+    providers.find((p) => providerId(p) === configuredProvider) ||
+    providers.find((p) => p.is_current === true);
+  const defaultId = text(data.model);
+  const defaultModel = defaultId
+    ? {
+        id: defaultId,
+        label: defaultId,
+        provider: configuredProvider || (provider ? providerId(provider) : ""),
+        providerLabel: provider ? providerName(provider) : configuredProvider,
+      }
+    : null;
+  return {
+    models,
+    defaultModel,
+    providers: providers
+      .filter((p) => p.authenticated === true || p.is_current === true)
+      .map((p) => ({
+        id: providerId(p),
+        name: providerName(p),
+        current: configuredProvider
+          ? providerId(p) === configuredProvider
+          : p.is_current === true,
+        modelCount: models.filter((m) => m.provider === providerId(p)).length,
+      })),
+  };
+}
+
+function valid(model) {
+  return (
+    model &&
+    typeof model.id === "string" &&
+    model.id.length <= 256 &&
+    typeof model.provider === "string" &&
+    model.provider.length <= 256
+  );
+}
+
+export function readModelChoices() {
+  try {
+    const data = JSON.parse(readStorage("session-models", "{}"));
+    return Object.fromEntries(
+      Object.entries(data)
+        .slice(-200)
+        .filter(([, m]) => m === null || valid(m)),
+    );
+  } catch {
+    return {};
+  }
+}
+
+export function saveModelChoice(choices, id, model) {
+  const next = { ...choices };
+  delete next[id];
+  next[id] = valid(model) ? { id: model.id, provider: model.provider } : null;
+  const bounded = Object.fromEntries(Object.entries(next).slice(-200));
+  writeStorage("session-models", JSON.stringify(bounded));
+  return bounded;
+}
+
+export function sessionModel(app) {
+  const selected = app.active ? app.modelChoices[app.active] : app.draftModel;
+  if (!selected) return null;
+  return (
+    app.models.find(
+      (m) => m.id === selected.id && m.provider === selected.provider,
+    ) || {
+      ...selected,
+      label: selected.id,
+      providerLabel:
+        app.providers.find((p) => p.id === selected.provider)?.name ||
+        selected.provider,
+    }
+  );
+}

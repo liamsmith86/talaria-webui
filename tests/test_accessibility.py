@@ -35,6 +35,9 @@ def test_theme_accessibility(page, theme, palette):
     page.get_by_role("button", name="Your space").click()
     expect(page.get_by_role("dialog")).to_be_visible()
     audit("settings")
+    for section in ("Appearance", "Providers", "Tools & skills", "Connection"):
+        page.get_by_role("tab", name=section, exact=True).click()
+        audit("settings-" + section)
     page.get_by_role("button", name="Close dialog").click()
     page.get_by_label("Message Hermes").fill("An approval check")
     page.get_by_role("button", name="Send message", exact=True).click()

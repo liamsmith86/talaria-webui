@@ -10,6 +10,8 @@ from starlette.responses import JSONResponse, StreamingResponse
 
 from . import __version__, auth, config
 from .hermes import APIError, Hermes, identifier
+from .hermes_access.files import inspect_home, validate_home
+from .metadata import agent_identity
 from .relay import Relay
 
 
@@ -38,12 +40,14 @@ def text_field(data: dict, key: str, limit: int, default: str = "") -> str:
 async def bootstrap(request: Request):
     logged_in = auth.authenticated(request)
     settings = request.app.state.settings
+    local = await asyncio.to_thread(inspect_home, settings.hermes_home) if logged_in else None
     return JSONResponse(
         {
             "version": __version__,
             "authenticated": logged_in,
             "csrf": auth.csrf_token(request) if logged_in else None,
             "connected": bool(settings.api_key) if logged_in else False,
+            "agent": agent_identity(request.app.state.capabilities, local) if logged_in else None,
         }
     )
 
@@ -123,7 +127,28 @@ async def capabilities(request: Request):
     state = request.app.state
     caps = await state.hermes.request("GET", "/v1/capabilities")
     state.capabilities = caps
-    return JSONResponse(caps)
+    local = await asyncio.to_thread(inspect_home, state.settings.hermes_home)
+    return JSONResponse({**caps, "talaria_agent": agent_identity(caps, local)})
+
+
+async def hermes_access(request: Request):
+    state = request.app.state
+    directory = state.settings.hermes_home
+    if request.method != "GET":
+        data = await body(request)
+        try:
+            directory = validate_home(text_field(data, "path", 4096))
+        except ValueError as exc:
+            raise APIError(str(exc), 400, "invalid_path") from exc
+    local = await asyncio.to_thread(inspect_home, directory)
+    if request.method == "PUT":
+        async with state.connection_lock:
+            settings = replace(state.settings, hermes_home=directory)
+            await asyncio.to_thread(config.save, state.config_path, settings)
+            state.settings = settings
+    return JSONResponse(
+        {"path": directory, **local.public(), "agent": agent_identity(state.capabilities, local)}
+    )
 
 
 async def model_options(request: Request):

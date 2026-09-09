@@ -22,6 +22,9 @@ class FakeHermes:
         self.stops = 0
         self.approvals = 0
         self.approval_choices = ["once", "session", "deny"]
+        self.default_model = "hermes-test"
+        self.default_provider = "test"
+        self.discovery_overrides = {}
         self.app = Starlette(
             routes=[
                 Route(
@@ -35,6 +38,8 @@ class FakeHermes:
             return JSONResponse({"error": "Unauthorized"}, 401)
         path = request.url.path
         body = await request.json() if request.method in {"POST", "PATCH", "PUT"} else {}
+        if path in self.discovery_overrides:
+            return JSONResponse(*self.discovery_overrides[path])
         if path == "/v1/capabilities":
             return JSONResponse(
                 {
@@ -58,6 +63,7 @@ class FakeHermes:
                                 "session_resources",
                                 "session_fork",
                                 "model_options",
+                                "skills_api",
                             ]
                         },
                     },
@@ -66,15 +72,57 @@ class FakeHermes:
         if path == "/api/model/options":
             return JSONResponse(
                 {
+                    "model": self.default_model,
+                    "provider": self.default_provider,
                     "providers": [
                         {
                             "slug": "test",
+                            "is_current": True,
                             "authenticated": True,
                             "label": "Test provider",
                             "models": [
                                 {"id": "hermes-test", "name": "Hermes Test"},
                                 {"id": "hermes-fast", "name": "Hermes Fast"},
                             ],
+                        }
+                    ],
+                }
+            )
+        if path == "/health/detailed":
+            return JSONResponse(
+                {
+                    "status": "ok",
+                    "version": "1.2.3",
+                    "gateway_state": "running",
+                    "active_agents": 0,
+                    "platforms": {"api_server": {"state": "connected"}},
+                    "pid": 12345,
+                    "private_future_field": KEY,
+                }
+            )
+        if path == "/v1/skills":
+            return JSONResponse(
+                {
+                    "data": [
+                        {
+                            "name": "project-notes",
+                            "description": "Read project notes",
+                            "secret": KEY,
+                        }
+                    ]
+                }
+            )
+        if path == "/v1/toolsets":
+            return JSONResponse(
+                {
+                    "data": [
+                        {
+                            "name": "files",
+                            "label": "File tools",
+                            "enabled": True,
+                            "configured": True,
+                            "tools": ["read_file", "write_file"],
+                            "secret": KEY,
                         }
                     ]
                 }
@@ -135,6 +183,7 @@ class FakeHermes:
                 "input": body["input"],
                 "run_id": rid,
                 "model": body.get("model"),
+                "provider": body.get("provider"),
                 "approved": False,
             }
             self.messages[body["session_id"]].append({"role": "user", "content": body["input"]})

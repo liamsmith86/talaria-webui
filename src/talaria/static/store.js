@@ -1,5 +1,6 @@
 import { useEffect, useState, readStorage, writeStorage } from "./lib.js";
 import { api, setCSRF } from "./api.js";
+import { modelInventory, readModelChoices, saveModelChoice } from "./models.js";
 
 const listeners = new Set();
 export const state = {
@@ -15,6 +16,13 @@ export const state = {
   lives: {},
   caps: {},
   models: [],
+  providers: [],
+  defaultModel: null,
+  modelChoices: readModelChoices(),
+  draftModel: null,
+  agent: { name: "Hermes", name_source: "fallback" },
+  agentInfo: null,
+  version: "",
   modal: null,
   sidebar: false,
   error: "",
@@ -60,7 +68,11 @@ export async function initialize() {
   try {
     const data = await api("/bootstrap");
     setCSRF(data.csrf || "");
-    update({ auth: data.authenticated });
+    update({
+      auth: data.authenticated,
+      agent: data.agent || state.agent,
+      version: data.version,
+    });
     if (data.authenticated) await connect(data.connected);
   } catch (error) {
     fail(error);
@@ -75,14 +87,19 @@ export async function connect(configured = true) {
   update({ connecting: true, error: "" });
   try {
     const caps = await api("/capabilities");
-    update({ caps, connected: true, connecting: false });
+    update({
+      caps,
+      connected: true,
+      connecting: false,
+      agent: caps.talaria_agent || state.agent,
+    });
     if (caps.features?.session_resources) await refreshSessions();
     else update({ sessions: [], hasMore: false, history: [] });
     if (caps.features?.model_options) {
-      api("/models")
-        .then((result) => update({ models: flattenModels(result) }))
-        .catch(() => {});
-    } else update({ models: [] });
+      refreshModels().catch(() =>
+        update({ models: [], providers: [], defaultModel: null }),
+      );
+    } else update({ models: [], providers: [], defaultModel: null });
     const last = readStorage("last-session");
     if (last && !state.active && caps.features?.session_resources)
       await openSession(last);
@@ -91,26 +108,20 @@ export async function connect(configured = true) {
     fail(error);
   }
 }
-export function flattenModels(data) {
-  const options = [];
-  const providers = data.providers || data.data || [];
-  for (const p of Array.isArray(providers)
-    ? providers
-    : Object.values(providers)) {
-    if (p.authenticated === false && !p.is_current) continue;
-    const provider = p.slug || p.id || p.provider || p.name || "";
-    for (const m of p.models || []) {
-      const id = typeof m === "string" ? m : m.id || m.model || m.name;
-      if (id)
-        options.push({
-          id,
-          provider,
-          label: typeof m === "string" ? m : m.name || m.label || id,
-          providerLabel: p.label || p.name || provider,
-        });
-    }
-  }
-  return options;
+export async function refreshModels() {
+  update(modelInventory(await api("/models")));
+}
+export async function refreshAgentInfo() {
+  const info = await api("/agent");
+  update({
+    agentInfo: info,
+    agent: { name: info.name, name_source: info.name_source },
+  });
+}
+export function chooseModel(model, id = state.active) {
+  if (id)
+    update({ modelChoices: saveModelChoice(state.modelChoices, id, model) });
+  else update({ draftModel: model });
 }
 export async function refreshSessions(more = false) {
   const offset = more ? state.sessions.length : 0;
@@ -176,6 +187,7 @@ export function newConversation() {
     loading: false,
     sidebar: false,
     error: "",
+    draftModel: null,
   });
   writeStorage("last-session", "");
 }

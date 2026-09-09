@@ -7,6 +7,7 @@ import {
   refreshHistory,
   refreshSessions,
   navigationVersion,
+  chooseModel,
 } from "./store.js";
 import { readStorage, writeStorage } from "./lib.js";
 
@@ -135,8 +136,9 @@ export async function sendMessage(text, model = null) {
     });
     sid = result.id || result.session_id || result.session?.id;
     if (!sid) throw new Error("Hermes did not return a conversation ID.");
+    chooseModel(model, sid);
     if (generation === navigationVersion()) {
-      update({ active: sid, history: [] });
+      update({ active: sid, history: [], draftModel: null });
       writeStorage("last-session", sid);
     }
     refreshSessions().catch(fail);

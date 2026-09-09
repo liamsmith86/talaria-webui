@@ -1,0 +1,424 @@
+.settings-dialog {
+  max-width: 820px;
+  height: 660px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.settings-dialog:not([open]) {
+  display: none;
+}
+.settings-dialog .dialog-heading {
+  flex-shrink: 0;
+  margin-bottom: 22px;
+}
+.settings-layout {
+  display: grid;
+  grid-template-columns: 155px minmax(0, 1fr);
+  gap: 25px;
+  min-height: 0;
+  flex: 1;
+}
+.settings-navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-right: 16px;
+  border-right: 1px solid var(--line);
+}
+.settings-navigation button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  padding: 12px 10px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.settings-navigation button:hover {
+  background: var(--surface-hover);
+}
+.settings-navigation [aria-selected="true"] {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  font-weight: 550;
+}
+.settings-panel {
+  min-width: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  padding: 2px 8px 16px 2px;
+}
+.settings-panel h3 {
+  font-size: 17px;
+  letter-spacing: -0.3px;
+  font-weight: 570;
+  margin: 0 0 12px;
+}
+.settings-panel h4 {
+  font-size: 12px;
+  font-weight: 550;
+  margin: 0 0 14px;
+}
+.settings-panel .dialog-intro {
+  margin-bottom: 20px;
+}
+.settings-section {
+  margin-bottom: 22px;
+}
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.section-heading h3,
+.section-heading h4 {
+  margin: 0;
+}
+.agent-identity {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 26px;
+}
+.agent-identity h3 {
+  font-size: 22px;
+  margin: 0 0 5px;
+  overflow-wrap: anywhere;
+}
+.agent-identity p {
+  color: var(--muted);
+  font-size: 11px;
+}
+.agent-identity > div {
+  min-width: 0;
+  flex: 1;
+}
+.agent-monogram {
+  display: grid;
+  place-items: center;
+  width: 47px;
+  height: 47px;
+  flex-shrink: 0;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  font-size: 22px;
+  font-weight: 500;
+}
+.default-badge,
+.quiet-badge,
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: var(--surface-hover);
+  color: var(--muted);
+}
+.default-badge {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.status-badge.positive {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.default-model-card {
+  padding: 17px;
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  border-radius: 11px;
+  margin-bottom: 20px;
+}
+.default-model-card > p {
+  font-size: 17px;
+  letter-spacing: -0.2px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.default-model-card > small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 5px;
+}
+.settings-facts {
+  margin: 0 0 23px;
+}
+.settings-facts > div {
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 9px 0;
+  font-size: 12px;
+}
+.settings-facts dt {
+  color: var(--muted);
+}
+.settings-facts dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.channel-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.channel-list > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+.channel-list small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.overview-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.overview-links button {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 14px 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.overview-links strong {
+  font-size: 17px;
+  color: var(--text);
+  font-weight: 500;
+}
+.overview-links svg {
+  margin-left: auto;
+}
+.overview-links button:hover {
+  background: var(--surface-hover);
+}
+.provider-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--line);
+}
+.provider-row strong {
+  font-size: 12px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.provider-row small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.settings-panel > .search-field {
+  margin-bottom: 22px;
+}
+.settings-section h4 > span {
+  color: var(--faint);
+  margin-left: 5px;
+  font-weight: 400;
+}
+.inventory-item {
+  border-bottom: 1px solid var(--line);
+}
+.inventory-item summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 2px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 12px;
+}
+.inventory-item summary::-webkit-details-marker {
+  display: none;
+}
+.inventory-item summary > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.inventory-item summary small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.inventory-item[open] summary > svg {
+  transform: rotate(180deg);
+}
+.inventory-detail {
+  padding: 0 2px 15px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.tool-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+}
+.tool-names code {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--surface-hover);
+  color: var(--text);
+  font-size: 10px;
+}
+.extended-access {
+  padding-top: 25px;
+  border-top: 1px solid var(--line);
+}
+.extended-access .section-heading {
+  flex-wrap: wrap;
+}
+.access-scope {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.8;
+  margin: 14px 0;
+}
+.access-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.access-status svg {
+  margin-top: 2px;
+  color: var(--accent-text);
+}
+.settings-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+}
+.settings-footer > div {
+  display: flex;
+  gap: 15px;
+}
+.settings-footer button {
+  padding: 5px 0;
+  font-size: 11px;
+}
+.settings-footer button:hover {
+  color: var(--accent-text);
+}
+.model-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  text-align: left;
+}
+.model-caption small {
+  font-size: 9px;
+  color: var(--muted);
+}
+.model-caption > span,
+.model-caption > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-caption > span {
+  color: var(--text);
+}
+.model-button .default-badge {
+  font-size: 9px;
+  padding: 3px 5px;
+}
+.model-option-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.composer-right {
+  flex-shrink: 0;
+}
+@media (max-width: 700px) {
+  .settings-dialog {
+    height: calc(100dvh - 32px);
+  }
+  .settings-dialog .dialog-heading {
+    margin-bottom: 14px;
+  }
+  .settings-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .settings-navigation {
+    flex-direction: row;
+    overflow: auto;
+    flex-shrink: 0;
+    padding: 0 0 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    gap: 5px;
+    scrollbar-width: thin;
+  }
+  .settings-navigation button {
+    white-space: nowrap;
+    padding: 11px 10px;
+    flex-shrink: 0;
+    font-size: 11px;
+  }
+  .settings-navigation svg {
+    display: none;
+  }
+  .settings-panel {
+    flex: 1;
+    padding-right: 3px;
+  }
+  .settings-footer {
+    margin-top: 12px;
+  }
+  .settings-footer > div {
+    gap: 12px;
+  }
+  .settings-footer button {
+    font-size: 10px;
+  }
+  .overview-links {
+    grid-template-columns: 1fr;
+  }
+  .default-model-card > p {
+    font-size: 16px;
+  }
+}

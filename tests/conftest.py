@@ -66,7 +66,7 @@ def page(playwright_runtime, live_app):
     page.goto(live_app[0])
     page.get_by_label("Password", exact=True).fill("test-password")
     page.get_by_role("button", name="Step inside").click()
-    page.get_by_text("Your next beginning", exact=True).wait_for()
+    page.locator(".topbar-title").wait_for()
     yield page
     context.close()
     browser.close()

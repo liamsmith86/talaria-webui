@@ -75,7 +75,7 @@
     padding-left: 25px;
     padding-right: 25px;
   }
-  .keyboard-hint {
+  .composer-hint {
     display: none;
   }
 }
@@ -141,9 +141,6 @@
   .topbar-title {
     font-size: 12px;
   }
-  .private-label {
-    font-size: 9px;
-  }
   .welcome {
     padding: 12px 25px 18px;
     min-height: 260px;
@@ -206,13 +203,8 @@
     font-size: 10px;
     padding: 10px 5px;
   }
-  .model-button span {
+  .model-caption {
     max-width: 145px;
-  }
-  .composer-footnote {
-    justify-content: center;
-    font-size: 8px;
-    padding-top: 10px;
   }
   .toolbar-divider {
     margin: 0 4px;
@@ -306,13 +298,6 @@
   .dialog-actions .button {
     font-size: 12px;
   }
-  .settings-footnote {
-    font-size: 9px;
-  }
-  .settings-footnote span {
-    max-width: 210px;
-    text-align: right;
-  }
   .approval-card {
     padding: 15px;
   }
@@ -353,10 +338,7 @@
     font-size: 9px;
     padding: 10px;
   }
-  .private-label {
-    display: none;
-  }
-  .model-button span {
+  .model-caption {
     max-width: 115px;
   }
   .working-label {

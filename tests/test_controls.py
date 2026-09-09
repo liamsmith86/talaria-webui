@@ -2,7 +2,7 @@ from playwright.sync_api import expect
 
 
 def test_model_selection_and_session_actions(page, live_app):
-    page.get_by_role("button", name="Hermes default", exact=True).click()
+    page.get_by_role("button", name="Choose model", exact=True).click()
     page.get_by_role("button", name="Hermes Fast").click()
     page.get_by_label("Message Hermes").fill("A model selection check")
     page.get_by_role("button", name="Send message", exact=True).click()
@@ -21,7 +21,7 @@ def test_model_selection_and_session_actions(page, live_app):
     page.get_by_role("button", name="Conversation options", exact=True).click()
     page.get_by_role("button", name="Delete conversation", exact=True).click()
     page.get_by_role("button", name="Delete conversation", exact=True).click()
-    expect(page.locator(".topbar-title")).to_have_text("Your next beginning")
+    expect(page.locator(".topbar-title")).to_have_text("New conversation")
     assert len(live_app[1].sessions) == 1
 
 

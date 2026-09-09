@@ -8,29 +8,23 @@ import {
   Icon,
   IconButton,
   Mark,
-  readStorage,
-  writeStorage,
 } from "./lib.js";
 import { api } from "./api.js";
 import {
   useStore,
   initialize,
-  state,
   update,
   fail,
   newConversation,
   supports,
+  chooseModel,
 } from "./store.js";
 import { Sidebar } from "./sidebar.js";
 import { Conversation } from "./conversation.js";
 import { Composer } from "./composer.js";
-import {
-  Connection,
-  Settings,
-  Dialog,
-  SessionDialog,
-  ModelPicker,
-} from "./dialogs.js";
+import { Connection, Dialog, SessionDialog, ModelPicker } from "./dialogs.js";
+import { Settings } from "./settings.js";
+import { sessionModel } from "./models.js";
 import { restoreRuns, running } from "./runs.js";
 
 function Login() {
@@ -116,13 +110,7 @@ function Welcome({ onSuggestion }) {
 function App() {
   const app = useStore();
   const mobile = useMediaQuery("(max-width: 700px)");
-  const [model, setModel] = useState(() => {
-    try {
-      return JSON.parse(readStorage("model", "null"));
-    } catch {
-      return null;
-    }
-  });
+  const model = sessionModel(app);
   const [modelOpen, setModelOpen] = useState(false);
   const [suggestion, setSuggestion] = useState(null);
   const restored = useRef(false);
@@ -187,21 +175,18 @@ function App() {
           /><span class="topbar-title"
             >${app.active
               ? current.title || "Untitled conversation"
-              : "Your next beginning"}</span
+              : "New conversation"}</span
           >
         </div>
-        <div class="topbar-actions">
-          ${app.active
-            ? html`<${IconButton}
-                name="more"
-                label="Conversation options"
-                onClick=${() =>
-                  update({ modal: { type: "session-menu", session: current } })}
-              />`
-            : html`<span class="private-label"
-                ><span class="tiny-dot" /> Yours, with Hermes</span
-              >`}
-        </div>
+        ${app.active &&
+        html`<div class="topbar-actions">
+          <${IconButton}
+            name="more"
+            label="Conversation options"
+            onClick=${() =>
+              update({ modal: { type: "session-menu", session: current } })}
+          />
+        </div>`}
       </header>
       ${app.error &&
       html`<div class="error-banner" role="alert">
@@ -239,24 +224,19 @@ function App() {
           onModel=${() => setModelOpen(true)}
           draftSuggestion=${suggestion}
         />
-        <div class="composer-footnote">
-          <span
-            >${app.active
-              ? "A little room to think. A little more flow."
-              : "Powered by your Hermes. Shaped around you."}</span
-          ><span class="keyboard-hint"
-            >${running(app.active)
-              ? "Your agent keeps working if you leave."
-              : "Shift + Enter for a new line"}</span
-          >
-        </div>
+        <p class="composer-hint">
+          ${running(app.active)
+            ? "Your agent keeps working if you leave."
+            : "Shift + Enter for a new line"}
+        </p>
       </div>
     </main>
     ${app.toast &&
     html`<div class="toast" role="status">
       <${Icon} name="check" size=${17} />${app.toast}
     </div>`}
-    ${app.modal === "settings" && html`<${Settings} onClose=${close} />`}
+    ${app.modal === "settings" &&
+    html`<${Settings} app=${app} onClose=${close} />`}
     ${app.modal === "connection" &&
     html`<${Connection} initial=${!app.connected} onClose=${close} />`}
     ${app.modal?.type === "session-menu" &&
@@ -288,10 +268,8 @@ function App() {
     html`<${ModelPicker}
       models=${app.models}
       selected=${model}
-      onSelect=${(m) => {
-        setModel(m);
-        writeStorage("model", JSON.stringify(m));
-      }}
+      defaultModel=${app.defaultModel}
+      onSelect=${(m) => chooseModel(m)}
       onClose=${() => setModelOpen(false)}
     />`}
   </div>`;
