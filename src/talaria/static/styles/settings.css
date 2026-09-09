@@ -1,6 +1,6 @@
 .settings-dialog {
   max-width: 820px;
-  height: 660px;
+  height: 700px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
