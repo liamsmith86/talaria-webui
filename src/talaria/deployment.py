@@ -394,8 +394,12 @@ class Deployment:
             (
                 '#!/bin/sh\ncase "${1-}" in\n'
                 f'  install|update|rollback|status) exec {root}/manager/venv/bin/talaria "$@" ;;\n'
-                f'  *) exec {root}/current/venv/bin/talaria --config {config} "$@" ;;\n'
                 "esac\n"
+                'for arg in "$@"; do\n'
+                '  if [ "$arg" = "--dev" ]; then\n'
+                f'    exec {root}/current/venv/bin/talaria "$@"\n'
+                "  fi\ndone\n"
+                f'exec {root}/current/venv/bin/talaria --config {config} "$@"\n'
             ),
             0o755,
         )

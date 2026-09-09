@@ -189,6 +189,22 @@ def test_command_timeout_is_bounded():
         run([sys.executable, "-c", "import time; time.sleep(10)"], timeout=0.1)
 
 
+def test_managed_launcher_never_injects_production_config_into_dev(deployment):
+    executable = deployment.root / f"releases/{A}/venv/bin/talaria"
+    executable.parent.mkdir(parents=True)
+    executable.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+    executable.chmod(0o755)
+    deployment.launcher()
+    launcher = deployment.root / "bin/talaria"
+    assert run([launcher, "--port", "9876", "--dev"]).splitlines() == ["--port", "9876", "--dev"]
+    assert run([launcher, "--port", "9876"]).splitlines() == [
+        "--config",
+        deployment.config["config"],
+        "--port",
+        "9876",
+    ]
+
+
 @pytest.mark.skipif(not shutil.which("uv") or not shutil.which("git"), reason="Needs Git and uv")
 def test_real_git_wheel_install_update_failure_and_rollback(deployment):
     """Exercise the actual build/install/probe pipeline without touching a host service."""
