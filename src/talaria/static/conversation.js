@@ -55,7 +55,11 @@ function ToolCard({ tool }) {
     "timeout",
     "timed_out",
   ].includes(tool.status);
-  const preview = toolText(tool.preview, !isAgent);
+  const preview = useMemo(
+    () => toolText(tool.preview, !isAgent),
+    [tool.preview, isAgent],
+  );
+  const output = useMemo(() => toolText(tool.output), [tool.output]);
   const icon = isAgent
     ? "branch"
     : /search|browse|web/.test(tool.name)
@@ -103,7 +107,7 @@ ${preview}</pre
       ${tool.output !== undefined &&
       html`<small>Result</small>
         <pre tabindex="0" role="region" aria-label="Tool result">
-${toolText(tool.output) || "No output"}</pre
+${output || "No output"}</pre
         >`}
       ${tool.duration !== undefined && html`<small>${tool.duration}s</small>`}
       ${isAgent &&
@@ -184,7 +188,12 @@ function Message({
     <${Images} images=${images} />
     ${text &&
     (role === "user"
-      ? html`<div class="user-content message-text">${text}</div>`
+      ? html`<div
+          class="user-content message-text"
+          tabindex="0"
+          role="region"
+          aria-label="Your message text"
+        >${text}</div>`
       : html`<div class="message-text">
           <${Markdown} text=${text} streaming=${streaming} />
         </div>`)}
@@ -319,14 +328,12 @@ function historyItems(history, live) {
     if (message.role === "tool") {
       const call = calls.get(message.tool_call_id);
       if (call) {
-        call.output = plainContent(message.content).slice(0, 20000);
+        const output = plainContent(message.content);
+        call.output = output.slice(0, 20000);
         call.status = "completed";
-        if (
-          call.name === "delegate_task" &&
-          plainContent(message.content).length <= 250000
-        ) {
+        if (call.name === "delegate_task" && output.length <= 250000) {
           try {
-            const result = JSON.parse(plainContent(message.content));
+            const result = JSON.parse(output);
             const args = JSON.parse(call.preview || "{}");
             const entries = Array.isArray(result)
               ? result
@@ -405,7 +412,7 @@ function historyItems(history, live) {
         tool.children?.length ? tool.children : [tool],
       ),
     }))
-    .filter((m) => m.text || m.tools.length || m.images.length);
+    .filter((m) => m.text || m.reasoning || m.tools.length || m.images.length);
 }
 
 export function Conversation({ app }) {
@@ -430,7 +437,14 @@ export function Conversation({ app }) {
   useEffect(() => {
     if (sticky.current) bottom.current?.scrollIntoView({ behavior: "instant" });
   }, [app.history, live?.text, live?.tools.length, live?.approval]);
-  const lastUser = [...items].reverse().find((m) => m.role === "user");
+  const lastUser = items.findLast((m) => m.role === "user");
+  const canChange =
+    !!app.caps.talaria_extensions?.rewind &&
+    (app.sessionDetails || app.sessions.find((s) => s.id === app.active))
+      ?.source === "api_server" &&
+    !app.readOnlyParent &&
+    !running(app.active, app.lives) &&
+    !live?.uncertain;
   const showUser =
     live &&
     !live.persisted &&
@@ -466,7 +480,7 @@ export function Conversation({ app }) {
       onLoadEarlier=${loadEarlier}
       olderBusy=${olderBusy}
     />`}
-    <div
+    <div class="conversation-shell"><div
       class="conversation-viewport"
       ref=${scroll}
       onScroll=${(e) => {
@@ -497,14 +511,7 @@ export function Conversation({ app }) {
             html`<${Message}
               key=${m.id}
               ...${m}
-              canChange=${!!app.caps.talaria_extensions?.rewind &&
-              (
-                app.sessionDetails ||
-                app.sessions.find((s) => s.id === app.active)
-              )?.source === "api_server" &&
-              !app.readOnlyParent &&
-              !running(app.active, app.lives) &&
-              !live?.uncertain &&
+              canChange=${canChange &&
               typeof m.record?.id === "number"}
             />`,
         )}
@@ -564,6 +571,7 @@ export function Conversation({ app }) {
         </div>`}
         <div ref=${bottom} class="scroll-anchor" />
       </div>
+    </div>
       ${away &&
       html`<button
         class="jump-bottom"

@@ -17,7 +17,7 @@ export function ConversationMenu({ session, onClose, readOnly = false }) {
     ["fork", "branch", "Branch conversation"],
     ["delete", "trash", "Delete conversation"],
   ].filter(([type]) => !readOnly || ["details", "download"].includes(type));
-  return html`<${Dialog} title=${session.title || "Conversation"} onClose=${onClose}>
+  return html`<${Dialog} title=${session.title || "Conversation"} onClose=${onClose} dismissible=${!busy}>
     <div class="session-menu">
       ${
         !readOnly &&
@@ -44,7 +44,8 @@ export function ConversationMenu({ session, onClose, readOnly = false }) {
         ([type, icon, label]) =>
           html`<button
             class=${type === "delete" ? "danger-text" : ""}
-            disabled=${(type === "fork" && !supports("session_fork")) ||
+            disabled=${busy ||
+            (type === "fork" && !supports("session_fork")) ||
             (type === "delete" && running(session.id))}
             onClick=${() => update({ modal: { type, session } })}
           >

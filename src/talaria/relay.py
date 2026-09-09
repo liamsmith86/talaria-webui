@@ -6,9 +6,10 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 
-from .hermes import APIError, Hermes
+from .hermes import APIError, Hermes, object_result
 
 TERMINAL = {"completed", "failed", "cancelled", "interrupted"}
+TERMINAL_EVENTS = {f"run.{status}" for status in TERMINAL}
 
 
 @dataclass
@@ -26,7 +27,7 @@ class Channel:
         encoded = json.dumps(event, separators=(",", ":"))
         if len(encoded) > 2 * 1024 * 1024:
             kind = event.get("event")
-            if kind not in {f"run.{status}" for status in TERMINAL}:
+            if not isinstance(kind, str) or kind not in TERMINAL_EVENTS:
                 kind = "talaria.reconcile"
             encoded = json.dumps({"event": kind, "needs_history": True})
         async with self.condition:
@@ -66,8 +67,11 @@ class Relay:
         try:
             try:
                 async for event in self.hermes.events(channel.run_id):
+                    kind = object_result(event).get("event")
+                    if not isinstance(kind, str):
+                        raise APIError("Hermes returned an unreadable live update.")
                     await channel.publish(event)
-                    if event.get("event", "").removeprefix("run.") in TERMINAL:
+                    if kind in TERMINAL_EVENTS:
                         return
             except APIError:
                 await channel.publish({"event": "talaria.reconcile"})
@@ -82,13 +86,23 @@ class Relay:
         last = None
         for _ in range(1800):
             try:
-                status = await self.hermes.request("GET", f"/v1/runs/{channel.run_id}")
+                status = object_result(
+                    await self.hermes.request("GET", f"/v1/runs/{channel.run_id}")
+                )
                 state = status.get("status")
+                if not isinstance(state, str):
+                    raise APIError("Hermes returned an unreadable run status.")
                 if state in TERMINAL:
                     await channel.publish({**status, "event": f"run.{state}"})
                     return
-                if status.get("approval") and status != last:
-                    await channel.publish({**status["approval"], "event": "approval.request"})
+                approval = status.get("approval")
+                if (
+                    state == "waiting_for_approval"
+                    and isinstance(approval, dict)
+                    and approval
+                    and status != last
+                ):
+                    await channel.publish({**approval, "event": "approval.request"})
                 last = status
             except APIError as exc:
                 if exc.status in {401, 403, 404}:
@@ -110,7 +124,7 @@ class Relay:
                 if cursor > channel.sequence:
                     cursor = 0
                     reconcile = True
-                if channel.events and cursor and cursor < channel.events[0][0] - 1:
+                if channel.events and cursor < channel.events[0][0] - 1:
                     reconcile = True
                     cursor = channel.events[0][0] - 1
                 events = [entry for entry in channel.events if entry[0] > cursor]

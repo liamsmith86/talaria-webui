@@ -18,7 +18,7 @@ import sys
 import tarfile
 import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.error import URLError
@@ -78,13 +78,14 @@ def write_json(path: Path, data: dict):
 
 def stop(process):
     """Also stop build-tool children when an update is interrupted."""
-    if process.poll() is None:
+    # A build's group can outlive its leader, including children that ignore TERM.
+    with suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGTERM)
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait(timeout=5)
+    with suppress(subprocess.TimeoutExpired):
+        process.wait(timeout=5)
+    with suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGKILL)
+    process.wait(timeout=5)
 
 
 def run(command, *, cwd=None, timeout=180) -> str:
@@ -104,7 +105,7 @@ def run(command, *, cwd=None, timeout=180) -> str:
         try:
             process.wait(timeout=timeout)
         except subprocess.TimeoutExpired as exc:
-            raise DeploymentError(f"{command[0]} timed out; production was not changed.") from exc
+            raise DeploymentError(f"{command[0]} timed out.") from exc
         finally:
             stop(process)
         output.seek(max(0, output.tell() - 16_384))
@@ -158,7 +159,11 @@ def check_health(url: str, commit: str | None, *, timeout=15, assets=False):
         try:
             with opener.open(url.rstrip("/") + "/health", timeout=2) as response:
                 data = json.loads(response.read(4096))
-            if data.get("status") != "ok" or (commit and data.get("commit") != commit):
+            if (
+                not isinstance(data, dict)
+                or data.get("status") != "ok"
+                or (commit and data.get("commit") != commit)
+            ):
                 raise ValueError("Unexpected release or health response")
             if assets:
                 for path in ("/", "/static/app.js", "/static/style.css", "/api/bootstrap"):
@@ -212,7 +217,7 @@ class Deployment:
             raise DeploymentError("Git did not return an unambiguous commit.")
         return commit
 
-    def probe(self, release: Path):
+    def probe(self, release: Path, *, startup_timeout=15):
         with tempfile.TemporaryFile() as errors:
             process = subprocess.Popen(
                 [str(release / "venv/bin/python"), "-c", PROBE, self.config["config"]],
@@ -224,9 +229,16 @@ class Deployment:
             try:
                 with selectors.DefaultSelector() as selector:
                     selector.register(process.stdout, selectors.EVENT_READ)
-                    if not selector.select(timeout=15):
-                        raise DeploymentError("The staged application did not start.")
-                    port = process.stdout.readline(16).strip()
+                    deadline = time.monotonic() + startup_timeout
+                    output = b""
+                    while b"\n" not in output and len(output) < 16:
+                        if not selector.select(timeout=max(0, deadline - time.monotonic())):
+                            raise DeploymentError("The staged application did not start.")
+                        chunk = os.read(process.stdout.fileno(), 16 - len(output))
+                        if not chunk:
+                            break
+                        output += chunk
+                    port = output.partition(b"\n")[0].strip()
                 if not port.isdigit() or not 0 < int(port) < 65536:
                     raise DeploymentError(
                         "The staged application could not load its configuration."
@@ -246,6 +258,13 @@ class Deployment:
             if read_json(release / "release.json").get("commit") == commit:
                 self.probe(release)
                 return f"releases/{commit}"
+            if f"releases/{commit}" in {
+                selected(self.root, name) for name in ("current", "previous", "manager")
+            }:
+                raise DeploymentError(
+                    "A selected release has invalid metadata. Its files were left intact; "
+                    "restore its release.json or roll back before updating."
+                )
             shutil.rmtree(release)
         uv = shutil.which("uv")
         if not uv:

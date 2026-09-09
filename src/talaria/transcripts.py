@@ -15,6 +15,24 @@ from .hermes import APIError, identifier
 MAX_EXPORT = 128 * 1024 * 1024
 
 
+class TranscriptResponse(StreamingResponse):
+    def __init__(self, spool, **kwargs):
+        self.spool = spool
+        super().__init__(self.chunks(), **kwargs)
+
+    async def chunks(self):
+        while chunk := await asyncio.to_thread(self.spool.read, 65536):
+            yield chunk
+
+    async def __call__(self, scope, receive, send):
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            # A disconnect can happen while sending headers, before chunks starts,
+            # or while its generator is suspended at yield.
+            self.spool.close()
+
+
 async def message_page(client, sid, offset=0, *, order="latest", limit=100):
     while True:
         try:
@@ -31,6 +49,13 @@ async def message_page(client, sid, offset=0, *, order="latest", limit=100):
     if not isinstance(result, dict) or not isinstance(result.get("data"), list):
         raise APIError("Hermes did not return readable conversation history.")
     data = result["data"]
+    if any(not isinstance(row, dict) for row in data):
+        raise APIError("Hermes did not return readable conversation history.")
+    if "session_id" in result:
+        try:
+            identifier(result["session_id"])
+        except APIError as exc:
+            raise APIError("Hermes did not return readable conversation history.") from exc
     return {
         **result,
         "limit": limit,
@@ -41,6 +66,7 @@ async def message_page(client, sid, offset=0, *, order="latest", limit=100):
 
 def markdown_message(message):
     role = message.get("role", "message")
+    role = role if isinstance(role, str) else "message"
     label = {"user": "You", "assistant": "Hermes", "tool": "Tool", "system": "System"}.get(
         role, str(role).capitalize()
     )
@@ -48,7 +74,8 @@ def markdown_message(message):
     reasoning = message.get("reasoning") or message.get("reasoning_content")
     if isinstance(reasoning, str) and reasoning:
         sections.append("### Reasoning\n\n" + reasoning)
-    for tool in message.get("tool_calls") or []:
+    tools = message.get("tool_calls")
+    for tool in tools if isinstance(tools, list) else []:
         sections.append("### Tool call\n\n" + json.dumps(tool, ensure_ascii=False, indent=2))
     return "\n\n".join(p for p in sections if p) + "\n\n"
 
@@ -121,17 +148,10 @@ async def download(request):
     size = spool.tell()
     spool.seek(0)
 
-    async def chunks():
-        try:
-            while chunk := await asyncio.to_thread(spool.read, 65536):
-                yield chunk
-        finally:
-            spool.close()
-
     extension = "json" if format_ == "json" else "md"
     filename = re.sub(r'[\x00-\x1f<>:"/\\|?*]', "_", title).strip(" .")[:100] or "Conversation"
-    return StreamingResponse(
-        chunks(),
+    return TranscriptResponse(
+        spool,
         media_type="application/json" if format_ == "json" else "text/markdown",
         headers={
             "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}.{extension}",

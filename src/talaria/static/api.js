@@ -33,12 +33,26 @@ export async function api(path, options = {}) {
       "offline",
     );
   }
-  const data = await response.json().catch(() => ({}));
+  let data;
+  try {
+    data = response.status === 204 ? {} : await response.json();
+  } catch (error) {
+    if (error.name === "AbortError") throw error;
+    // A request may reach Hermes even when its response body is lost. In
+    // particular, never acknowledge a submission by substituting an empty body.
+    if (response.ok)
+      throw new RequestError(
+        "The server response could not be read.",
+        0,
+        "invalid_response",
+      );
+    data = {};
+  }
   if (!response.ok)
     throw new RequestError(
-      data.error || "Something went wrong. Please try again.",
+      data?.error || "Something went wrong. Please try again.",
       response.status,
-      data.code,
+      data?.code,
     );
   return data;
 }

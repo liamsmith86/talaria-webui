@@ -3,7 +3,7 @@ import { Dialog } from "./dialogs.js";
 import { api } from "./api.js";
 import {
   state,
-  update,
+  navigationVersion,
   refreshHistory,
   refreshSessionDetails,
   refreshSessions,
@@ -60,6 +60,7 @@ export function MessageAction({ action, session, message, onClose }) {
     );
   async function confirm(e) {
     e.preventDefault();
+    const generation = navigationVersion();
     setBusy(true);
     setError("");
     try {
@@ -89,6 +90,10 @@ export function MessageAction({ action, session, message, onClose }) {
         refreshSessionDetails(session).catch(() => {});
         refreshSessions().catch(() => {});
       }
+      if (session !== state.active || generation !== navigationVersion())
+        throw new Error(
+          "The conversation changed. Reopen it before sending this message.",
+        );
       if (!deleting)
         await sendMessage(text, sessionModel(state), {
           images,

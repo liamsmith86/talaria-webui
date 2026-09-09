@@ -133,10 +133,15 @@ function App() {
     initialize();
     const keydown = (e) => {
       if (
+        e.defaultPrevented ||
+        e.isComposing ||
+        document.querySelector("dialog[open]")
+      )
+        return;
+      if (
         (e.metaKey || e.ctrlKey) &&
         e.key.toLowerCase() === "f" &&
-        state.active &&
-        !document.querySelector("dialog[open]")
+        state.active
       ) {
         e.preventDefault();
         update({ findOpen: true });
@@ -149,12 +154,10 @@ function App() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         update({ sidebar: true });
-        setTimeout(
-          () =>
-            document
-              .querySelector('[aria-label="Search conversations"]')
-              ?.focus(),
-          10,
+        requestAnimationFrame(() =>
+          document
+            .querySelector('[aria-label="Search conversations"]')
+            ?.focus(),
         );
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
@@ -264,7 +267,7 @@ function App() {
         its API.
       </div>`}
       ${app.active
-        ? html`<${Conversation} app=${app} />`
+        ? html`<${Conversation} key=${app.active} app=${app} />`
         : html`<${Welcome} onSuggestion=${setSuggestion} />`}
       ${app.readOnlyParent
         ? html`<div class="child-return">

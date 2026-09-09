@@ -2,8 +2,8 @@ import { html, useState } from "./lib.js";
 import { Dialog } from "./dialogs.js";
 
 function Thumbnail({ image, onOpen }) {
-  const [failed, setFailed] = useState(false);
-  if (!image.url || failed)
+  const [failed, setFailed] = useState(null);
+  if (!image.url || failed === image.url)
     return html`<span class="image-unavailable"
       >${image.href
         ? html`<a href=${image.href} target="_blank" rel="noopener noreferrer"
@@ -21,7 +21,7 @@ function Thumbnail({ image, onOpen }) {
       alt=${image.name}
       loading="lazy"
       decoding="async"
-      onError=${() => setFailed(true)}
+      onError=${() => setFailed(image.url)}
     />
   </button>`;
 }

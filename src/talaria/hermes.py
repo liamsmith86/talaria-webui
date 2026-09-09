@@ -1,6 +1,7 @@
 """Hermes public HTTP contract. No agent internals are imported."""
 
 import json
+import math
 import re
 
 import httpx
@@ -8,6 +9,37 @@ import httpx
 MAX_RESPONSE = 16 * 1024 * 1024
 MAX_EVENT = 2 * 1024 * 1024
 IDENTIFIER = re.compile(r"[A-Za-z0-9_.:-]{1,256}\Z")
+
+
+def decode_json(raw):
+    def check(value, depth=0):
+        if depth > 64:
+            raise ValueError("JSON nesting limit exceeded")
+        if isinstance(value, str):
+            value.encode("utf-8")
+        elif isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("Non-finite JSON number")
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                key.encode("utf-8")
+                check(item, depth + 1)
+        elif isinstance(value, list):
+            for item in value:
+                check(item, depth + 1)
+
+    value = json.loads(raw)
+    check(value)
+    return value
+
+
+def object_result(value):
+    if not isinstance(value, dict):
+        raise APIError("Hermes did not return a readable response.")
+    return value
+
+
+def valid_api_key(value):
+    return isinstance(value, str) and bool(value) and all(33 <= ord(c) <= 126 for c in value)
 
 
 async def event_lines(response):
@@ -35,7 +67,7 @@ class APIError(Exception):
 
 
 def identifier(value: str) -> str:
-    if not IDENTIFIER.fullmatch(value) or value in {".", ".."}:
+    if not isinstance(value, str) or not IDENTIFIER.fullmatch(value) or value in {".", ".."}:
         raise APIError("Invalid conversation or run identifier.", 400, "invalid_id")
     return value
 
@@ -90,16 +122,16 @@ class Hermes:
                         )
                 if not response.is_success:
                     try:
-                        detail = json.loads(data)
-                    except ValueError:
+                        detail = decode_json(data)
+                    except (ValueError, RecursionError):
                         detail = {}
                     raise response_error(
                         response.status_code, detail if isinstance(detail, dict) else {}
                     )
                 if not data:
                     return {}
-                return json.loads(data)
-        except (httpx.HTTPError, json.JSONDecodeError) as exc:
+                return decode_json(data)
+        except (httpx.HTTPError, ValueError, RecursionError) as exc:
             raise APIError("Cannot reach Hermes. Check the connection and try again.") from exc
 
     async def events(self, run_id: str):
@@ -120,8 +152,8 @@ class Hermes:
                         lines = []
                         if payload == "[DONE]":
                             return
-                        event = json.loads(payload)
+                        event = decode_json(payload)
                         if isinstance(event, dict):
                             yield event
-        except (httpx.HTTPError, ValueError) as exc:
+        except (httpx.HTTPError, ValueError, RecursionError) as exc:
             raise APIError("Live updates paused. Checking the run in Hermes.") from exc

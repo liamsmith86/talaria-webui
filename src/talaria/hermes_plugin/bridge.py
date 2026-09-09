@@ -13,6 +13,48 @@ PREFIX = "/talaria/v1"
 MAX_MESSAGES = 20000
 
 
+def enabled():
+    """Each profile opts in independently; malformed configuration grants nothing."""
+    try:
+        from hermes_cli.config import load_config
+
+        config = load_config()
+        plugins = config.get("plugins") if isinstance(config, dict) else None
+        if not isinstance(plugins, dict):
+            return False
+        allowed, denied = plugins.get("enabled"), plugins.get("disabled")
+        return (
+            isinstance(allowed, list)
+            and (denied is None or isinstance(denied, list))
+            and "talaria" in allowed
+            and "talaria" not in (denied or [])
+        )
+    except Exception:
+        return False
+
+
+def supports_rewind(db):
+    try:
+        if not callable(getattr(db, "get_active_message_ids", None)):
+            return False
+        inspect.signature(db.rewind_to_message).bind(
+            "session",
+            1,
+            expected_active_ids=[],
+            preserve_compaction_handoff=False,
+            expected_target_content="",
+        )
+        return True
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
+def message_identifier(value):
+    if type(value) is not int or not 0 < value < 2**63:
+        raise ValueError("Choose a saved message.")
+    return value
+
+
 def revision(ids, content):
     return hashlib.sha256(json.dumps([ids, content], separators=(",", ":")).encode()).hexdigest()
 
@@ -92,10 +134,7 @@ def wire(app, adapter):
         if auth_error is not None:
             return auth_error
         # Named profiles opt in independently, even when the root listener wires the routes.
-        from hermes_cli.config import load_config
-
-        plugins = (load_config() or {}).get("plugins") or {}
-        if "talaria" not in plugins.get("enabled", []) or "talaria" in plugins.get("disabled", []):
+        if not await asyncio.to_thread(enabled):
             return web.json_response(
                 {"error": "Talaria plugin is not enabled for this profile."}, status=404
             )
@@ -118,11 +157,7 @@ def wire(app, adapter):
                 return web.json_response(
                     {"error": "Hermes session storage is unavailable."}, status=503
                 )
-            can_rewind = (
-                callable(getattr(db, "get_active_message_ids", None))
-                and callable(getattr(db, "rewind_to_message", None))
-                and "expected_active_ids" in inspect.signature(db.rewind_to_message).parameters
-            )
+            can_rewind = supports_rewind(db)
             if action == "capabilities":
                 from .context import load_context, supports_context_runs
                 from .identity import inspect_home
@@ -153,12 +188,13 @@ def wire(app, adapter):
                         {"error": "Update Hermes to enable conversation changes."}, status=501
                     )
                 data = await request.json()
-                if not isinstance(data, dict) or type(data.get("message_id")) is not int:
+                if not isinstance(data, dict):
                     raise ValueError("Choose a saved message.")
+                message_identifier(data.get("message_id"))
                 return web.json_response(await asyncio.to_thread(rewind, db, sid, data))
             message_id = request.query.get("message_id")
             if action == "response":
-                message_id = int(message_id)
+                message_id = message_identifier(int(message_id))
                 rows = await asyncio.to_thread(
                     db.get_messages, sid, after_id=message_id - 1, limit=1
                 )
@@ -182,10 +218,11 @@ def wire(app, adapter):
                 )
                 if not rows or rows[0]["id"] != detail["message_id"]:
                     detail = None  # A rewind invalidates the removed turn's context observation.
+            usage = detail.get("usage") if detail else None
             return web.json_response(
                 {
                     "context": {
-                        "used": detail["usage"].get("input_tokens"),
+                        "used": usage.get("input_tokens") if isinstance(usage, dict) else None,
                         "maximum": detail.get("context_max"),
                         "model": detail.get("model"),
                         "observed_at": detail.get("observed_at"),

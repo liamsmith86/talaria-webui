@@ -1,6 +1,10 @@
 .composer-area {
   padding: 16px 36px 25px;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
   width: 100%;
   max-width: 858px;
   align-self: center;
@@ -126,6 +130,13 @@
   text-align: right;
   font-size: 10px;
   padding: 12px 2px 0;
+}
+.conversation-shell {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
 }
 .conversation-viewport {
   flex: 1;
@@ -534,8 +545,9 @@
 }
 .jump-bottom {
   position: absolute;
-  bottom: 190px;
+  bottom: 16px;
   left: 50%;
+  transform: translateX(-50%);
   border: 1px solid var(--line);
   box-shadow: 0 3px 12px #0001;
   background: var(--surface);

@@ -348,7 +348,7 @@ function Tools({ info }) {
       </p>`}
       ${toolsets.map(
         (item) =>
-          html`<details class="inventory-item">
+          html`<details key=${item.name} class="inventory-item">
             <summary>
               <span
                 >${(item.label || readable(item.name)).replace(
@@ -380,7 +380,7 @@ function Tools({ info }) {
       </p>`}
       ${skills.map(
         (item) =>
-          html`<details class="inventory-item">
+          html`<details key=${item.name} class="inventory-item">
             <summary>
               <span>${item.name}</span><${Icon} name="chevron" size=${14} />
             </summary>

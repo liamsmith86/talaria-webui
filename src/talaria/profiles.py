@@ -5,7 +5,6 @@ Profile selection belongs to each browser tab, never to shared server state.
 """
 
 import asyncio
-import json
 import re
 import secrets
 from dataclasses import replace
@@ -15,7 +14,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from . import auth, config
-from .hermes import APIError, Hermes
+from .hermes import APIError, Hermes, decode_json, object_result, valid_api_key
 
 PROFILE = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 MAX_PROFILES = 8
@@ -48,13 +47,15 @@ class Profiles:
         self.records = {}
         self.inflight = {}
         self.removing = set()
+        self.changing = set()
+        self.writes = set()
         self.default_label = ""
         self.error = ""
         self.lock, self.run_lock = asyncio.Lock(), asyncio.Lock()
         if self.path.exists():
             try:
                 with self.path.open() as file:
-                    data = json.loads(file.read(131_073))
+                    data = decode_json(file.read(131_073))
                 if data.get("version") != 1 or len(data.get("profiles", [])) >= MAX_PROFILES:
                     raise ValueError
                 self.default_label = str(data.get("default_label", ""))[:80]
@@ -65,14 +66,16 @@ class Profiles:
                     ):
                         raise ValueError
                     if not all(
-                        isinstance(record.get(k, ""), str) and len(record.get(k, "")) <= limit
+                        isinstance(record[k], str) and len(record[k]) <= limit
                         for k, limit in (("label", 80), ("api_key", 4096))
                     ):
+                        raise ValueError
+                    if not valid_api_key(record["api_key"]):
                         raise ValueError
                     record["url"] = config.validate_url(record["url"])
                     record.pop("hermes_home", None)
                     self.records[record["id"]] = record
-            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError):
                 self.records = {}
                 self.error = (
                     "Saved profiles could not be loaded. The initial connection is still available."
@@ -99,6 +102,8 @@ class Profiles:
         }
 
     def resolve(self, profile_id):
+        if profile_id in self.changing:
+            raise APIError("This connection is being updated. Please try again shortly.", 409)
         if profile_id in self.removing:
             raise APIError("This profile is being removed. Choose another profile.", 409)
         if profile_id not in self.apps:
@@ -157,7 +162,29 @@ class Profiles:
                     }
                 )
 
+    async def finish_mutation(self, operation):
+        # A disconnected request must not split an atomic file save from its
+        # in-memory update. Keep the write tracked until shutdown can await it.
+        task = asyncio.create_task(operation)
+        self.writes.add(task)
+        cancelled = False
+        try:
+            while True:
+                try:
+                    result = await asyncio.shield(task)
+                    break
+                except asyncio.CancelledError:
+                    if task.cancelled():
+                        raise
+                    cancelled = True
+            if cancelled:
+                raise asyncio.CancelledError
+            return result
+        finally:
+            self.writes.discard(task)
+
     async def close(self):
+        await asyncio.gather(*self.writes, return_exceptions=True)
         for app in self.apps.values():
             await app.state.relay.close()
             await app.state.hermes.close()
@@ -195,20 +222,18 @@ class ProfileRouter:
                 and not path.startswith("/api/profiles/")
             ):
                 profile_id = request.query_params.get("talaria_profile", "default")
-                if profile_id != "default":
-                    try:
-                        app = self.profiles.resolve(profile_id)
-                    except APIError as exc:
-                        return await JSONResponse(
-                            {"error": exc.message, "code": exc.code}, status_code=exc.status
-                        )(scope, receive, send)
-                    self.profiles.inflight[profile_id] = (
-                        self.profiles.inflight.get(profile_id, 0) + 1
-                    )
-                    try:
-                        return await app(scope, receive, send)
-                    finally:
-                        self.profiles.inflight[profile_id] -= 1
+                try:
+                    app = self.profiles.resolve(profile_id)
+                except APIError as exc:
+                    return await JSONResponse(
+                        {"error": exc.message, "code": exc.code}, status_code=exc.status
+                    )(scope, receive, send)
+                self.profiles.inflight[profile_id] = self.profiles.inflight.get(profile_id, 0) + 1
+                try:
+                    target = self.app if profile_id == "default" else app
+                    return await target(scope, receive, send)
+                finally:
+                    self.profiles.inflight[profile_id] -= 1
         return await self.app(scope, receive, send)
 
 
@@ -228,7 +253,7 @@ async def listing(request):
     except (ValueError, TypeError, AttributeError) as exc:
         raise APIError("Enter a valid Hermes address and profile name.", 400) from exc
     key = text_field(data, "api_key", 4096)
-    if not key or any(ord(c) < 32 for c in key):
+    if not valid_api_key(key):
         raise APIError("Enter this profile’s Hermes API key.", 400)
     async with profiles.lock:
         if len(profiles.records) >= MAX_PROFILES - 1:
@@ -245,22 +270,24 @@ async def listing(request):
             )
         client = Hermes(url, key, transport=profiles.transport)
         try:
-            caps = await client.request("GET", "/v1/capabilities")
+            caps = object_result(await client.request("GET", "/v1/capabilities"))
             if caps.get("platform") != "hermes-agent" and not caps.get("features"):
                 raise APIError("This address did not return Hermes capabilities.", 400)
         finally:
             await client.close()
         profile_id = secrets.token_hex(16)
-        await profiles.persist(
-            {
-                **profiles.records,
-                profile_id: {
-                    "id": profile_id,
-                    "label": label,
-                    "url": url,
-                    "api_key": key,
-                },
-            }
+        await profiles.finish_mutation(
+            profiles.persist(
+                {
+                    **profiles.records,
+                    profile_id: {
+                        "id": profile_id,
+                        "label": label,
+                        "url": url,
+                        "api_key": key,
+                    },
+                }
+            )
         )
     return JSONResponse(profiles.describe(profile_id), status_code=201)
 
@@ -284,14 +311,18 @@ async def remove(request):
             )
         profiles.removing.add(profile_id)
         try:
-            await profiles.persist(
-                {key: value for key, value in profiles.records.items() if key != profile_id}
-            )
-            profiles.apps.pop(profile_id, None)
-            profiles.inflight.pop(profile_id, None)
-            if app:
-                await app.state.relay.close()
-                await app.state.hermes.close()
+
+            async def forget():
+                await profiles.persist(
+                    {key: value for key, value in profiles.records.items() if key != profile_id}
+                )
+                profiles.apps.pop(profile_id, None)
+                profiles.inflight.pop(profile_id, None)
+                if app:
+                    await app.state.relay.close()
+                    await app.state.hermes.close()
+
+            await profiles.finish_mutation(forget())
         finally:
             profiles.removing.discard(profile_id)
     return JSONResponse({"ok": True})

@@ -253,7 +253,6 @@ export function SessionDialog({ mode, session, onClose }) {
       if (mode === "delete") {
         writeStorage(`draft.${session.id}`, "");
         pendingStorage(`draft.${session.id}`, null).catch(() => {});
-        pendingStorage(`run.${session.id}`, null).catch(() => {});
         forgetImages(session.id).catch(() => {});
         if (state.active === session.id) newConversation();
       }
@@ -283,12 +282,12 @@ export function SessionDialog({ mode, session, onClose }) {
       setBusy(false);
     }
   }
-  return html`<${Dialog} title=${{ rename: "Rename conversation", delete: "Delete conversation?", fork: "Branch conversation" }[mode]} onClose=${onClose}>
+  return html`<${Dialog} title=${{ rename: "Rename conversation", delete: "Delete conversation?", fork: "Branch conversation" }[mode]} onClose=${onClose} dismissible=${!busy}>
     <form onSubmit=${submit}>
       ${mode === "delete" ? html`<p class="dialog-intro">“${title}” will be permanently deleted from Hermes. This cannot be undone.</p>` : html`<label class="field">Conversation name<input value=${title} onInput=${(e) => setTitle(e.target.value)} maxlength="150" required autofocus /></label>`}
       ${mode === "fork" && html`<p class="field-help">Continue in a new direction with a copy of this conversation’s history.</p>`}
       ${error && html`<div class="form-error" role="alert">${error}</div>`}
-      <div class="dialog-actions"><button type="button" class="button secondary" onClick=${onClose}>Cancel</button><button disabled=${busy} class=${`button ${mode === "delete" ? "danger" : "primary"}`}>${busy ? "Working…" : { rename: "Save name", delete: "Delete conversation", fork: "Create branch" }[mode]}</button></div>
+      <div class="dialog-actions"><button type="button" class="button secondary" disabled=${busy} onClick=${onClose}>Cancel</button><button disabled=${busy} class=${`button ${mode === "delete" ? "danger" : "primary"}`}>${busy ? "Working…" : { rename: "Save name", delete: "Delete conversation", fork: "Create branch" }[mode]}</button></div>
     </form>
   </${Dialog}>`;
 }

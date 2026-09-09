@@ -6,18 +6,24 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from .content import MAX_CHAT_BODY, image_inputs
-from .hermes import APIError, identifier
+from .hermes import APIError, identifier, object_result
 
 PREFIX = "/talaria/v1"
 
 
 def numeric(value):
-    return value if type(value) in (int, float) and math.isfinite(value) and value >= 0 else None
+    try:
+        return (
+            value if type(value) in (int, float) and math.isfinite(value) and value >= 0 else None
+        )
+    except OverflowError:
+        return None
 
 
 def project_details(action, result):
     from .metadata import text
 
+    result = object_result(result)
     if action == "context":
         context = result.get("context")
         return {
@@ -98,7 +104,7 @@ async def session_extension(request: Request):
     if request.method == "POST":
         data = await body(request, MAX_CHAT_BODY)
         mid = data.get("message_id")
-        if type(mid) is not int or mid < 1:
+        if type(mid) is not int or not 1 <= mid <= 2**63 - 1:
             raise APIError("Choose a saved message.", 400)
         if "replacement" in data:
             replacement = data["replacement"]
@@ -116,7 +122,7 @@ async def session_extension(request: Request):
     elif action == "response":
         try:
             mid = int(request.query_params.get("message_id", ""))
-            if mid < 1:
+            if not 1 <= mid <= 2**63 - 1:
                 raise ValueError
         except ValueError as exc:
             raise APIError("Choose a saved response.", 400) from exc

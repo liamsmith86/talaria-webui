@@ -71,8 +71,9 @@ export function Composer({
     }
   }, [live?.recovered, key]);
   useEffect(() => {
-    if (draftSuggestion) {
+    if (draftSuggestion && !app.active) {
       setDraft(draftSuggestion.text);
+      writeStorage(key, draftSuggestion.text);
       textarea.current?.focus();
     }
   }, [draftSuggestion]);
@@ -86,6 +87,7 @@ export function Composer({
     e?.preventDefault();
     if (
       submission.current ||
+      operation.current ||
       attaching ||
       loadingImages ||
       live?.uncertain ||
@@ -132,7 +134,8 @@ export function Composer({
     setAttachmentError("");
     try {
       const savedImages = loadingImages ? await pendingStorage(key) : images;
-      const nextImages = Array.isArray(savedImages) ? [...savedImages] : [];
+      const previousImages = Array.isArray(savedImages) ? savedImages : [];
+      const nextImages = [...previousImages];
       let appendedText = "";
       for (const file of files) {
         if (file.type.startsWith("image/")) {
@@ -167,24 +170,53 @@ export function Composer({
             );
         }
       }
-      if (nextImages.length) await pendingStorage(key, nextImages);
-      const latestText =
-        currentKey.current === key
-          ? currentDraft.current
-          : readStorage(key, draft);
-      const nextText =
-        latestText +
-        (appendedText ? `${latestText ? "\n\n" : ""}${appendedText}` : "");
-      if (nextText.length > 800000)
-        throw new Error(
-          "The message is too long. Remove some text before attaching another file.",
-        );
+      const attachedText = () => {
+        const latestText =
+          currentKey.current === key
+            ? currentDraft.current
+            : readStorage(key, draft);
+        const next =
+          latestText +
+          (appendedText ? `${latestText ? "\n\n" : ""}${appendedText}` : "");
+        if (next.length > 800000)
+          throw new Error(
+            "The message is too long. Remove some text before attaching another file.",
+          );
+        return next;
+      };
+      let nextText = attachedText();
+      if (nextImages.length !== previousImages.length) {
+        await pendingStorage(key, nextImages);
+        try {
+          // Keep typing that arrived while browser storage was committing.
+          nextText = attachedText();
+        } catch (e) {
+          await pendingStorage(key, previousImages.length ? previousImages : null);
+          throw e;
+        }
+      }
       if (appendedText) writeStorage(key, nextText);
       if (currentKey.current === key) {
         setImages(nextImages);
         if (appendedText) setDraft(nextText);
         textarea.current?.focus();
       }
+    } catch (e) {
+      if (currentKey.current === key) setAttachmentError(e.message);
+    } finally {
+      operation.current = false;
+      setAttaching(false);
+    }
+  }
+  async function removeImage(image) {
+    if (operation.current || submission.current || loadingImages) return;
+    operation.current = true;
+    setAttaching(true);
+    setAttachmentError("");
+    const next = images.filter((item) => item.id !== image.id);
+    try {
+      await pendingStorage(key, next.length ? next : null);
+      if (currentKey.current === key) setImages(next);
     } catch (e) {
       if (currentKey.current === key) setAttachmentError(e.message);
     } finally {
@@ -228,15 +260,7 @@ export function Composer({
               name="close"
               label=${`Remove ${image.name}`}
               disabled=${sending || attaching}
-              onClick=${async () => {
-                const next = images.filter((item) => item.id !== image.id);
-                try {
-                  await pendingStorage(key, next.length ? next : null);
-                  if (currentKey.current === key) setImages(next);
-                } catch (e) {
-                  setAttachmentError(e.message);
-                }
-              }}
+              onClick=${() => removeImage(image)}
             />
           </div>`,
       )}

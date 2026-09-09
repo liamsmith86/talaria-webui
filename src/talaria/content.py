@@ -58,6 +58,10 @@ def content_text(content):
             continue
         if isinstance(part.get("text"), str):
             parts.append(part["text"])
-        elif part.get("type") in {"image_url", "input_image", "image"}:
+        elif isinstance(part.get("type"), str) and part["type"] in {
+            "image_url",
+            "input_image",
+            "image",
+        }:
             parts.append("[Image attachment — included in the JSON transcript]")
     return "\n\n".join(parts)

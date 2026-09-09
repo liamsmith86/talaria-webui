@@ -19,10 +19,15 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, stored: str) -> bool:
-    if not stored or len(password) > 1024:
+    if not isinstance(password, str) or len(password) > 1024 or not isinstance(stored, str):
         return False
-    salt, expected = stored.split(":", 1)
-    digest = hashlib.scrypt(password.encode(), salt=salt.encode(), n=16384, r=8, p=1)
+    salt, separator, expected = stored.partition(":")
+    if not separator or len(salt) != 32 or len(expected) != 128 or not expected.isascii():
+        return False
+    try:
+        digest = hashlib.scrypt(password.encode(), salt=salt.encode(), n=16384, r=8, p=1)
+    except UnicodeEncodeError:
+        return False
     return hmac.compare_digest(digest.hex(), expected)
 
 
@@ -63,9 +68,8 @@ def browser_request_valid(request: Request, *, login: bool = False) -> bool:
         return False
     if request.headers.get("x-talaria-request") != "1":
         return False
-    return login or hmac.compare_digest(
-        request.headers.get("x-csrf-token", ""), csrf_token(request)
-    )
+    supplied = request.headers.get("x-csrf-token", "")
+    return login or (supplied.isascii() and hmac.compare_digest(supplied, csrf_token(request)))
 
 
 class LoginLimiter:

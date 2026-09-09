@@ -1,7 +1,6 @@
 """Validated browser routes over the public Hermes API."""
 
 import asyncio
-import json
 import secrets
 from dataclasses import replace
 
@@ -10,7 +9,7 @@ from starlette.responses import JSONResponse, StreamingResponse
 
 from . import __version__, auth
 from .content import MAX_CHAT_BODY, REASONING, image_inputs
-from .hermes import APIError, Hermes, identifier
+from .hermes import APIError, Hermes, decode_json, identifier, object_result, valid_api_key
 from .metadata import agent_identity
 from .profiles import connection_url
 from .relay import Relay
@@ -26,11 +25,11 @@ async def body(request: Request, limit=1024 * 1024) -> dict:
                 "This request is too large. Reduce the text or attachments.", 413, "too_large"
             )
     try:
-        value = json.loads(raw)
+        value = decode_json(raw)
         if not isinstance(value, dict):
             raise ValueError
         return value
-    except (ValueError, UnicodeDecodeError) as exc:
+    except (ValueError, RecursionError) as exc:
         raise APIError("Invalid request.", 400, "invalid_request") from exc
 
 
@@ -111,29 +110,42 @@ async def connection(request: Request):
     key = text_field(data, "api_key", 4096)
     if not key and url == state.settings.hermes_url and request.url.path != "/api/profiles/test":
         key = state.settings.api_key
-    if not key or any(ord(c) < 32 for c in key):
+    if not valid_api_key(key):
         raise APIError("Enter the API key from your Hermes API server.", 400)
     if request.method == "PUT" and state.settings.api_key and url != state.settings.hermes_url:
         raise APIError("Add a profile to connect to another Hermes address or profile.", 409)
     client = Hermes(url, key, transport=state.profiles.transport)
     try:
-        caps = await client.request("GET", "/v1/capabilities")
+        caps = object_result(await client.request("GET", "/v1/capabilities"))
         if caps.get("platform") != "hermes-agent" and not caps.get("features"):
             raise APIError("This address did not return Hermes capabilities.", 400)
         if request.method == "PUT":
             async with state.connection_lock:
-                if any(not c.finished for c in state.relay.channels.values()):
+                if state.profiles.inflight.get(state.profile_id, 0) > 1 or any(
+                    not c.finished for c in state.relay.channels.values()
+                ):
                     raise APIError(
-                        "Wait for active conversations to finish before changing Hermes.", 409
+                        "Wait for active requests and responses to finish before changing Hermes.",
+                        409,
                     )
-                settings = replace(state.settings, hermes_url=url, api_key=key)
-                await state.profiles.save_settings(state.profile_id, settings)
-                await state.relay.close()
-                await state.hermes.close()
-                state.settings, state.hermes = settings, client
-                state.relay = Relay(client)
-                state.capabilities = caps
-                client = None
+                state.profiles.changing.add(state.profile_id)
+                try:
+
+                    async def save_connection():
+                        nonlocal client
+                        settings = replace(state.settings, hermes_url=url, api_key=key)
+                        await state.profiles.save_settings(state.profile_id, settings)
+                        old_relay, old_client = state.relay, state.hermes
+                        state.settings, state.hermes = settings, client
+                        state.relay = Relay(client)
+                        state.capabilities, state.extensions = caps, {}
+                        client = None
+                        await old_relay.close()
+                        await old_client.close()
+
+                    await state.profiles.finish_mutation(save_connection())
+                finally:
+                    state.profiles.changing.discard(state.profile_id)
         return JSONResponse({"ok": True, "capabilities": caps})
     finally:
         if client:
@@ -144,7 +156,7 @@ async def capabilities(request: Request):
     from .extensions import discover
 
     state = request.app.state
-    caps = await state.hermes.request("GET", "/v1/capabilities")
+    caps = object_result(await state.hermes.request("GET", "/v1/capabilities"))
     state.capabilities = caps
     state.extensions = await discover(state.hermes)
     return JSONResponse(
@@ -190,7 +202,7 @@ async def sessions(request: Request):
     for attempt in range(6):
         try:
             result = await client.request("POST", "/api/sessions", json=payload)
-            return JSONResponse(result.get("session", result), status_code=201)
+            return JSONResponse(object_result(result).get("session", result), status_code=201)
         except APIError as exc:
             if exc.code != "invalid_title":
                 raise
@@ -198,7 +210,7 @@ async def sessions(request: Request):
             payload["title"] = f"{base} ({attempt + 2})"
     payload.pop("title", None)
     result = await client.request("POST", "/api/sessions", json=payload)
-    return JSONResponse(result.get("session", result), status_code=201)
+    return JSONResponse(object_result(result).get("session", result), status_code=201)
 
 
 async def session(request: Request):
@@ -240,7 +252,7 @@ async def fork(request: Request):
     result = await request.app.state.hermes.request(
         "POST", f"/api/sessions/{sid}/fork", json=payload
     )
-    return JSONResponse(result.get("session", result), status_code=201)
+    return JSONResponse(object_result(result).get("session", result), status_code=201)
 
 
 async def start_run(request: Request):
@@ -294,7 +306,10 @@ async def start_run(request: Request):
             # An absent extension cannot have admitted a run. Other failures stay
             # on the same recovery path; never retry an ambiguous dispatch elsewhere.
             result = await state.hermes.request("POST", "/v1/runs", **options)
-        run_id = identifier(result.get("run_id", ""))
+        try:
+            run_id = identifier(object_result(result).get("run_id", ""))
+        except APIError as exc:
+            raise APIError("Hermes did not return a readable run identifier.") from exc
         state.profiles.attach(state, run_id)
     return JSONResponse(result, status_code=202)
 
@@ -315,7 +330,7 @@ async def control(request: Request):
             raise APIError("Write your guidance first.", 400)
     elif action == "approval":
         choice = data.get("choice")
-        if choice not in {"once", "session", "always", "deny"}:
+        if not isinstance(choice, str) or choice not in {"once", "session", "always", "deny"}:
             raise APIError("Choose one of the available approval options.", 400)
         payload = {"choice": choice}
         if data.get("request_id"):

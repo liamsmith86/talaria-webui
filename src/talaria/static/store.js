@@ -66,6 +66,8 @@ export function useStore() {
   const [snapshot, set] = useState({ ...state });
   useEffect(() => {
     listeners.add(set);
+    // Updates can land between the first render and this effect subscribing.
+    set({ ...state });
     return () => listeners.delete(set);
   }, []);
   return snapshot;
@@ -201,12 +203,19 @@ export function chooseReasoning(value, id = state.active) {
     });
   else update({ draftReasoning: value });
 }
+let detailsRequest = 0;
 export async function refreshSessionDetails(id = state.active) {
   if (!id) return;
+  const generation = navigation;
+  const request = id === state.active ? ++detailsRequest : detailsRequest;
   const result = await api(`/sessions/${encodeURIComponent(id)}`);
   const session = result?.session || result;
   if (!session || typeof session !== "object" || Array.isArray(session)) return;
-  if (state.active === id) {
+  if (
+    state.active === id &&
+    generation === navigation &&
+    request === detailsRequest
+  ) {
     const parent =
       session.source === "subagent" &&
       typeof session.parent_session_id === "string"
@@ -227,26 +236,47 @@ export async function pinSession(session) {
     await refreshSessionDetails().catch(() => {});
   toast(session.pinned ? "Conversation unpinned" : "Conversation pinned");
 }
-export async function refreshSessions(more = false) {
+let sessionsRequest = 0;
+let sessionsPending;
+export function refreshSessions(more = false) {
+  if (more && sessionsPending)
+    return sessionsPending.more
+      ? sessionsPending.promise
+      : sessionsPending.promise.then(() => {
+          if (state.hasMore) return refreshSessions(true);
+        });
+  const generation = ++sessionsRequest;
   const offset = more ? state.sessionsOffset : 0;
-  const result = await api(`/sessions?offset=${offset}`);
-  const incoming = result.data || result.sessions || [];
-  const rows = more ? [...state.sessions, ...incoming] : incoming;
-  const unique = [
-    ...new Map(
-      rows.map((s) => [
-        s.id || s.session_id,
-        { ...s, id: s.id || s.session_id },
-      ]),
-    ).values(),
-  ];
-  update({
-    sessions: unique,
-    hasMore: !!result.has_more,
-    sessionsOffset: offset + (result.limit || 100),
-  });
+  const promise = api(`/sessions?offset=${offset}`)
+    .then((result) => {
+      if (generation !== sessionsRequest) return;
+      const incoming = result.data || result.sessions || [];
+      const rows = more ? [...state.sessions, ...incoming] : incoming;
+      const unique = [
+        ...new Map(
+          rows.map((s) => [
+            s.id || s.session_id,
+            { ...s, id: s.id || s.session_id },
+          ]),
+        ).values(),
+      ];
+      update({
+        sessions: unique,
+        hasMore: !!result.has_more,
+        sessionsOffset: offset + (result.limit || 100),
+      });
+    })
+    .finally(() => {
+      if (sessionsPending?.generation === generation) sessionsPending = null;
+    });
+  sessionsPending = { generation, more, promise };
+  return promise;
 }
 let navigation = 0;
+let historyRequest = 0;
+let historyCommitted = 0;
+let olderPending;
+let opening;
 export const navigationVersion = () => navigation;
 export async function openSession(id, parent = null) {
   try {
@@ -257,6 +287,9 @@ export async function openSession(id, parent = null) {
   }
   writeStorage("child-view", JSON.stringify(parent ? { id, parent } : null));
   const generation = ++navigation;
+  const request = ++historyRequest;
+  opening?.abort();
+  const controller = (opening = new AbortController());
   update({
     active: id,
     history: [],
@@ -271,12 +304,15 @@ export async function openSession(id, parent = null) {
   });
   writeStorage("last-session", id);
   try {
-    const result = await api(`/sessions/${encodeURIComponent(id)}/messages`);
+    const result = await api(`/sessions/${encodeURIComponent(id)}/messages`, {
+      signal: controller.signal,
+    });
     const history = await withCachedImages(
       result.session_id || id,
       result.data || [],
     );
-    if (generation === navigation) {
+    if (generation === navigation && request >= historyCommitted) {
+      historyCommitted = request;
       const canonical = result.session_id || id;
       if (canonical !== id) {
         if (id in state.modelChoices)
@@ -292,53 +328,101 @@ export async function openSession(id, parent = null) {
         history,
         loading: false,
         historyHasMore: !!result.has_more,
-        historyOffset: result.next_offset || (result.data || []).length,
+        historyOffset: result.next_offset ?? (result.data || []).length,
       });
       refreshSessionDetails(canonical).catch(() => {});
     }
   } catch (error) {
-    if (generation === navigation) {
+    if (generation === navigation && request >= historyCommitted) {
       update({ loading: false });
-      fail(error);
+      if (error.name !== "AbortError") fail(error);
     }
+  } finally {
+    if (opening === controller) opening = null;
   }
 }
 export async function refreshHistory(id, commit = true) {
+  const generation = navigation;
+  const request =
+    commit && state.active === id ? ++historyRequest : historyRequest;
   const result = await api(`/sessions/${encodeURIComponent(id)}/messages`);
   const history = await withCachedImages(
     result.session_id || id,
     result.data || [],
   );
-  if (commit && state.active === id)
+  if (
+    commit &&
+    state.active === id &&
+    generation === navigation &&
+    request >= historyCommitted &&
+    (typeof commit !== "function" || commit())
+  ) {
+    historyCommitted = request;
     update({
       history,
+      loading: false,
       historyHasMore: !!result.has_more,
-      historyOffset: result.next_offset || (result.data || []).length,
+      historyOffset: result.next_offset ?? (result.data || []).length,
     });
+  }
   return history;
 }
-export async function loadOlderMessages() {
+export function loadOlderMessages() {
   const id = state.active;
-  const result = await api(
-    `/sessions/${encodeURIComponent(id)}/messages?offset=${state.historyOffset}`,
-  );
-  const history = await withCachedImages(
-    result.session_id || id,
-    result.data || [],
-  );
-  if (state.active === id)
-    update({
-      history: [...history, ...state.history],
-      historyHasMore: !!result.has_more,
-      historyOffset: result.next_offset,
-    });
+  if (!id || state.loading || !state.historyHasMore) return Promise.resolve();
+  const generation = navigation;
+  const request = historyRequest;
+  const offset = state.historyOffset;
+  if (
+    olderPending?.generation === generation &&
+    olderPending.request === request &&
+    olderPending.offset === offset
+  )
+    return olderPending.promise;
+  const pending = { generation, request, offset };
+  pending.promise = (async () => {
+    const result = await api(
+      `/sessions/${encodeURIComponent(id)}/messages?offset=${offset}`,
+    );
+    const history = await withCachedImages(
+      result.session_id || id,
+      result.data || [],
+    );
+    if (
+      state.active === id &&
+      generation === navigation &&
+      request === historyRequest &&
+      offset === state.historyOffset
+    ) {
+      const existing = new Set(state.history.map((message) => message.id));
+      update({
+        history: [
+          ...history.filter(
+            (message) => message.id == null || !existing.has(message.id),
+          ),
+          ...state.history,
+        ],
+        historyHasMore: !!result.has_more,
+        historyOffset: result.next_offset ?? offset + history.length,
+      });
+    }
+  })().finally(() => {
+    if (olderPending === pending) olderPending = null;
+  });
+  olderPending = pending;
+  return pending.promise;
 }
 export function newConversation() {
   navigation++;
+  historyRequest++;
+  opening?.abort();
+  opening = null;
   update({
     active: null,
     history: [],
     loading: false,
+    historyHasMore: false,
+    historyOffset: 0,
     sidebar: false,
     error: "",
     draftModel: null,

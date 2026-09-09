@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api, RequestError } from "./api.js";
 import { apiURL } from "./profile-context.js";
 import {
   state,
@@ -24,6 +24,8 @@ import {
 import { plainContent } from "./content.js";
 
 const sources = new Map();
+let recoveryRecords = {};
+let restoration;
 const terminal = new Set(["completed", "failed", "cancelled", "interrupted"]);
 const receiptKey = (sid, requestId) => `run.${sid}.${requestId}`;
 function publish(sid, live) {
@@ -50,7 +52,11 @@ function remember() {
           : {}),
       },
     ]);
-  writeStorage("runs", JSON.stringify(Object.fromEntries(entries)));
+  const saved = { ...recoveryRecords, ...Object.fromEntries(entries) };
+  writeStorage(
+    "runs",
+    JSON.stringify(Object.fromEntries(Object.entries(saved).slice(-16))),
+  );
 }
 function canRetry(live) {
   if (!live.uncertain) return true;
@@ -59,13 +65,24 @@ function canRetry(live) {
   return (
     protection?.supported === true &&
     retention > 0 &&
+    Number.isFinite(live.createdAt) &&
+    Date.now() >= live.createdAt &&
     Date.now() - live.createdAt < retention
   );
 }
 const receiptError =
   "The submission confirmation was lost. Check the conversation before sending another message.";
 export const running = (sid, lives = state.lives) =>
-  !!lives[sid] && !terminal.has(lives[sid].status);
+  Object.hasOwn(lives, sid) && !!lives[sid] && !terminal.has(lives[sid].status);
+
+function runID(result) {
+  if (typeof result?.run_id === "string" && result.run_id) return result.run_id;
+  throw new RequestError(
+    "The submission confirmation was incomplete.",
+    0,
+    "invalid_response",
+  );
+}
 
 export function clearCompletedRun(sid) {
   if (running(sid) || state.lives[sid]?.uncertain)
@@ -81,26 +98,41 @@ export function clearCompletedRun(sid) {
 }
 
 export function applyEvent(live, event) {
-  const next = { ...live, tools: [...(live.tools || [])] };
+  if (!event || typeof event !== "object" || Array.isArray(event)) return live;
   const type = event.event || event.type;
-  if (typeof type !== "string") return next;
-  if (type === "message.delta" || type === "assistant.delta")
-    next.text += event.delta || "";
-  if (type === "reasoning.available") next.reasoning = event.text || "";
+  if (typeof type !== "string") return live;
+  const next = { ...live };
+  if (
+    (type === "message.delta" || type === "assistant.delta") &&
+    typeof event.delta === "string"
+  )
+    next.text = (next.text || "") + event.delta;
+  if (type === "reasoning.available" && typeof event.text === "string")
+    next.reasoning = event.text;
   if (type === "tool.started" || type === "tool.start") {
-    next.tools.push({
+    next.tools = [...(live.tools || [])];
+    const tool = {
       id: event.tool_call_id || `tool-${next.tools.length}`,
       name: event.tool || event.name,
       preview: event.preview || "",
       status: "running",
       kind: "tool",
-    });
+    };
+    const index = next.tools.findIndex(
+      (t) => t.kind !== "agent" && t.id === tool.id,
+    );
+    if (index < 0) next.tools.push(tool);
+    else next.tools[index] = { ...next.tools[index], ...tool };
   }
   if (type === "tool.completed" || type === "tool.complete") {
+    next.tools = [...(live.tools || [])];
     const index = next.tools.findIndex(
       (t) =>
+        t.kind !== "agent" &&
         t.status === "running" &&
-        (t.name === event.tool || t.id === event.tool_call_id),
+        (event.tool_call_id != null
+          ? t.id === event.tool_call_id
+          : t.name === (event.tool || event.name)),
     );
     if (index >= 0)
       next.tools[index] = {
@@ -110,6 +142,7 @@ export function applyEvent(live, event) {
       };
   }
   if (type === "subagent.start" || type === "subagent.complete") {
+    next.tools = [...(live.tools || [])];
     const id =
       event.subagent_id ??
       event.child_session_id ??
@@ -153,12 +186,16 @@ export function applyEvent(live, event) {
   }
   if (type?.startsWith("run.") && terminal.has(type.slice(4))) {
     next.status = type.slice(4);
-    next.text = event.output || next.text;
+    if (typeof event.output === "string" && event.output)
+      next.text = event.output;
     next.usage = event.usage;
     next.error = event.error;
     next.approval = null;
+    next.reconnecting = false;
     next.pendingSteer = event.pending_steer;
-    next.needsHistory = live.needsHistory || event.needs_history;
+    next.needsHistory =
+      !(typeof event.output === "string" && event.output) &&
+      (live.needsHistory || event.needs_history);
   }
   return next;
 }
@@ -172,6 +209,10 @@ export async function sendMessage(
   const generation = navigationVersion();
   if (state.readOnlyParent)
     throw new Error("Return to the parent conversation to continue.");
+  if (Object.hasOwn(recoveryRecords, sid))
+    throw new Error(
+      "This conversation is reconnecting. Wait a moment before sending.",
+    );
   if (state.lives[sid]?.uncertain) {
     await retrySubmission(sid);
     return sid;
@@ -180,7 +221,9 @@ export async function sendMessage(
     if (images.length)
       throw new Error("Images can be sent after this response finishes.");
     const live = state.lives[sid];
-    await api(`/runs/${live.id}/steer`, {
+    if (!live.id)
+      throw new Error("Wait for the current message to finish sending.");
+    await api(`/runs/${encodeURIComponent(live.id)}/steer`, {
       method: "POST",
       body: { input: text },
     });
@@ -206,6 +249,9 @@ export async function sendMessage(
       update({
         active: sid,
         history: [],
+        historyHasMore: false,
+        historyOffset: 0,
+        sessionDetails: null,
         draftModel: null,
         draftReasoning: "auto",
       });
@@ -250,7 +296,7 @@ export async function sendMessage(
   remember();
   try {
     const result = await api("/runs", { method: "POST", body: payload });
-    publish(sid, { ...state.lives[sid], id: result.run_id, status: "running" });
+    publish(sid, { ...state.lives[sid], id: runID(result), status: "running" });
     remember();
     subscribe(sid);
     return sid;
@@ -259,7 +305,10 @@ export async function sendMessage(
       ...live,
       status: "failed",
       error: error.message,
-      uncertain: error.status === 0 || error.status >= 500,
+      uncertain:
+        error.status === 0 ||
+        error.status >= 500 ||
+        error.name === "AbortError",
     };
     failed.submissionFailed = canRetry(failed);
     if (failed.uncertain && !failed.submissionFailed)
@@ -276,6 +325,7 @@ export async function sendMessage(
 
 export async function retrySubmission(sid) {
   const live = state.lives[sid];
+  if (!live?.payload || live.id) throw new Error(receiptError);
   if (live.retrying) return;
   if (!canRetry(live)) throw new Error(receiptError);
   publish(sid, { ...live, retrying: true });
@@ -283,7 +333,7 @@ export async function retrySubmission(sid) {
     const result = await api("/runs", { method: "POST", body: live.payload });
     publish(sid, {
       ...live,
-      id: result.run_id,
+      id: runID(result),
       status: "running",
       error: null,
       submissionFailed: false,
@@ -297,7 +347,11 @@ export async function retrySubmission(sid) {
     const failed = {
       ...state.lives[sid],
       retrying: false,
-      uncertain: live.uncertain || error.status === 0 || error.status >= 500,
+      uncertain:
+        live.uncertain ||
+        error.status === 0 ||
+        error.status >= 500 ||
+        error.name === "AbortError",
     };
     failed.submissionFailed = canRetry(failed);
     publish(sid, failed);
@@ -308,20 +362,24 @@ export async function retrySubmission(sid) {
 
 export function subscribe(sid) {
   sources.get(sid)?.close();
+  sources.delete(sid);
   const live = state.lives[sid];
-  if (!live?.id) return;
+  if (!live?.id || terminal.has(live.status)) return;
   const source = new EventSource(
     apiURL(`/runs/${encodeURIComponent(live.id)}/events`),
   );
   sources.set(sid, source);
+  const current = () =>
+    sources.get(sid) === source && state.lives[sid]?.id === live.id;
   source.onmessage = (message) => {
-    if (state.lives[sid]?.id !== live.id) return;
+    if (!current()) return;
     let event;
     try {
       event = JSON.parse(message.data);
     } catch {
       return;
     }
+    if (!event || typeof event !== "object" || Array.isArray(event)) return;
     if (event.event === "talaria.reconcile") {
       publish(sid, {
         ...state.lives[sid],
@@ -336,6 +394,8 @@ export function subscribe(sid) {
       publish(sid, {
         ...state.lives[sid],
         status: "interrupted",
+        reconnecting: false,
+        approval: null,
         error: event.message,
       });
       refreshHistory(sid).catch(fail);
@@ -352,17 +412,19 @@ export function subscribe(sid) {
     }
   };
   source.onopen = () => {
-    if (state.lives[sid])
-      publish(sid, { ...state.lives[sid], reconnecting: false });
+    if (current()) publish(sid, { ...state.lives[sid], reconnecting: false });
   };
   source.onerror = () => {
-    if (state.lives[sid] && !terminal.has(state.lives[sid].status))
+    if (current() && !terminal.has(state.lives[sid].status))
       publish(sid, { ...state.lives[sid], reconnecting: true });
   };
 }
 
 async function settle(sid, live) {
-  const history = await refreshHistory(sid, false);
+  const history = await refreshHistory(
+    sid,
+    () => state.lives[sid]?.id === live.id,
+  );
   const imageMessage = currentImageMessage(history, live);
   let imageSaved = !live.imageReceipt;
   if (imageMessage && placeholderCount(imageMessage.content)) {
@@ -392,7 +454,7 @@ async function settle(sid, live) {
       "Hermes received the image, but its transcript could not be linked to the original in this browser.",
     );
   if (state.lives[sid]?.id !== live.id) return;
-  if (state.active === sid) update({ history }, true);
+  if (state.history === history) update({ history: [...history] }, true);
   publish(sid, {
     ...state.lives[sid],
     imageReceipt: !imageSaved,
@@ -400,17 +462,18 @@ async function settle(sid, live) {
       ? { userImages: [], userPersisted: true, payload: undefined }
       : {}),
   });
-  const final = [...history]
-    .reverse()
-    .find((m) => m.role === "assistant" && m.content);
+  const lastUser = history.findLastIndex((message) => message.role === "user");
+  const final = history.findLast(
+    (message, index) =>
+      index > lastUser && message.role === "assistant" && message.content,
+  );
   const content = plainContent(final?.content);
-  const lastUser = [...history].reverse().find((m) => m.role === "user");
   if (
     content &&
+    withoutImagePlaceholders(plainContent(history[lastUser]?.content)) ===
+      live.userText &&
     ((live.text && content.trim() === live.text.trim()) ||
-      (live.needsHistory &&
-        withoutImagePlaceholders(plainContent(lastUser?.content)) ===
-          live.userText))
+      (live.needsHistory && live.status === "completed"))
   ) {
     publish(sid, {
       ...state.lives[sid],
@@ -426,15 +489,34 @@ async function settle(sid, live) {
     toast("Some guidance arrived after the response. It is available below.");
 }
 
-export async function restoreRuns() {
+export function restoreRuns() {
+  if (!restoration)
+    restoration = recoverRuns().finally(() => {
+      restoration = null;
+    });
+  return restoration;
+}
+
+async function recoverRuns() {
   let saved;
   try {
     saved = JSON.parse(readStorage("runs", "{}"));
   } catch {
     return;
   }
-  for (const [sid, record] of Object.entries(saved).slice(0, 16)) {
+  if (!saved || typeof saved !== "object" || Array.isArray(saved)) return;
+  recoveryRecords = Object.fromEntries(
+    Object.entries(saved)
+      .filter(
+        ([, record]) =>
+          record && typeof record === "object" && !Array.isArray(record),
+      )
+      .slice(-16),
+  );
+  for (const [sid, savedRecord] of Object.entries(recoveryRecords)) {
+    const record = { ...savedRecord };
     try {
+      if (Object.hasOwn(state.lives, sid)) continue;
       if (record.imageReceipt) {
         const receipt =
           (await pendingStorage(receiptKey(sid, record.requestId)).catch(
@@ -447,6 +529,7 @@ export async function restoreRuns() {
             imageBoundary: receipt.imageBoundary,
           });
         else if (!record.id) {
+          if (Object.hasOwn(state.lives, sid)) continue;
           publish(sid, {
             ...record,
             text: "",
@@ -458,7 +541,13 @@ export async function restoreRuns() {
           continue;
         }
       }
+      if (Object.hasOwn(state.lives, sid)) continue;
       if (!record.id && record.payload) {
+        if (
+          record.payload.session_id !== sid ||
+          record.payload.request_id !== record.requestId
+        )
+          continue;
         const live = {
           ...record,
           text: "",
@@ -473,34 +562,72 @@ export async function restoreRuns() {
         publish(sid, live);
         continue;
       }
+      if (typeof record.id !== "string" || !record.id) continue;
       const status = await api(`/runs/${encodeURIComponent(record.id)}`);
+      if (Object.hasOwn(state.lives, sid)) continue;
+      if (!status || typeof status.status !== "string")
+        throw new RequestError(
+          "The response status is unavailable.",
+          0,
+          "invalid_response",
+        );
       const live = {
         ...record,
-        text: status.output || "",
+        // Active runs replay their deltas. A status snapshot may already
+        // contain those same deltas, so only use its output once terminal.
+        text: terminal.has(status.status) ? status.output || "" : "",
         tools: [],
         status: status.status,
-        approval: status.approval,
+        approval: terminal.has(status.status) ? null : status.approval,
+        error: status.error,
+        usage: status.usage,
+        pendingSteer: status.pending_steer,
+        needsHistory:
+          !terminal.has(status.status) ||
+          !(typeof status.output === "string" && status.output),
       };
       publish(sid, live);
       if (!terminal.has(live.status)) subscribe(sid);
       else await settle(sid, live);
-    } catch {
-      /* Hermes history remains available if run metadata has expired. */
+    } catch (error) {
+      if (!Object.hasOwn(state.lives, sid) && typeof record.id === "string") {
+        const live = {
+          ...record,
+          text: "",
+          tools: [],
+          status: "interrupted",
+          uncertain: error.status !== 404,
+          needsHistory: true,
+          error:
+            error.status === 404
+              ? "Live updates expired. Check the conversation for the response."
+              : "Could not check this response. Reload to reconnect before sending another message.",
+        };
+        publish(sid, live);
+        if (error.status === 404) await settle(sid, live).catch(() => {});
+      }
+    } finally {
+      delete recoveryRecords[sid];
     }
   }
   remember();
 }
 
 export async function stopRun(sid) {
-  const id = state.lives[sid].id;
-  await api(`/runs/${id}/stop`, { method: "POST", body: {} });
+  const id = state.lives[sid]?.id;
+  if (!id || !running(sid)) return;
+  await api(`/runs/${encodeURIComponent(id)}/stop`, {
+    method: "POST",
+    body: {},
+  });
   if (state.lives[sid]?.id === id && running(sid))
     publish(sid, { ...state.lives[sid], status: "stopping" });
 }
 
 export async function approve(sid, choice) {
   const live = state.lives[sid];
-  await api(`/runs/${live.id}/approval`, {
+  if (!live?.id || !live.approval || !running(sid)) return;
+  await api(`/runs/${encodeURIComponent(live.id)}/approval`, {
     method: "POST",
     body: { choice, request_id: live.approval?.request_id },
   });

@@ -96,8 +96,10 @@ def create_app(
 ) -> Starlette:
     @asynccontextmanager
     async def lifespan(app):
-        yield
-        await app.state.profiles.close()
+        try:
+            yield
+        finally:
+            await app.state.profiles.close()
 
     app = Starlette(
         lifespan=lifespan,

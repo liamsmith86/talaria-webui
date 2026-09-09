@@ -2,7 +2,8 @@ import {
   html,
   useState,
   useRef,
-  useEffect,
+  useLayoutEffect,
+  useMemo,
   useMediaQuery,
   Icon,
   IconButton,
@@ -29,10 +30,11 @@ function groupName(session) {
     session.started_at ||
     session.created_at;
   const date = new Date(typeof raw === "number" ? raw * 1000 : raw);
-  const days = Math.floor((now - date) / 86400000);
-  return days < 0
+  date.setHours(0, 0, 0, 0);
+  const days = Math.round((now - date) / 86400000);
+  return days <= 0
     ? "Today"
-    : days < 1
+    : days === 1
       ? "Yesterday"
       : days < 7
         ? "Previous 7 days"
@@ -42,7 +44,7 @@ function groupName(session) {
 export function Sidebar({ app }) {
   const mobile = useMediaQuery("(max-width: 700px)");
   const drawer = useRef();
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!mobile || !app.sidebar) return;
     const previous = document.querySelector('[aria-label="Open sidebar"]');
     drawer.current?.querySelector("button")?.focus();
@@ -52,13 +54,14 @@ export function Sidebar({ app }) {
   }, [mobile, app.sidebar]);
   const [query, setQuery] = useState("");
   const [moreBusy, setMoreBusy] = useState(false);
-  const sessions = app.sessions
-    .filter((s) =>
-      `${s.title || ""} ${s.model || ""}`
-        .toLowerCase()
-        .includes(query.toLowerCase()),
-    )
-    .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true));
+  const sessions = useMemo(() => {
+    const search = query.toLowerCase();
+    return app.sessions
+      .filter((s) =>
+        `${s.title || ""} ${s.model || ""}`.toLowerCase().includes(search),
+      )
+      .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true));
+  }, [app.sessions, query]);
   let lastGroup = "";
   return html`<aside
     ref=${drawer}

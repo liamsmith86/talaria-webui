@@ -16,16 +16,20 @@ function matches(root, query) {
     let text = "",
       node;
     while ((node = walker.nextNode())) {
-      if (node.parentElement.closest("button")) continue;
+      if (!node.textContent || node.parentElement.closest("button")) continue;
       nodes.push({ node, start: text.length });
       text += node.textContent;
     }
+    let firstIndex = 0,
+      lastIndex = 0;
     for (const match of text.matchAll(expression)) {
       if (ranges.length >= 2000) break;
       const start = match.index;
       const end = start + match[0].length;
-      const first = nodes.findLast((n) => n.start <= start);
-      const last = nodes.findLast((n) => n.start < end);
+      while (nodes[firstIndex + 1]?.start <= start) firstIndex++;
+      while (nodes[lastIndex + 1]?.start < end) lastIndex++;
+      const first = nodes[firstIndex],
+        last = nodes[lastIndex];
       if (!first || !last) break;
       const range = new Range();
       range.setStart(first.node, start - first.start);
@@ -37,6 +41,25 @@ function matches(root, query) {
   return ranges;
 }
 
+function revealMatch(range, viewport) {
+  const parent = range.startContainer.parentElement;
+  let details = parent.closest("details");
+  while (details) {
+    details.open = true;
+    details = details.parentElement.closest("details");
+  }
+  // A match can be clipped inside a long message or a tool/code scroll region.
+  for (let el = parent; el; el = el.parentElement) {
+    const rect = range.getBoundingClientRect(),
+      bounds = el.getBoundingClientRect();
+    if (el.scrollHeight > el.clientHeight)
+      el.scrollTop += rect.top - bounds.top - el.clientTop - el.clientHeight / 3;
+    if (el.scrollWidth > el.clientWidth)
+      el.scrollLeft += rect.left - bounds.left - el.clientLeft - el.clientWidth / 3;
+    if (el === viewport) break;
+  }
+}
+
 export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
   const [query, setQuery] = useState("");
   const [ranges, setRanges] = useState([]);
@@ -44,6 +67,7 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
   const input = useRef();
   const searchedQuery = useRef("");
   const move = useRef(false);
+  const live = app.lives[app.active];
   useEffect(() => {
     input.current?.focus();
   }, []);
@@ -59,7 +83,15 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
       searchedQuery.current = query;
     }, 120);
     return () => clearTimeout(timer);
-  }, [query, app.history, app.lives[app.active]?.text]);
+  }, [
+    query,
+    app.history,
+    live?.text,
+    live?.reasoning,
+    live?.tools,
+    live?.persisted,
+    live?.userText,
+  ]);
   useEffect(() => {
     if (globalThis.CSS?.highlights && globalThis.Highlight) {
       CSS.highlights.set("talaria-find", new Highlight(...ranges));
@@ -73,21 +105,7 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
     const article = parent?.closest("article");
     article?.classList.add("find-focus");
     if (parent && move.current) {
-      let details = parent.closest("details");
-      while (details) {
-        details.open = true;
-        details = details.parentElement.closest("details");
-      }
-      const rect = range.getBoundingClientRect();
-      const viewport = root.current;
-      viewport.scrollTo({
-        top:
-          viewport.scrollTop +
-          rect.top -
-          viewport.getBoundingClientRect().top -
-          viewport.clientHeight / 3,
-        behavior: "instant",
-      });
+      revealMatch(range, root.current);
       move.current = false;
     }
     return () => {

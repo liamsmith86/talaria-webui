@@ -9,7 +9,12 @@ from contextlib import closing
 
 
 def number(value):
-    return value if type(value) in (int, float) and math.isfinite(value) and value >= 0 else None
+    try:
+        return (
+            value if type(value) in (int, float) and math.isfinite(value) and value >= 0 else None
+        )
+    except OverflowError:
+        return None
 
 
 def label(value):
@@ -41,7 +46,7 @@ def reasoning(request):
         "ultra",
     }:
         return effort
-    if thinking.get("type") in {"enabled", "adaptive"} or value.get("enabled") is True:
+    if thinking.get("type") in ("enabled", "adaptive") or value.get("enabled") is True:
         return "enabled"
     return None
 
@@ -58,10 +63,14 @@ class Observations:
         path = directory / "observations.db"
         path.touch(mode=0o600, exist_ok=True)
         db = sqlite3.connect(path, timeout=2)
-        db.execute(
-            "CREATE TABLE IF NOT EXISTS responses (session TEXT, message INTEGER, "
-            "data TEXT NOT NULL, PRIMARY KEY(session, message))"
-        )
+        try:
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS responses (session TEXT, message INTEGER, "
+                "data TEXT NOT NULL, PRIMARY KEY(session, message))"
+            )
+        except sqlite3.Error:
+            db.close()
+            raise
         return db
 
     def save(self, session, message, data):
@@ -76,15 +85,25 @@ class Observations:
             )
 
     def read(self, session, message=None):
-        if not (self.home / "talaria" / "observations.db").is_file():
+        path = self.home / "talaria" / "observations.db"
+        try:
+            # Viewing details never creates, touches, or migrates the optional store.
+            with closing(
+                sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
+            ) as db:
+                row = db.execute(
+                    "SELECT message, data FROM responses WHERE session = ?"
+                    + (
+                        " AND message = ?"
+                        if message is not None
+                        else " ORDER BY message DESC LIMIT 1"
+                    ),
+                    (session, message) if message is not None else (session,),
+                ).fetchone()
+            data = json.loads(row[1]) if row else None
+            return {**data, "message_id": row[0]} if isinstance(data, dict) else None
+        except (OSError, sqlite3.Error, ValueError, TypeError, OverflowError):
             return None
-        with closing(self.connect()) as db:
-            row = db.execute(
-                "SELECT message, data FROM responses WHERE session = ?"
-                + (" AND message = ?" if message is not None else " ORDER BY message DESC LIMIT 1"),
-                (session, message) if message is not None else (session,),
-            ).fetchone()
-        return {"message_id": row[0], **json.loads(row[1])} if row else None
 
     def before(self, *, turn_id=None, task_id=None, request=None, started_at=None, **kwargs):
         if not turn_id or not task_id or not isinstance(request, dict):

@@ -182,6 +182,39 @@ async def http_contract():
         caps = await (await client.get("/talaria/v1/capabilities", headers=headers)).json()
         assert caps["rewind"] is True and caps["agent"]["name"] == "Contract agent"
         assert "Private instructions" not in json.dumps(caps)
+        # Malformed opt-in never grants access or raises outside the route's error boundary.
+        for config in (
+            None,
+            [],
+            {"plugins": ["talaria"]},
+            {"plugins": {"enabled": "not-talaria"}},
+            {"plugins": {"enabled": ["talaria"], "disabled": "unknown"}},
+            *(
+                {"plugins": {"enabled": ["talaria"], "disabled": malformed}}
+                for malformed in ({}, "", 0, False)
+            ),
+        ):
+            with patch("hermes_cli.config.load_config", return_value=config):
+                assert (await client.get("/talaria/v1/capabilities", headers=headers)).status == 404
+        # Optional rewind signature drift must not break identity or response details.
+        with patch.object(
+            db, "rewind_to_message", lambda sid, target, expected_active_ids=None: None
+        ):
+            response = await client.get("/talaria/v1/capabilities", headers=headers)
+            assert response.status == 200 and (await response.json())["rewind"] is False
+        for invalid in (-1, 0, 2**63):
+            assert (
+                await client.get(
+                    f"/talaria/v1/sessions/contract/response?message_id={invalid}", headers=headers
+                )
+            ).status == 400
+            assert (
+                await client.post(
+                    "/talaria/v1/sessions/contract/rewind",
+                    headers=headers,
+                    json={"message_id": invalid, "preview": True},
+                )
+            ).status == 400
         for path in ("context", f"response?message_id={saved_reply}"):
             assert (
                 await client.get(f"/talaria/v1/sessions/contract/{path}", headers=headers)
@@ -195,6 +228,9 @@ async def http_contract():
         assert (
             await client.get("/talaria/v1/sessions/missing/context", headers=headers)
         ).status == 404
+        observations.save("contract", saved_reply, {"model": "older-observation"})
+        response = await client.get("/talaria/v1/sessions/contract/context", headers=headers)
+        assert response.status == 200 and (await response.json())["context"]["used"] is None
 
 
 asyncio.run(http_contract())

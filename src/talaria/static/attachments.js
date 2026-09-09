@@ -5,28 +5,47 @@ export const MAX_IMAGES_TOTAL = 6 * 1024 * 1024;
 const TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 let database;
 function openDatabase() {
-  if (!database)
-    database = new Promise((resolve, reject) => {
+  if (!database) {
+    let abandoned = false;
+    const opening = new Promise((resolve, reject) => {
       const request = indexedDB.open(databaseName, 1);
       request.onupgradeneeded = () =>
         request.result.createObjectStore("pending");
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const db = request.result;
+        if (abandoned) {
+          db.close();
+          return;
+        }
+        db.onversionchange = () => {
+          db.close();
+          if (database === opening) database = null;
+        };
+        db.onclose = () => {
+          if (database === opening) database = null;
+        };
+        resolve(db);
+      };
       request.onerror = () =>
         reject(
           new Error(
             "Browser storage is unavailable. Try again or enable storage for Talaria.",
           ),
         );
-      request.onblocked = () =>
+      request.onblocked = () => {
+        abandoned = true;
         reject(
           new Error(
             "Close other Talaria tabs and try saving this attachment again.",
           ),
         );
+      };
     }).catch((error) => {
-      database = null;
+      if (database === opening) database = null;
       throw error;
     });
+    database = opening;
+  }
   return database;
 }
 export async function pendingStorage(key, value) {
@@ -54,12 +73,31 @@ export async function pendingStorage(key, value) {
 }
 
 const CACHE_LIMIT = 32 * 1024 * 1024;
+const cacheError =
+  "This browser could not retain the image. Download a copy to keep it.";
+function imageIndex(value) {
+  return Array.isArray(value)
+    ? value.filter(
+        (item) =>
+          item &&
+          typeof item.key === "string" &&
+          item.key.startsWith("image.") &&
+          typeof item.session === "string" &&
+          Number.isFinite(item.bytes) &&
+          item.bytes >= 0,
+      )
+    : [];
+}
 export async function cacheMessageImages(
   session,
   messageId,
   images,
   receipt = null,
 ) {
+  const bytes = images.reduce((n, image) => n + image.url.length, 0);
+  // Reject before evicting or deleting the submission receipt. Otherwise a
+  // single oversized entry is removed from the index and then stored orphaned.
+  if (bytes > CACHE_LIMIT) throw new Error(cacheError);
   const db = await openDatabase();
   const key = `image.${session}.${messageId}`;
   return new Promise((resolve, reject) => {
@@ -68,13 +106,13 @@ export async function cacheMessageImages(
     const request = records.get("image-index");
     request.onsuccess = () => {
       try {
-        const previous = Array.isArray(request.result) ? request.result : [];
+        const previous = imageIndex(request.result);
         const index = previous.filter((item) => item.key !== key);
         index.push({
           key,
           session,
           messageId,
-          bytes: images.reduce((n, image) => n + image.url.length, 0),
+          bytes,
         });
         let size = index.reduce((n, item) => n + item.bytes, 0);
         while (index.length > 100 || size > CACHE_LIMIT) {
@@ -91,29 +129,40 @@ export async function cacheMessageImages(
     };
     transaction.oncomplete = resolve;
     transaction.onabort = transaction.onerror = () =>
-      reject(
-        new Error(
-          "This browser could not retain the image. Download a copy to keep it.",
-        ),
-      );
+      reject(new Error(cacheError));
   });
 }
 export async function browserAttachments(session, ids = null) {
-  const index = await pendingStorage("image-index");
-  if (!Array.isArray(index)) return [];
-  const rows = index
-    .filter(
-      (item) => item.session === session && (!ids || ids.has(item.messageId)),
-    )
-    .slice(-100);
-  return (
-    await Promise.all(
-      rows.map(async (item) => ({
-        message_id: item.messageId,
-        images: await pendingStorage(item.key),
-      })),
-    )
-  ).filter((item) => Array.isArray(item.images) && item.images.length);
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    // The index and originals form one snapshot, with one transaction even
+    // when a conversation has many cached attachments.
+    const transaction = db.transaction("pending", "readonly");
+    const records = transaction.objectStore("pending");
+    const request = records.get("image-index");
+    const rows = [];
+    request.onsuccess = () => {
+      try {
+        for (const item of imageIndex(request.result)
+          .filter(
+            (item) =>
+              item.session === session && (!ids || ids.has(item.messageId)),
+          )
+          .slice(-100)) {
+          const images = records.get(item.key);
+          images.onsuccess = () => {
+            if (Array.isArray(images.result) && images.result.length)
+              rows.push({ message_id: item.messageId, images: images.result });
+          };
+        }
+      } catch {
+        transaction.abort();
+      }
+    };
+    transaction.oncomplete = () => resolve(rows);
+    transaction.onabort = transaction.onerror = () =>
+      reject(new Error(cacheError));
+  });
 }
 export async function forgetImages(session) {
   const db = await openDatabase();
@@ -121,13 +170,19 @@ export async function forgetImages(session) {
     const transaction = db.transaction("pending", "readwrite");
     const records = transaction.objectStore("pending");
     const request = records.get("image-index");
-    const receipts = records.getAllKeys(
-      IDBKeyRange.bound(`run.${session}.`, `run.${session}.\uffff`),
+    const receipts = records.openCursor(
+      IDBKeyRange.bound(`run.${session}`, `run.${session}.\uffff`),
     );
-    receipts.onsuccess = () =>
-      receipts.result.forEach((key) => records.delete(key));
+    receipts.onsuccess = () => {
+      const cursor = receipts.result;
+      if (!cursor) return;
+      // Session identifiers can contain dots. A key prefix alone also matches
+      // other sessions, including legacy receipts without a request suffix.
+      if (cursor.value?.payload?.session_id === session) cursor.delete();
+      cursor.continue();
+    };
     request.onsuccess = () => {
-      const index = Array.isArray(request.result) ? request.result : [];
+      const index = imageIndex(request.result);
       for (const item of index)
         if (item.session === session) records.delete(item.key);
       records.put(
@@ -136,7 +191,8 @@ export async function forgetImages(session) {
       );
     };
     transaction.oncomplete = resolve;
-    transaction.onabort = transaction.onerror = reject;
+    transaction.onabort = transaction.onerror = () =>
+      reject(new Error(cacheError));
   });
 }
 export async function withCachedImages(session, messages) {
@@ -153,18 +209,35 @@ export async function withCachedImages(session, messages) {
       : message,
   );
 }
+function placeholderSuffix(content) {
+  const marker = "[screenshot]";
+  const end = content.trimEnd().length;
+  let offset = end,
+    start = end,
+    count = 0,
+    matched = 0;
+  // Walk back from the suffix. A global search retries every earlier marker
+  // when a long transcript contains placeholders followed by ordinary text.
+  while (
+    offset >= marker.length &&
+    content.slice(offset - marker.length, offset) === marker
+  ) {
+    offset -= marker.length;
+    count++;
+    if (!offset || content[offset - 1] === "\n") {
+      start = offset ? offset - 1 : 0;
+      matched = count;
+    }
+    if (content[offset - 1] === "\n") offset--;
+  }
+  return { start, count: matched };
+}
 export function placeholderCount(content) {
-  if (typeof content !== "string") return 0;
-  return (
-    content
-      .trimEnd()
-      .match(/(?:^|\n)(?:\[screenshot\]\n?)+$/)?.[0]
-      .match(/\[screenshot\]/g)?.length || 0
-  );
+  return typeof content === "string" ? placeholderSuffix(content).count : 0;
 }
 export function withoutImagePlaceholders(content) {
   return typeof content === "string"
-    ? content.trimEnd().replace(/(?:^|\n)(?:\[screenshot\]\n?)+$/, "")
+    ? content.slice(0, placeholderSuffix(content).start)
     : content;
 }
 export function currentImageMessage(history, live) {
@@ -217,8 +290,8 @@ export function imageParts(content) {
         url = `data:${p.source.media_type};base64,${p.source.data}`;
       const safe =
         typeof url === "string" &&
-        /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(url) &&
-        url.length < 3 * 1024 * 1024;
+        url.length < 3 * 1024 * 1024 &&
+        /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(url);
       // External images remain explicit links; never load arbitrary hosts or server paths.
       const external = typeof url === "string" && /^https?:\/\//i.test(url);
       return {
