@@ -413,6 +413,8 @@ class Deployment:
             (
                 '#!/bin/sh\ncase "${1-}" in\n'
                 f'  install|update|rollback|status) exec {root}/manager/venv/bin/talaria "$@" ;;\n'
+                '  ""|-*) ;;\n'
+                f'  *) exec {root}/current/venv/bin/talaria "$@" ;;\n'
                 "esac\n"
                 'for arg in "$@"; do\n'
                 '  if [ "$arg" = "--dev" ]; then\n'
@@ -441,6 +443,8 @@ class Deployment:
                         "The branch has moved from the expected commit. Review its new head first."
                     )
                 if not available:
+                    if not check:
+                        self.launcher()
                     self.report(f"Already up to date ({commit[:10]}).")
                     return
                 if check:

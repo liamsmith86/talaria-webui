@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 from contextlib import suppress
+from pathlib import Path
 
 import pytest
 
@@ -197,3 +198,30 @@ def test_interruption_after_config_commit_keeps_the_initial_password(tmp_path, m
         cli.main()
     password = (tmp_path / "initial-password.txt").read_text().strip()
     assert verify_password(password, load(config_path).password_hash)
+
+
+def test_managed_launcher_exports_the_plugin_without_server_arguments(deployment):
+    binary = deployment.root / f"releases/{A}/venv/bin/talaria"
+    binary.parent.mkdir(parents=True)
+    binary.write_text(f"#!{sys.executable}\nfrom talaria.cli import main\nmain()\n")
+    binary.chmod(0o700)
+    config_path = Path(deployment.config["config"])
+    original_config = config_path.read_bytes()
+    home = deployment.root.parent / "hermes profile"
+    deployment.launcher()
+    operations.run([deployment.root / "bin/talaria", "hermes-plugin", "--home", home])
+    assert (home / "plugins/talaria/bridge.py").is_file()
+    assert (home / "plugins/talaria/bridge.py").stat().st_mode & 0o077 == 0
+    assert config_path.read_bytes() == original_config
+
+
+def test_noop_update_refreshes_an_older_launcher_without_restarting(deployment, monkeypatch):
+    binary = deployment.root / "bin/talaria"
+    binary.parent.mkdir()
+    binary.write_text("previous release launcher")
+    monkeypatch.setattr(deployment, "fetch", lambda: A)
+    monkeypatch.setattr(deployment, "restart", lambda: pytest.fail("Unnecessary restart"))
+    deployment.update(check=True)
+    assert binary.read_text() == "previous release launcher"
+    deployment.update(expect=A)
+    assert binary.read_text().startswith("#!/bin/sh\n")
