@@ -30,6 +30,25 @@ export function modelInventory(data) {
             provider: providerId(p),
             label: record(m) ? text(m.name) || text(m.label) || id : id,
             providerLabel: providerName(p),
+            available: !(
+              Array.isArray(p.unavailable_models) &&
+              p.unavailable_models.includes(id)
+            ),
+            featured:
+              Array.isArray(p.featured_models) &&
+              p.featured_models.includes(id),
+            capabilities: record(p.capabilities?.[id])
+              ? p.capabilities[id]
+              : {},
+            pricing: record(p.pricing?.[id])
+              ? {
+                  input: text(p.pricing[id].input),
+                  output: text(p.pricing[id].output),
+                  cache: text(p.pricing[id].cache),
+                  free: p.pricing[id].free === true,
+                }
+              : null,
+            warning: text(p.warning),
           };
         })
         .filter((m) => m.id),
@@ -39,11 +58,16 @@ export function modelInventory(data) {
     providers.find((p) => providerId(p) === configuredProvider) ||
     providers.find((p) => p.is_current === true);
   const defaultId = text(data.model);
+  const defaultProvider =
+    configuredProvider || (provider ? providerId(provider) : "");
   const defaultModel = defaultId
     ? {
+        ...models.find(
+          (m) => m.id === defaultId && m.provider === defaultProvider,
+        ),
         id: defaultId,
         label: defaultId,
-        provider: configuredProvider || (provider ? providerId(provider) : ""),
+        provider: defaultProvider,
         providerLabel: provider ? providerName(provider) : configuredProvider,
       }
     : null;
@@ -59,8 +83,69 @@ export function modelInventory(data) {
           ? providerId(p) === configuredProvider
           : p.is_current === true,
         modelCount: models.filter((m) => m.provider === providerId(p)).length,
+        warning: text(p.warning),
       })),
   };
+}
+
+export const reasoningNames = {
+  auto: "Auto",
+  none: "Off",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Maximum",
+  ultra: "Ultra",
+};
+export function reasoningOptions(model) {
+  if (model?.capabilities?.reasoning === false) return ["auto"];
+  const supported = model?.capabilities?.supported_efforts;
+  const efforts = Array.isArray(supported)
+    ? supported.filter(
+        (v) =>
+          typeof v === "string" &&
+          Object.hasOwn(reasoningNames, v) &&
+          !["auto", "none"].includes(v),
+      )
+    : ["low", "medium", "high"];
+  return [
+    "auto",
+    ...(model?.capabilities?.can_disable_reasoning === true ? ["none"] : []),
+    ...efforts,
+  ];
+}
+export function readReasoningChoices() {
+  try {
+    return Object.fromEntries(
+      Object.entries(JSON.parse(readStorage("session-reasoning", "{}")))
+        .slice(-200)
+        .filter(
+          ([, v]) => typeof v === "string" && Object.hasOwn(reasoningNames, v),
+        ),
+    );
+  } catch {
+    return {};
+  }
+}
+export function saveReasoningChoice(choices, id, value) {
+  const next = { ...choices };
+  delete next[id];
+  next[id] = Object.hasOwn(reasoningNames, value) ? value : "auto";
+  const bounded = Object.fromEntries(Object.entries(next).slice(-200));
+  writeStorage("session-reasoning", JSON.stringify(bounded));
+  return bounded;
+}
+export function sessionReasoning(app) {
+  const choice = app.active
+    ? app.reasoningChoices[app.active]
+    : app.draftReasoning;
+  return reasoningOptions(sessionModel(app) || app.defaultModel).includes(
+    choice,
+  )
+    ? choice
+    : "auto";
 }
 
 function valid(model) {

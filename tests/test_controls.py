@@ -43,7 +43,7 @@ def test_text_attachment_and_draft_restore(page, live_app):
     page.get_by_label("Message Hermes").fill("Keep this thought")
     page.reload()
     expect(page.get_by_label("Message Hermes")).to_have_value("Keep this thought")
-    page.get_by_label("Text attachment").set_input_files(
+    page.get_by_label("File attachment").set_input_files(
         {"name": "notes.md", "mimeType": "text/markdown", "buffer": b"These are the project notes."}
     )
     expect(page.get_by_label("Message Hermes")).to_have_value(

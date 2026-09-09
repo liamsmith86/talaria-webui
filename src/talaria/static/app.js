@@ -18,13 +18,23 @@ import {
   newConversation,
   supports,
   chooseModel,
+  chooseReasoning,
+  refreshModels,
+  openSession,
+  state,
 } from "./store.js";
 import { Sidebar } from "./sidebar.js";
 import { Conversation } from "./conversation.js";
 import { Composer } from "./composer.js";
-import { Connection, Dialog, SessionDialog, ModelPicker } from "./dialogs.js";
+import { Connection, SessionDialog, ModelPicker } from "./dialogs.js";
+import {
+  ConversationMenu,
+  ConversationDetails,
+  TranscriptDownload,
+} from "./conversation-actions.js";
+import { ReadinessNotice } from "./readiness.js";
 import { Settings } from "./settings.js";
-import { sessionModel } from "./models.js";
+import { sessionModel, sessionReasoning } from "./models.js";
 import { restoreRuns, running } from "./runs.js";
 
 function Login() {
@@ -117,6 +127,20 @@ function App() {
   useEffect(() => {
     initialize();
     const keydown = (e) => {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.key.toLowerCase() === "f" &&
+        state.active &&
+        !document.querySelector("dialog[open]")
+      ) {
+        e.preventDefault();
+        update({ findOpen: true });
+        requestAnimationFrame(() =>
+          document
+            .querySelector('[aria-label="Find text in conversation"]')
+            ?.focus(),
+        );
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         update({ sidebar: true });
@@ -143,9 +167,11 @@ function App() {
       restoreRuns();
     }
   }, [app.connected]);
-  const current = app.sessions.find((s) => s.id === app.active) || {
+  const current = {
     id: app.active,
     title: "Conversation",
+    ...app.sessionDetails,
+    ...app.sessions.find((s) => s.id === app.active),
   };
   const close = () => update({ modal: null });
   if (app.auth === null)
@@ -181,6 +207,18 @@ function App() {
         ${app.active &&
         html`<div class="topbar-actions">
           <${IconButton}
+            name="search"
+            label="Find in conversation"
+            aria-pressed=${app.findOpen}
+            onClick=${() => update({ findOpen: !app.findOpen })}
+          />
+          <${IconButton}
+            name="chart"
+            label="Conversation details"
+            onClick=${() =>
+              update({ modal: { type: "details", session: current } })}
+          />
+          <${IconButton}
             name="more"
             label="Conversation options"
             onClick=${() =>
@@ -188,6 +226,7 @@ function App() {
           />
         </div>`}
       </header>
+      <${ReadinessNotice} app=${app} />
       ${app.error &&
       html`<div class="error-banner" role="alert">
         <${Icon} name="alert" size=${17} /><span>${app.error}</span
@@ -217,19 +256,29 @@ function App() {
       ${app.active
         ? html`<${Conversation} app=${app} />`
         : html`<${Welcome} onSuggestion=${setSuggestion} />`}
-      <div class="composer-area">
-        <${Composer}
-          app=${app}
-          model=${model}
-          onModel=${() => setModelOpen(true)}
-          draftSuggestion=${suggestion}
-        />
-        <p class="composer-hint">
-          ${running(app.active)
-            ? "Your agent keeps working if you leave."
-            : "Shift + Enter for a new line"}
-        </p>
-      </div>
+      ${app.readOnlyParent
+        ? html`<div class="child-return">
+            <span>Viewing a child conversation</span
+            ><button
+              class="text-button"
+              onClick=${() => openSession(app.readOnlyParent.id)}
+            >
+              <${Icon} name="back" size=${17} />Back to parent conversation
+            </button>
+          </div>`
+        : html`<div class="composer-area">
+            <${Composer}
+              app=${app}
+              model=${model}
+              onModel=${() => setModelOpen(true)}
+              draftSuggestion=${suggestion}
+            />
+            <p class="composer-hint">
+              ${running(app.active)
+                ? "Your agent keeps working if you leave."
+                : "Shift + Enter for a new line"}
+            </p>
+          </div>`}
     </main>
     ${app.toast &&
     html`<div class="toast" role="status">
@@ -240,24 +289,22 @@ function App() {
     ${app.modal === "connection" &&
     html`<${Connection} initial=${!app.connected} onClose=${close} />`}
     ${app.modal?.type === "session-menu" &&
-    html`<${Dialog} title=${app.modal.session.title || "Conversation"} onClose=${close}>
-      <div class="session-menu">${[
-        ["rename", "edit", "Rename"],
-        ["fork", "branch", "Branch conversation"],
-        ["delete", "trash", "Delete conversation"],
-      ].map(
-        ([type, icon, label]) =>
-          html`<button
-            class=${type === "delete" ? "danger-text" : ""}
-            disabled=${(type === "fork" && !supports("session_fork")) ||
-            (type === "delete" && running(app.modal.session.id))}
-            onClick=${() =>
-              update({ modal: { type, session: app.modal.session } })}
-          >
-            <${Icon} name=${icon} size=${19} />${label}
-          </button>`,
-      )}</div>
-    </${Dialog}>`}
+    html`<${ConversationMenu}
+      session=${app.modal.session}
+      readOnly=${!!app.readOnlyParent && app.modal.session.id === app.active}
+      onClose=${close}
+    />`}
+    ${app.modal?.type === "details" &&
+    html`<${ConversationDetails}
+      key=${app.modal.session.id}
+      session=${app.modal.session}
+      onClose=${close}
+    />`}
+    ${app.modal?.type === "download" &&
+    html`<${TranscriptDownload}
+      session=${app.modal.session}
+      onClose=${close}
+    />`}
     ${["rename", "delete", "fork"].includes(app.modal?.type) &&
     html`<${SessionDialog}
       mode=${app.modal.type}
@@ -270,6 +317,9 @@ function App() {
       selected=${model}
       defaultModel=${app.defaultModel}
       onSelect=${(m) => chooseModel(m)}
+      reasoning=${sessionReasoning(app)}
+      onReasoning=${(value) => chooseReasoning(value)}
+      onRefresh=${() => refreshModels(true)}
       onClose=${() => setModelOpen(false)}
     />`}
   </div>`;

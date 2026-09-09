@@ -84,7 +84,10 @@ class Hermes:
                     if len(data) > limit:
                         if not response.is_success:
                             raise response_error(response.status_code)
-                        raise APIError("This Hermes response is too large to display.")
+                        raise APIError(
+                            "This Hermes response is too large to display.",
+                            code="response_too_large",
+                        )
                 if not response.is_success:
                     try:
                         detail = json.loads(data)

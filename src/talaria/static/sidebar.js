@@ -16,6 +16,8 @@ import {
   fail,
 } from "./store.js";
 import { running } from "./runs.js";
+import { sourceLabel } from "./content.js";
+import { readinessLabel } from "./readiness.js";
 
 function groupName(session) {
   const now = new Date();
@@ -49,11 +51,13 @@ export function Sidebar({ app }) {
   }, [mobile, app.sidebar]);
   const [query, setQuery] = useState("");
   const [moreBusy, setMoreBusy] = useState(false);
-  const sessions = app.sessions.filter((s) =>
-    `${s.title || ""} ${s.model || ""}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
-  );
+  const sessions = app.sessions
+    .filter((s) =>
+      `${s.title || ""} ${s.model || ""}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+    )
+    .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true));
   let lastGroup = "";
   return html`<aside
     ref=${drawer}
@@ -105,8 +109,12 @@ export function Sidebar({ app }) {
     </div>
     <nav class="session-list" aria-label="Conversation history">
       ${sessions.map((session) => {
-        const group = query ? "" : groupName(session);
-        const heading = group !== lastGroup;
+        const group = session.pinned
+          ? "Pinned"
+          : query
+            ? ""
+            : groupName(session);
+        const heading = group && group !== lastGroup;
         lastGroup = group;
         return html`<div key=${session.id}>
           ${heading && html`<div class="session-group">${group}</div>`}
@@ -117,11 +125,25 @@ export function Sidebar({ app }) {
               class="session-select"
               onClick=${() => openSession(session.id)}
               aria-current=${app.active === session.id ? "page" : undefined}
+              aria-label=${session.title || "Untitled conversation"}
+              aria-description=${sourceLabel(session.source)
+                ? `Source: ${sourceLabel(session.source)}`
+                : undefined}
             >
-              <span
-                class=${`session-dot ${running(session.id) ? "live" : ""}`}
-              ></span
-              ><span>${session.title || "Untitled conversation"}</span>
+              ${session.pinned
+                ? html`<${Icon}
+                    name="pin"
+                    size=${13}
+                    class=${`pin-icon ${running(session.id) ? "live" : ""}`}
+                  />`
+                : html`<span
+                    class=${`session-dot ${running(session.id) ? "live" : ""}`}
+                  ></span>`}<span class="session-caption"
+                >${session.title || "Untitled conversation"}</span
+              >${sourceLabel(session.source) &&
+              html`<small class="source-badge" aria-hidden="true"
+                >${sourceLabel(session.source)}</small
+              >`}
             </button>
             <button
               class="session-more"
@@ -173,11 +195,9 @@ export function Sidebar({ app }) {
         ><span
           >Your space<small
             ><span
-              class=${`connection-dot ${app.connected ? "connected" : ""}`}
+              class=${`connection-dot ${app.connected && ["ok", "ready", "unknown"].includes(app.readiness.status) ? "connected" : ""}`}
             ></span
-            >${app.connected
-              ? `Connected to ${app.agent.name}`
-              : "Connection needed"}</small
+            >${readinessLabel(app)}</small
           ></span
         ><${Icon} name="settings" size=${18} />
       </button>

@@ -1,5 +1,14 @@
-import { html, useEffect, useRef, useState, Icon, IconButton } from "./lib.js";
+import {
+  html,
+  useEffect,
+  useRef,
+  useState,
+  Icon,
+  IconButton,
+  writeStorage,
+} from "./lib.js";
 import { api } from "./api.js";
+import { pendingStorage } from "./attachments.js";
 import {
   state,
   update,
@@ -10,8 +19,14 @@ import {
   newConversation,
   openSession,
   chooseModel,
+  chooseReasoning,
 } from "./store.js";
-import { sessionModel } from "./models.js";
+import {
+  sessionModel,
+  sessionReasoning,
+  reasoningNames,
+  reasoningOptions,
+} from "./models.js";
 
 export function Dialog({
   title,
@@ -138,7 +153,7 @@ export function Connection({ initial = false, onClose, embedded = false }) {
       ${error && html`<div class="form-error" role="alert">${error}</div>`}
       ${tested &&
       html`<div class="form-success" role="status">
-        <${Icon} name="check" size=${16} /> Hermes is ready.
+        <${Icon} name="check" size=${16} /> Hermes connection verified.
       </div>`}
       <div class="dialog-actions">
         <button
@@ -180,10 +195,19 @@ export function SessionDialog({ mode, session, onClose }) {
                   mode === "fork" ? `${title} · branch`.slice(0, 160) : title,
               },
       });
-      if (mode === "delete" && state.active === session.id) newConversation();
+      if (mode === "delete") {
+        writeStorage(`draft.${session.id}`, "");
+        pendingStorage(`draft.${session.id}`, null).catch(() => {});
+        pendingStorage(`run.${session.id}`, null).catch(() => {});
+        if (state.active === session.id) newConversation();
+      }
       await refreshSessions();
       onClose();
       if (mode === "fork") {
+        chooseReasoning(
+          sessionReasoning({ ...state, active: session.id }),
+          result.id || result.session_id || result.session?.id,
+        );
         chooseModel(
           sessionModel({ ...state, active: session.id }),
           result.id || result.session_id || result.session?.id,
@@ -219,38 +243,115 @@ export function ModelPicker({
   defaultModel,
   onSelect,
   onClose,
+  reasoning = "auto",
+  onReasoning,
+  onRefresh,
 }) {
   const [query, setQuery] = useState("");
-  const filtered = models.filter((m) =>
-    `${m.label} ${m.providerLabel} ${m.id}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
-  );
-  return html`<${Dialog} title="Choose a model" onClose=${onClose}>
+  const [limit, setLimit] = useState(80);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const effective = selected || defaultModel;
+  const efforts = reasoningOptions(effective);
+  const filtered = models
+    .filter((m) =>
+      `${m.label} ${m.providerLabel} ${m.id}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+    )
+    .sort(
+      (a, b) =>
+        Number(b.available !== false) - Number(a.available !== false) ||
+        Number(!!b.featured) - Number(!!a.featured),
+    );
+  function select(model) {
+    onSelect(model);
+    if (!reasoningOptions(model || defaultModel).includes(reasoning))
+      onReasoning("auto");
+    onClose();
+  }
+  const warnings = [
+    ...new Map(
+      models
+        .filter((m) => m.warning)
+        .map((m) => [
+          m.provider,
+          { name: m.providerLabel, warning: m.warning },
+        ]),
+    ).values(),
+  ];
+  return html`<${Dialog} title="Choose a model" className="model-dialog" onClose=${onClose}>
     <p class="dialog-intro">Your model selection will only apply to this session.</p>
-    <div class="search-field"><${Icon} name="search" size=${18}/><input aria-label="Search models" placeholder="Find a model…" value=${query} onInput=${(e) => setQuery(e.target.value)} autoFocus/></div>
-    <div class="model-list"><button class="model-option" onClick=${() => {
-      onSelect(null);
-      onClose();
-    }} aria-pressed=${!selected}><span>${defaultModel?.id || "Configured model"}<small>${defaultModel?.providerLabel || "Hermes"}</small></span><span class="model-option-end"><span class="default-badge">Default</span>${!selected && html`<${Icon} name="check" size=${18} />`}</span></button>
-    ${filtered.map(
-      (m) =>
-        html`<button
-          class="model-option"
-          aria-pressed=${selected?.id === m.id &&
-          selected?.provider === m.provider}
-          onClick=${() => {
-            onSelect(m);
-            onClose();
-          }}
-        >
-          <span>${m.label}<small>${m.providerLabel}</small></span
-          >${selected?.id === m.id &&
-          selected?.provider === m.provider &&
-          html`<${Icon} name="check" size=${18} />`}
-        </button>`,
-    )}
+    <div class="reasoning-control"><label for="reasoning-effort">Reasoning effort<small>${effective?.capabilities?.reasoning === false ? "This model does not support adjustable reasoning." : "For this session. Auto follows Hermes’s default."}</small></label>
+      <select id="reasoning-effort" aria-label="Reasoning effort" value=${reasoning} disabled=${efforts.length === 1} onChange=${(e) => onReasoning(e.target.value)}>${efforts.map((value) => html`<option value=${value}>${reasoningNames[value]}</option>`)}</select>
+    </div>
+    <div class="model-search"><div class="search-field"><${Icon} name="search" size=${18}/><input aria-label="Search models" placeholder="Find a model…" value=${query} onInput=${(
+      e,
+    ) => {
+      setQuery(e.target.value);
+      setLimit(80);
+    }} autoFocus/></div>
+      <${IconButton} name="refresh" label="Refresh model catalog" disabled=${busy} onClick=${async () => {
+        setBusy(true);
+        setError("");
+        try {
+          await onRefresh();
+        } catch (e) {
+          setError(e.message);
+        } finally {
+          setBusy(false);
+        }
+      }} />
+    </div>
+    ${busy && html`<p class="field-help" role="status">Refreshing models from Hermes…</p>`}
+    ${error && html`<div class="form-error" role="alert">${error}</div>`}
+    ${
+      warnings.length > 0 &&
+      html`<details class="catalog-warnings">
+        <summary>
+          <${Icon} name="alert" size=${14} />Provider information ·
+          ${warnings.length}
+        </summary>
+        ${warnings.map(
+          (p) => html`<p><strong>${p.name}</strong> · ${p.warning}</p>`,
+        )}
+      </details>`
+    }
+    <div class="model-list"><button class="model-option model-default" disabled=${defaultModel?.available === false} onClick=${() => select(null)} aria-pressed=${!selected}><span>${defaultModel?.id || "Configured model"}<small>${defaultModel?.providerLabel || "Hermes"}</small></span><span class="model-option-end"><span class="default-badge">Default</span>${defaultModel?.available === false ? html`<span class="quiet-badge">Unavailable</span>` : !selected && html`<${Icon} name="check" size=${18} />`}</span></button>
+    ${filtered
+      .slice(0, limit)
+      .map(
+        (m) =>
+          html`<button
+            class="model-option"
+            key=${`${m.provider}/${m.id}`}
+            disabled=${m.available === false}
+            aria-pressed=${selected?.id === m.id &&
+            selected?.provider === m.provider}
+            onClick=${() => select(m)}
+          >
+            <span
+              >${m.label}<small>${m.providerLabel}</small>${m.pricing &&
+              (m.pricing.input || m.pricing.output || m.pricing.free) &&
+              html`<small class="model-price"
+                >${m.pricing.free
+                  ? "Free"
+                  : `Per 1M tokens · Input ${m.pricing.input || "—"} · Output ${m.pricing.output || "—"}`}</small
+              >`}</span
+            ><span class="model-option-end"
+              >${m.available === false
+                ? html`<span class="quiet-badge">Unavailable</span>`
+                : m.featured &&
+                  html`<span class="quiet-badge"
+                    >Featured</span
+                  >`}${selected?.id === m.id &&
+              selected?.provider === m.provider &&
+              html`<${Icon} name="check" size=${18} />`}</span
+            >
+          </button>`,
+      )}
     ${!filtered.length && html`<p class="field-help">${query ? "No models match that search." : "Your Hermes default is available. Additional models appear when Hermes provides them."}</p>`}
+    ${filtered.length > limit && html`<button class="load-more" onClick=${() => setLimit(limit + 80)}>Show more models (${filtered.length - limit} remaining)</button>`}
     </div>
   </${Dialog}>`;
 }

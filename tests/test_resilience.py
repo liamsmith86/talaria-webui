@@ -20,7 +20,12 @@ def test_duplicate_conversation_names(live_app):
 def test_request_limits_and_login_throttling(live_app):
     url = live_app[0]
     with signed_in(url) as client:
-        assert client.post("/api/runs", json={"input": "x" * 1_100_000}).status_code == 413
+        oversized = client.post(
+            "/api/runs", json={"session_id": "limit-check", "input": "x" * 1_100_000}
+        )
+        assert oversized.status_code == 400
+        assert oversized.json()["error"] == "Invalid input."
+        assert client.post("/api/runs", json={"input": "x" * 9_600_000}).status_code == 413
         assert client.get("/api/sessions/invalid%20identifier/messages").status_code == 400
     with httpx.Client(base_url=url, headers={"X-Talaria-Request": "1"}) as client:
         codes = [client.post("/api/login", json={"password": "bad"}).status_code for _ in range(9)]
@@ -99,7 +104,7 @@ def test_connection_setup_without_exposing_key(page, live_app):
     page.get_by_role("tab", name="Connection", exact=True).click()
     expect(page.get_by_label("API key", exact=True)).to_have_value("")
     page.get_by_role("button", name="Test connection", exact=True).click()
-    expect(page.get_by_text("Hermes is ready.", exact=True)).to_be_visible()
+    expect(page.get_by_text("Hermes connection verified.", exact=True)).to_be_visible()
     page.get_by_role("button", name="Save connection").click()
     expect(page.locator(".toast")).to_have_text("Connected to Hermes")
     path = live_app[2].state.config_path

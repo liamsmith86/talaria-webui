@@ -25,6 +25,7 @@ class FakeHermes:
         self.default_model = "hermes-test"
         self.default_provider = "test"
         self.discovery_overrides = {}
+        self.calls = []
         self.app = Starlette(
             routes=[
                 Route(
@@ -37,6 +38,7 @@ class FakeHermes:
         if request.headers.get("authorization") != f"Bearer {KEY}":
             return JSONResponse({"error": "Unauthorized"}, 401)
         path = request.url.path
+        self.calls.append((request.method, path, dict(request.query_params)))
         body = await request.json() if request.method in {"POST", "PATCH", "PUT"} else {}
         if path in self.discovery_overrides:
             return JSONResponse(*self.discovery_overrides[path])
@@ -84,6 +86,10 @@ class FakeHermes:
                                 {"id": "hermes-test", "name": "Hermes Test"},
                                 {"id": "hermes-fast", "name": "Hermes Fast"},
                             ],
+                            "capabilities": {
+                                "hermes-test": {"reasoning": True, "can_disable_reasoning": True},
+                                "hermes-fast": {"reasoning": True},
+                            },
                         }
                     ],
                 }
@@ -95,6 +101,7 @@ class FakeHermes:
                     "version": "1.2.3",
                     "gateway_state": "running",
                     "active_agents": 0,
+                    "readiness": {"status": "ok", "checks": {}},
                     "platforms": {"api_server": {"state": "connected"}},
                     "pid": 12345,
                     "private_future_field": KEY,
@@ -130,9 +137,18 @@ class FakeHermes:
         if path == "/api/sessions":
             if request.method == "GET":
                 offset = int(request.query_params.get("offset", 0))
+                limit = int(request.query_params.get("limit", 100))
                 values = list(self.sessions.values())[::-1]
+                if request.query_params.get("include_children") == "false":
+                    values = [s for s in values if s.get("source") != "subagent"]
+                pins = [s for s in values if s.get("pinned")]
+                values = [s for s in values if not s.get("pinned")]
                 return JSONResponse(
-                    {"data": values[offset : offset + 100], "has_more": len(values) > offset + 100}
+                    {
+                        "data": pins + values[offset : offset + limit],
+                        "has_more": len(values) > offset + limit,
+                        "limit": limit,
+                    }
                 )
             sid = uuid.uuid4().hex
             if body.get("title") and any(
@@ -141,7 +157,13 @@ class FakeHermes:
                 return JSONResponse(
                     {"error": {"code": "invalid_title", "message": "Duplicate title"}}, 400
                 )
-            record = {"id": sid, "title": body.get("title", "Untitled"), "started_at": time.time()}
+            record = {
+                "id": sid,
+                "title": body.get("title", "Untitled"),
+                "started_at": time.time(),
+                "source": body.get("source", "api_server"),
+                "pinned": False,
+            }
             self.sessions[sid], self.messages[sid] = record, []
             return JSONResponse({"object": "hermes.session", "session": record}, 201)
         parts = path.strip("/").split("/")
@@ -155,7 +177,12 @@ class FakeHermes:
                 all_messages = self.messages[sid]
                 end = max(0, len(all_messages) - offset)
                 return JSONResponse(
-                    {"session_id": sid, "data": all_messages[max(0, end - limit) : end]}
+                    {
+                        "session_id": sid,
+                        "data": all_messages[offset : offset + limit]
+                        if request.query_params.get("order") == "oldest"
+                        else all_messages[max(0, end - limit) : end],
+                    }
                 )
             if path.endswith("/fork"):
                 new_id = uuid.uuid4().hex
@@ -165,7 +192,7 @@ class FakeHermes:
                     {"object": "hermes.session", "session": self.sessions[new_id]}, 201
                 )
             if request.method == "PATCH":
-                self.sessions[sid]["title"] = body["title"]
+                self.sessions[sid].update(body)
             if request.method == "DELETE":
                 del self.sessions[sid]
                 del self.messages[sid]
@@ -177,16 +204,26 @@ class FakeHermes:
                 return JSONResponse({"run_id": self.requests[key], "status": "started"}, 202)
             rid = "run_" + uuid.uuid4().hex
             self.requests[key] = rid
+            content = (
+                body["input"] if isinstance(body["input"], str) else body["input"][-1]["content"]
+            )
+            prompt = (
+                content
+                if isinstance(content, str)
+                else "\n".join(p.get("text", "") for p in content)
+            )
             self.runs[rid] = {
                 "status": "running",
                 "session_id": body["session_id"],
-                "input": body["input"],
+                "input": prompt,
+                "raw_input": body["input"],
+                "model_options": body.get("model_options"),
                 "run_id": rid,
                 "model": body.get("model"),
                 "provider": body.get("provider"),
                 "approved": False,
             }
-            self.messages[body["session_id"]].append({"role": "user", "content": body["input"]})
+            self.messages[body["session_id"]].append({"role": "user", "content": content})
             queue = self.runs[rid]["_queue"] = asyncio.Queue()
             self.runs[rid]["_task"] = asyncio.create_task(self.produce(self.runs[rid], queue))
             return JSONResponse({"run_id": rid, "status": "started"}, 202)
@@ -252,9 +289,33 @@ class FakeHermes:
                     break
                 await asyncio.sleep(0.1)
         if "delegate" in run["input"].lower():
-            yield event("subagent.start", task_index=0, goal="Review the project notes")
+            child = "child-" + run["run_id"]
+            self.sessions[child] = {
+                "id": child,
+                "title": "Review the project notes",
+                "source": "subagent",
+                "parent_session_id": run["session_id"],
+            }
+            self.messages[child] = [
+                {"role": "user", "content": "Review the notes"},
+                {"role": "assistant", "content": "The child transcript is ready."},
+            ]
+            yield event(
+                "subagent.start",
+                task_index=0,
+                goal="Review the project notes",
+                child_session_id=child,
+                model="hermes-fast",
+            )
             await asyncio.sleep(0.2)
-            yield event("subagent.complete", task_index=0, summary="The notes are ready.")
+            yield event(
+                "subagent.complete",
+                task_index=0,
+                summary="The notes are ready.",
+                child_session_id=child,
+                duration_seconds=12.5,
+                cost_usd=0.0024,
+            )
         output = (
             "## A thoughtful place to start\n\n"
             "I’ve looked through the notes. Here’s a simple plan:\n\n"
@@ -271,6 +332,15 @@ class FakeHermes:
             await asyncio.sleep(0.25 if slow else 0.015)
         run["status"], run["output"] = "completed", output
         self.messages[run["session_id"]].append({"role": "assistant", "content": output})
+        self.sessions[run["session_id"]].update(
+            input_tokens=345,
+            output_tokens=123,
+            cache_read_tokens=200,
+            cache_write_tokens=0,
+            reasoning_tokens=42,
+            api_call_count=1,
+            estimated_cost_usd=0.0042,
+        )
         yield event(
             "run.completed", output=output, usage={"input_tokens": 345, "output_tokens": 123}
         )

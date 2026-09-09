@@ -9,18 +9,22 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 
 from . import __version__, auth, config
+from .content import MAX_CHAT_BODY, REASONING, image_inputs
 from .hermes import APIError, Hermes, identifier
 from .hermes_access.files import inspect_home, validate_home
 from .metadata import agent_identity
 from .relay import Relay
+from .transcripts import message_page
 
 
-async def body(request: Request) -> dict:
+async def body(request: Request, limit=1024 * 1024) -> dict:
     raw = bytearray()
     async for chunk in request.stream():
         raw.extend(chunk)
-        if len(raw) > 1024 * 1024:
-            raise APIError("This message is too large. Keep it under 1 MB.", 413, "too_large")
+        if len(raw) > limit:
+            raise APIError(
+                "This request is too large. Reduce the text or attachments.", 413, "too_large"
+            )
     try:
         value = json.loads(raw)
         if not isinstance(value, dict):
@@ -152,7 +156,10 @@ async def hermes_access(request: Request):
 
 
 async def model_options(request: Request):
-    return JSONResponse(await request.app.state.hermes.request("GET", "/api/model/options"))
+    params = {"refresh": "1"} if request.query_params.get("refresh") == "1" else {}
+    return JSONResponse(
+        await request.app.state.hermes.request("GET", "/api/model/options", params=params)
+    )
 
 
 async def sessions(request: Request):
@@ -190,10 +197,19 @@ async def session(request: Request):
     payload = {}
     if request.method == "PATCH":
         data = await body(request)
-        title = text_field(data, "title", 160).strip()
-        if not title:
-            raise APIError("Give this conversation a name.", 400)
-        payload["json"] = {"title": title}
+        if not data or set(data) - {"title", "pinned"}:
+            raise APIError("Choose a name or pin this conversation.", 400)
+        fields = {}
+        if "title" in data:
+            title = text_field(data, "title", 160).strip()
+            if not title:
+                raise APIError("Give this conversation a name.", 400)
+            fields["title"] = title
+        if "pinned" in data:
+            if type(data["pinned"]) is not bool:
+                raise APIError("Invalid pin state.", 400)
+            fields["pinned"] = data["pinned"]
+        payload["json"] = fields
     return JSONResponse(
         await request.app.state.hermes.request(request.method, f"/api/sessions/{sid}", **payload)
     )
@@ -205,13 +221,7 @@ async def messages(request: Request):
         offset = max(0, min(int(request.query_params.get("offset", "0")), 1_000_000))
     except ValueError as exc:
         raise APIError("Invalid message page.", 400) from exc
-    return JSONResponse(
-        await request.app.state.hermes.request(
-            "GET",
-            f"/api/sessions/{sid}/messages",
-            params={"offset": offset, "limit": 100, "order": "latest"},
-        )
-    )
+    return JSONResponse(await message_page(request.app.state.hermes, sid, offset))
 
 
 async def fork(request: Request):
@@ -225,12 +235,23 @@ async def fork(request: Request):
 
 
 async def start_run(request: Request):
-    data = await body(request)
+    data = await body(request, MAX_CHAT_BODY)
     sid = identifier(text_field(data, "session_id", 256))
     prompt = text_field(data, "input", 800_000).strip()
-    if not prompt:
+    images = image_inputs(data.get("images", []))
+    if not prompt and not images:
         raise APIError("Write a message first.", 400)
     payload = {"session_id": sid, "input": prompt}
+    if images:
+        content = ([{"type": "text", "text": prompt}] if prompt else []) + images
+        payload["input"] = [{"role": "user", "content": content}]
+    reasoning = data.get("reasoning", "auto")
+    if reasoning != "auto":
+        if not isinstance(reasoning, str) or reasoning not in REASONING:
+            raise APIError("Choose a supported reasoning level.", 400, "invalid_reasoning")
+        payload["model_options"] = {"reasoning": {"enabled": reasoning != "none"}}
+        if reasoning != "none":
+            payload["model_options"]["reasoning"]["effort"] = reasoning
     for key in ("model", "provider"):
         value = text_field(data, key, 256)
         if value:

@@ -8,8 +8,13 @@ import {
   refreshSessions,
   navigationVersion,
   chooseModel,
+  chooseReasoning,
+  refreshSessionDetails,
+  refreshReadiness,
 } from "./store.js";
 import { readStorage, writeStorage } from "./lib.js";
+import { pendingStorage } from "./attachments.js";
+import { plainContent } from "./content.js";
 
 const sources = new Map();
 const terminal = new Set(["completed", "failed", "cancelled", "interrupted"]);
@@ -26,7 +31,14 @@ function remember() {
         id: r.id,
         requestId: r.requestId,
         userText: r.userText,
-        ...(!r.id ? { payload: r.payload, createdAt: r.createdAt } : {}),
+        ...(!r.id
+          ? {
+              ...(r.payload?.images?.length
+                ? { imageReceipt: true }
+                : { payload: r.payload }),
+              createdAt: r.createdAt,
+            }
+          : {}),
       },
     ]);
   writeStorage("runs", JSON.stringify(Object.fromEntries(entries)));
@@ -49,6 +61,7 @@ export const running = (sid, lives = state.lives) =>
 export function applyEvent(live, event) {
   const next = { ...live, tools: [...(live.tools || [])] };
   const type = event.event || event.type;
+  if (typeof type !== "string") return next;
   if (type === "message.delta" || type === "assistant.delta")
     next.text += event.delta || "";
   if (type === "reasoning.available") next.reasoning = event.text || "";
@@ -86,6 +99,7 @@ export function applyEvent(live, event) {
     const tool = {
       id,
       kind: "agent",
+      task_index: event.task_index,
       name:
         event.goal ||
         event.preview ||
@@ -94,6 +108,20 @@ export function applyEvent(live, event) {
       preview: event.summary || event.output_tail || "",
       status: type.endsWith("start") ? "running" : event.status || "completed",
     };
+    for (const field of [
+      "child_session_id",
+      "model",
+      "duration_seconds",
+      "cost_usd",
+      "input_tokens",
+      "output_tokens",
+      "reasoning_tokens",
+      "api_calls",
+      "files_read",
+      "files_written",
+    ])
+      if (event[field] !== undefined && event[field] !== null)
+        tool[field] = event[field];
     if (index >= 0) next.tools[index] = { ...next.tools[index], ...tool };
     else next.tools.push(tool);
   }
@@ -113,14 +141,22 @@ export function applyEvent(live, event) {
   return next;
 }
 
-export async function sendMessage(text, model = null) {
+export async function sendMessage(
+  text,
+  model = null,
+  { images = [], reasoning = "auto" } = {},
+) {
   let sid = state.active;
   const generation = navigationVersion();
+  if (state.readOnlyParent)
+    throw new Error("Return to the parent conversation to continue.");
   if (state.lives[sid]?.uncertain) {
     await retrySubmission(sid);
     return sid;
   }
   if (running(sid)) {
+    if (images.length)
+      throw new Error("Images can be sent after this response finishes.");
     const live = state.lives[sid];
     await api(`/runs/${live.id}/steer`, {
       method: "POST",
@@ -132,13 +168,25 @@ export async function sendMessage(text, model = null) {
   if (!sid) {
     const result = await api("/sessions", {
       method: "POST",
-      body: { title: text.replace(/\s+/g, " ").slice(0, 70) },
+      body: {
+        title: text.replace(/\s+/g, " ").slice(0, 70) || "Image conversation",
+      },
     });
     sid = result.id || result.session_id || result.session?.id;
     if (!sid) throw new Error("Hermes did not return a conversation ID.");
     chooseModel(model, sid);
+    chooseReasoning(reasoning, sid);
+    writeStorage(`draft.${sid}`, text);
+    if (images.length) await pendingStorage(`draft.${sid}`, images);
     if (generation === navigationVersion()) {
-      update({ active: sid, history: [], draftModel: null });
+      writeStorage("draft.new", "");
+      pendingStorage("draft.new", null).catch(() => {});
+      update({
+        active: sid,
+        history: [],
+        draftModel: null,
+        draftReasoning: "auto",
+      });
       writeStorage("last-session", sid);
     }
     refreshSessions().catch(fail);
@@ -149,11 +197,16 @@ export async function sendMessage(text, model = null) {
     session_id: sid,
     request_id: requestId,
     ...(model ? { model: model.id, provider: model.provider } : {}),
+    ...(reasoning !== "auto" ? { reasoning } : {}),
+    ...(images.length ? { images: images.map(({ url }) => ({ url })) } : {}),
   };
+  if (images.length) await pendingStorage(`run.${sid}`, { payload, images });
   const live = {
     id: null,
     requestId,
     userText: text,
+    baseHistoryLength: state.history.length,
+    userImages: images,
     text: "",
     tools: [],
     status: "starting",
@@ -166,6 +219,7 @@ export async function sendMessage(text, model = null) {
     const result = await api("/runs", { method: "POST", body: payload });
     publish(sid, { ...state.lives[sid], id: result.run_id, status: "running" });
     remember();
+    if (images.length) pendingStorage(`run.${sid}`, null).catch(() => {});
     subscribe(sid);
     return sid;
   } catch (error) {
@@ -178,6 +232,7 @@ export async function sendMessage(text, model = null) {
     failed.submissionFailed = canRetry(failed);
     if (failed.uncertain && !failed.submissionFailed)
       failed.error = receiptError;
+    if (!failed.uncertain) pendingStorage(`run.${sid}`, null).catch(() => {});
     publish(sid, failed);
     remember();
     throw error;
@@ -199,8 +254,10 @@ export async function retrySubmission(sid) {
       submissionFailed: false,
       uncertain: false,
       retrying: false,
+      recovered: true,
     });
     remember();
+    pendingStorage(`run.${sid}`, null).catch(() => {});
     subscribe(sid);
   } catch (error) {
     const failed = {
@@ -275,16 +332,23 @@ async function settle(sid, live) {
   const final = [...history]
     .reverse()
     .find((m) => m.role === "assistant" && m.content);
-  const content = typeof final?.content === "string" ? final.content : "";
+  const content = plainContent(final?.content);
   const lastUser = [...history].reverse().find((m) => m.role === "user");
   if (
     content &&
     ((live.text && content.trim() === live.text.trim()) ||
-      (live.needsHistory && lastUser?.content === live.userText))
+      (live.needsHistory && plainContent(lastUser?.content) === live.userText))
   ) {
-    publish(sid, { ...state.lives[sid], persisted: true });
+    publish(sid, {
+      ...state.lives[sid],
+      persisted: true,
+      userImages: [],
+      payload: undefined,
+    });
   }
   await refreshSessions();
+  refreshSessionDetails(sid).catch(() => {});
+  refreshReadiness();
   if (live.pendingSteer)
     toast("Some guidance arrived after the response. It is available below.");
 }
@@ -298,6 +362,25 @@ export async function restoreRuns() {
   }
   for (const [sid, record] of Object.entries(saved).slice(0, 16)) {
     try {
+      if (record.imageReceipt) {
+        const receipt = await pendingStorage(`run.${sid}`).catch(() => null);
+        if (receipt)
+          Object.assign(record, {
+            payload: receipt.payload,
+            userImages: receipt.images,
+          });
+        else {
+          publish(sid, {
+            ...record,
+            text: "",
+            tools: [],
+            status: "failed",
+            uncertain: true,
+            error: receiptError,
+          });
+          continue;
+        }
+      }
       if (!record.id && record.payload) {
         const live = {
           ...record,

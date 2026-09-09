@@ -39,6 +39,12 @@ export const humanTime = (stamp) =>
   );
 
 const paths = {
+  pin: "m16 3 5 5-4 2-3 5v3l-8-8h3l5-3zM9 15l-6 6",
+  chart: "M4 3v18h17M8 16v-4m5 4V7m5 9v-6",
+  download: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5",
+  refresh: "M20 7a8 8 0 1 0 1 8M20 3v5h-5",
+  back: "M20 12H4m6-6-6 6 6 6",
+  image: "M3 3h18v18H3zM3 16l5-5 4 4 3-3 6 6M16 7h.01",
   plus: "M12 5v14M5 12h14",
   search: "m21 21-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0",
   sidebar:

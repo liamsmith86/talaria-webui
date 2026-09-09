@@ -10,6 +10,7 @@ import { api } from "./api.js";
 import { Dialog, Connection } from "./dialogs.js";
 import { ExtendedAccess } from "./access-settings.js";
 import { refreshAgentInfo, refreshModels, supports, fail } from "./store.js";
+import { ReadinessNotice } from "./readiness.js";
 
 const sections = [
   ["agent", "spark", "Your agent"],
@@ -54,6 +55,7 @@ function Overview({ app, navigate }) {
         >${app.connected ? "Connected" : "Offline"}</span
       >
     </div>
+    <${ReadinessNotice} app=${app} compact />
     <section class="default-model-card">
       <div class="section-heading">
         <h4>Default model</h4>
@@ -171,6 +173,8 @@ function Providers({ app }) {
             <div>
               <strong>${p.name}</strong
               ><small>${p.modelCount} models available</small>
+              ${p.warning &&
+              html`<small class="provider-warning">${p.warning}</small>`}
             </div>
             ${p.current
               ? html`<span class="default-badge">Default</span>`
