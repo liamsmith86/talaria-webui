@@ -67,6 +67,19 @@ const receiptError =
 export const running = (sid, lives = state.lives) =>
   !!lives[sid] && !terminal.has(lives[sid].status);
 
+export function clearCompletedRun(sid) {
+  if (running(sid) || state.lives[sid]?.uncertain)
+    throw new Error(
+      "Wait for the current response to finish before changing this turn.",
+    );
+  sources.get(sid)?.close();
+  sources.delete(sid);
+  const lives = { ...state.lives };
+  delete lives[sid];
+  update({ lives });
+  remember();
+}
+
 export function applyEvent(live, event) {
   const next = { ...live, tools: [...(live.tools || [])] };
   const type = event.event || event.type;

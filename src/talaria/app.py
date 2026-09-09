@@ -10,7 +10,7 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import auth, installation, metadata, routes, transcripts
+from . import auth, extensions, installation, metadata, routes, transcripts
 from .config import Settings
 from .hermes import APIError, Hermes
 from .profiles import ProfileRouter, Profiles
@@ -118,10 +118,13 @@ def create_app(
             Route("/api/models", routes.model_options),
             Route("/api/agent", metadata.details),
             Route("/api/readiness", metadata.readiness),
-            Route("/api/hermes-access", routes.hermes_access, methods=["GET", "PUT"]),
-            Route("/api/hermes-access/test", routes.hermes_access, methods=["POST"]),
             Route("/api/sessions", routes.sessions, methods=["GET", "POST"]),
             Route("/api/sessions/{session_id}/messages", routes.messages),
+            Route("/api/sessions/{session_id}/context", extensions.session_extension),
+            Route("/api/sessions/{session_id}/response", extensions.session_extension),
+            Route(
+                "/api/sessions/{session_id}/rewind", extensions.session_extension, methods=["POST"]
+            ),
             Route("/api/sessions/{session_id}/export", transcripts.download),
             Route("/api/sessions/{session_id}/fork", routes.fork, methods=["POST"]),
             Route("/api/sessions/{session_id}", routes.session, methods=["GET", "PATCH", "DELETE"]),
@@ -140,6 +143,7 @@ def create_app(
     app.state.limiter = auth.LoginLimiter()
     app.state.connection_lock = asyncio.Lock()
     app.state.capabilities = {}
+    app.state.extensions = {}
     app.state.profile_id = profile_id
     app.state.profiles = profiles or Profiles(app, transport)
     if profiles is None:

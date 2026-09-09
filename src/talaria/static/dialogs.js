@@ -299,16 +299,12 @@ export function ModelPicker({
   defaultModel,
   onSelect,
   onClose,
-  reasoning = "auto",
-  onReasoning,
   onRefresh,
 }) {
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(80);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const effective = selected || defaultModel;
-  const efforts = reasoningOptions(effective);
   const filtered = models
     .filter((m) =>
       `${m.label} ${m.providerLabel} ${m.id}`
@@ -322,8 +318,6 @@ export function ModelPicker({
     );
   function select(model) {
     onSelect(model);
-    if (!reasoningOptions(model || defaultModel).includes(reasoning))
-      onReasoning("auto");
     onClose();
   }
   const warnings = [
@@ -338,9 +332,6 @@ export function ModelPicker({
   ];
   return html`<${Dialog} title="Choose a model" className="model-dialog" onClose=${onClose}>
     <p class="dialog-intro">Your model selection will only apply to this session.</p>
-    <div class="reasoning-control"><label for="reasoning-effort">Reasoning effort<small>${effective?.capabilities?.reasoning === false ? "This model does not support adjustable reasoning." : "For this session. Auto follows Hermes’s default."}</small></label>
-      <select id="reasoning-effort" aria-label="Reasoning effort" value=${reasoning} disabled=${efforts.length === 1} onChange=${(e) => onReasoning(e.target.value)}>${efforts.map((value) => html`<option value=${value}>${reasoningNames[value]}</option>`)}</select>
-    </div>
     <div class="model-search"><div class="search-field"><${Icon} name="search" size=${18}/><input aria-label="Search models" placeholder="Find a model…" value=${query} onInput=${(
       e,
     ) => {
@@ -409,5 +400,37 @@ export function ModelPicker({
     ${!filtered.length && html`<p class="field-help">${query ? "No models match that search." : "Your Hermes default is available. Additional models appear when Hermes provides them."}</p>`}
     ${filtered.length > limit && html`<button class="load-more" onClick=${() => setLimit(limit + 80)}>Show more models (${filtered.length - limit} remaining)</button>`}
     </div>
+  </${Dialog}>`;
+}
+
+export function ReasoningPicker({ model, selected, onSelect, onClose }) {
+  const options = reasoningOptions(model);
+  return html`<${Dialog} title="Choose reasoning" onClose=${onClose}>
+    <p class="dialog-intro">Your reasoning selection will only apply to this session.</p>
+    ${model?.capabilities?.reasoning === false && html`<p class="field-help">This model does not support adjustable reasoning.</p>`}
+    <div class="model-list reasoning-list">${options.map(
+      (value) =>
+        html`<button
+          key=${value}
+          class=${`model-option ${value === "auto" ? "model-default" : ""}`}
+          aria-pressed=${selected === value}
+          onClick=${() => {
+            onSelect(value);
+            onClose();
+          }}
+        >
+          <span
+            >${reasoningNames[value]}${value === "auto" &&
+            html`<small
+              >Use Hermes’s configured reasoning setting.</small
+            >`}</span
+          >
+          <span class="model-option-end"
+            >${value === "auto" &&
+            html`<span class="default-badge">Default</span>`}${selected ===
+              value && html`<${Icon} name="check" size=${18} />`}</span
+          >
+        </button>`,
+    )}</div>
   </${Dialog}>`;
 }

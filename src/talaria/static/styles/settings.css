@@ -296,12 +296,6 @@
 .extended-access .section-heading {
   flex-wrap: wrap;
 }
-.access-scope {
-  font-size: 11px;
-  color: var(--muted);
-  line-height: 1.8;
-  margin: 14px 0;
-}
 .access-status {
   display: flex;
   align-items: flex-start;
@@ -499,10 +493,6 @@
 }
 .model-caption > span {
   color: var(--text);
-}
-.model-button .default-badge {
-  font-size: 9px;
-  padding: 3px 5px;
 }
 .model-option-end {
   display: inline-flex;

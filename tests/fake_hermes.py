@@ -27,6 +27,8 @@ class FakeHermes:
         self.default_provider = "test"
         self.persist_image_originals = True
         self.discovery_overrides = {}
+        self.extension = None
+        self.rewinds = 0
         self.calls = []
         self.app = Starlette(
             routes=[
@@ -44,6 +46,66 @@ class FakeHermes:
         body = await request.json() if request.method in {"POST", "PATCH", "PUT"} else {}
         if path in self.discovery_overrides:
             return JSONResponse(*self.discovery_overrides[path])
+        if path.startswith("/talaria/v1/"):
+            if self.extension is None:
+                return JSONResponse({"error": "Not installed"}, 404)
+            if path == "/talaria/v1/capabilities":
+                return JSONResponse(
+                    {
+                        "version": 1,
+                        "response_details": True,
+                        "context_usage": True,
+                        "rewind": True,
+                        **self.extension,
+                    }
+                )
+            sid, action = path.split("/")[4:6]
+            if sid not in self.sessions:
+                return JSONResponse({"error": "Not found"}, 404)
+            rows = self.messages[sid]
+            if action == "context":
+                return JSONResponse(
+                    {
+                        "context": {
+                            "used": 12000,
+                            "maximum": 128000,
+                            "model": "actual-response-model",
+                        }
+                        if rows
+                        else None
+                    }
+                )
+            if action == "response":
+                return JSONResponse(
+                    {
+                        "model": "actual-response-model",
+                        "provider": "test",
+                        "reasoning": "high",
+                        "duration_seconds": 2.4,
+                        "usage": {"input_tokens": 12000, "output_tokens": 400},
+                        "finish_reason": "stop",
+                    }
+                )
+            index = next((i for i, row in enumerate(rows) if row["id"] == body["message_id"]), None)
+            if index is None:
+                return JSONResponse({"error": "Not found"}, 409)
+            index = next(i for i in range(index, -1, -1) if rows[i]["role"] == "user")
+            revision = str([row["id"] for row in rows])
+            if body.get("preview"):
+                return JSONResponse(
+                    {
+                        "revision": revision,
+                        "user": rows[index],
+                        "target_id": rows[index]["id"],
+                        "message_count": len(rows) - index,
+                        "turn_count": sum(row["role"] == "user" for row in rows[index:]),
+                    }
+                )
+            if body.get("revision") != revision:
+                return JSONResponse({"error": "Changed"}, 409)
+            self.messages[sid] = rows[:index]
+            self.rewinds += 1
+            return JSONResponse({"ok": True})
         if path == "/v1/capabilities":
             return JSONResponse(
                 {

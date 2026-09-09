@@ -9,7 +9,7 @@ import {
   humanTime,
 } from "./lib.js";
 import { Markdown } from "./markdown.js";
-import { approve, retrySubmission } from "./runs.js";
+import { approve, retrySubmission, running } from "./runs.js";
 import {
   state,
   toast,
@@ -17,6 +17,7 @@ import {
   supports,
   loadOlderMessages,
   openSession,
+  update,
 } from "./store.js";
 import { plainContent, duration, money, numberValue } from "./content.js";
 import {
@@ -149,6 +150,8 @@ function Message({
   streaming = false,
   reasoning = "",
   images = [],
+  record = null,
+  canChange = false,
 }) {
   const [copied, setCopied] = useState(false);
   async function copy() {
@@ -191,13 +194,50 @@ function Message({
       <span /><span /><span /><span class="sr-only">Hermes is thinking</span>
     </div>`}
     ${!streaming &&
-    text &&
+    (text || images.length) &&
     html`<div class="message-actions">
+      ${role !== "user" &&
+      record?.id &&
+      html`<${IconButton}
+        name="info"
+        label="Response details"
+        onClick=${() =>
+          update({
+            modal: { type: "response", session: state.active, message: record },
+          })}
+      />`}
       <${IconButton}
         name=${copied ? "check" : "copy"}
         label=${copied ? "Copied" : "Copy message"}
         onClick=${copy}
       />
+      ${canChange &&
+      html`<${IconButton}
+          name=${role === "user" ? "edit" : "refresh"}
+          label=${role === "user" ? "Edit and resend" : "Regenerate response"}
+          onClick=${() =>
+            update({
+              modal: {
+                type: "message-action",
+                action: role === "user" ? "edit" : "regenerate",
+                session: state.active,
+                message: record,
+              },
+            })}
+        />
+        <${IconButton}
+          name="trash"
+          label="Delete turn"
+          onClick=${() =>
+            update({
+              modal: {
+                type: "message-action",
+                action: "delete",
+                session: state.active,
+                message: record,
+              },
+            })}
+        />`}
     </div>`}
   </article>`;
 }
@@ -275,6 +315,7 @@ function historyItems(history, live) {
       : [];
   for (const [position, message] of history.entries()) {
     if (!message || typeof message !== "object") continue;
+    if (message.display_kind === "hidden") continue;
     if (message.role === "tool") {
       const call = calls.get(message.tool_call_id);
       if (call) {
@@ -338,6 +379,7 @@ function historyItems(history, live) {
       }));
       for (const tool of tools) calls.set(tool.id, tool);
       items.push({
+        record: message,
         role: message.role,
         text:
           message === currentImage
@@ -450,7 +492,22 @@ export function Conversation({ app }) {
           /><span class="sr-only">Loading conversation</span>
         </div>`}
         ${!app.loading &&
-        items.map((m) => html`<${Message} key=${m.id} ...${m} />`)}
+        items.map(
+          (m) =>
+            html`<${Message}
+              key=${m.id}
+              ...${m}
+              canChange=${!!app.caps.talaria_extensions?.rewind &&
+              (
+                app.sessionDetails ||
+                app.sessions.find((s) => s.id === app.active)
+              )?.source === "api_server" &&
+              !app.readOnlyParent &&
+              !running(app.active, app.lives) &&
+              !live?.uncertain &&
+              typeof m.record?.id === "number"}
+            />`,
+        )}
         ${showUser &&
         html`<${Message}
           role="user"

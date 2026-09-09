@@ -26,7 +26,12 @@ import {
 import { Sidebar } from "./sidebar.js";
 import { Conversation } from "./conversation.js";
 import { Composer } from "./composer.js";
-import { Connection, SessionDialog, ModelPicker } from "./dialogs.js";
+import {
+  Connection,
+  SessionDialog,
+  ModelPicker,
+  ReasoningPicker,
+} from "./dialogs.js";
 import {
   ConversationMenu,
   ConversationDetails,
@@ -35,6 +40,8 @@ import {
 import { ReadinessNotice } from "./readiness.js";
 import { Settings } from "./settings.js";
 import { ProfilePicker } from "./profiles.js";
+import { ContextIndicator, ResponseDetails } from "./message-insights.js";
+import { MessageAction } from "./message-actions.js";
 import { sessionModel, sessionReasoning } from "./models.js";
 import { restoreRuns, running } from "./runs.js";
 
@@ -99,14 +106,7 @@ function Welcome({ onSuggestion }) {
   ];
   return html`<div class="welcome">
     <div class="welcome-mark"><${Mark} size=${49} /></div>
-    <div class="eyebrow">A LITTLE MORE ROOM TO THINK</div>
     <h1>Where will your<br />curiosity take you?</h1>
-    <p>
-      A thought, a question, the beginning of something.<br
-        class="desktop-only"
-      />
-      Your Hermes is here to help.
-    </p>
     <div class="suggestions">
       ${suggestions.map(
         ([icon, label, text]) =>
@@ -126,6 +126,7 @@ function App() {
   const mobile = useMediaQuery("(max-width: 700px)");
   const model = sessionModel(app);
   const [modelOpen, setModelOpen] = useState(false);
+  const [reasoningOpen, setReasoningOpen] = useState(false);
   const [suggestion, setSuggestion] = useState(null);
   const restored = useRef(false);
   useEffect(() => {
@@ -214,6 +215,7 @@ function App() {
         </div>
         ${app.active &&
         html`<div class="topbar-actions">
+          <${ContextIndicator} key=${app.active} app=${app} />
           <${IconButton}
             name="search"
             label="Find in conversation"
@@ -279,6 +281,7 @@ function App() {
               app=${app}
               model=${model}
               onModel=${() => setModelOpen(true)}
+              onReasoning=${() => setReasoningOpen(true)}
               draftSuggestion=${suggestion}
             />
             <p class="composer-hint">
@@ -314,6 +317,15 @@ function App() {
       session=${app.modal.session}
       onClose=${close}
     />`}
+    ${app.modal?.type === "response" &&
+    html`<${ResponseDetails}
+      session=${app.modal.session}
+      message=${app.modal.message}
+      enabled=${!!app.caps.talaria_extensions?.response_details}
+      onClose=${close}
+    />`}
+    ${app.modal?.type === "message-action" &&
+    html`<${MessageAction} ...${app.modal} onClose=${close} />`}
     ${app.modal?.type === "download" &&
     html`<${TranscriptDownload}
       session=${app.modal.session}
@@ -331,10 +343,15 @@ function App() {
       selected=${model}
       defaultModel=${app.defaultModel}
       onSelect=${(m) => chooseModel(m)}
-      reasoning=${sessionReasoning(app)}
-      onReasoning=${(value) => chooseReasoning(value)}
       onRefresh=${() => refreshModels(true)}
       onClose=${() => setModelOpen(false)}
+    />`}
+    ${reasoningOpen &&
+    html`<${ReasoningPicker}
+      model=${model || app.defaultModel}
+      selected=${sessionReasoning(app)}
+      onSelect=${chooseReasoning}
+      onClose=${() => setReasoningOpen(false)}
     />`}
   </div>`;
 }

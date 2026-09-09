@@ -21,6 +21,10 @@ def development_app():
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "hermes-plugin":
+        from .plugin_install import main as install_plugin
+
+        return install_plugin(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] in {"install", "update", "rollback", "status"}:
         from .deployment import main as manage
 

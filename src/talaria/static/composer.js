@@ -17,7 +17,13 @@ import {
 } from "./attachments.js";
 import { sessionReasoning, reasoningNames } from "./models.js";
 
-export function Composer({ app, model, onModel, draftSuggestion }) {
+export function Composer({
+  app,
+  model,
+  onModel,
+  onReasoning,
+  draftSuggestion,
+}) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [images, setImages] = useState([]);
@@ -325,11 +331,21 @@ export function Composer({ app, model, onModel, draftSuggestion }) {
             ><small>${displayedModel?.providerLabel || "Hermes"}</small
             ><span>${displayedModel?.id || "Configured model"}</span></span
           >
-          ${!model && html`<span class="default-badge">Default</span>`}
-          ${reasoning !== "auto" &&
-          html`<span class="reasoning-badge" title="Reasoning effort"
-            >${reasoningNames[reasoning]}</span
-          >`}
+          <${Icon} name="chevron" size=${14} />
+        </button>
+        <button
+          class="model-button reasoning-button"
+          type="button"
+          aria-label="Choose reasoning"
+          aria-haspopup="dialog"
+          title=${`Reasoning · ${reasoningNames[reasoning]}`}
+          onClick=${onReasoning}
+          disabled=${active || !app.connected}
+        >
+          <span class="model-caption"
+            ><small>Reasoning</small
+            ><span>${reasoningNames[reasoning]}</span></span
+          >
           <${Icon} name="chevron" size=${14} />
         </button>
       </div>

@@ -66,10 +66,11 @@ class Profiles:
                         raise ValueError
                     if not all(
                         isinstance(record.get(k, ""), str) and len(record.get(k, "")) <= limit
-                        for k, limit in (("label", 80), ("api_key", 4096), ("hermes_home", 4096))
+                        for k, limit in (("label", 80), ("api_key", 4096))
                     ):
                         raise ValueError
                     record["url"] = config.validate_url(record["url"])
+                    record.pop("hermes_home", None)
                     self.records[record["id"]] = record
             except (OSError, ValueError, KeyError, TypeError, AttributeError):
                 self.records = {}
@@ -114,7 +115,6 @@ class Profiles:
                 self.app.state.settings,
                 hermes_url=record["url"],
                 api_key=record["api_key"],
-                hermes_home=record.get("hermes_home", ""),
             )
             self.apps[profile_id] = create_app(
                 settings,
@@ -153,7 +153,6 @@ class Profiles:
                             **record,
                             "url": settings.hermes_url,
                             "api_key": settings.api_key,
-                            "hermes_home": settings.hermes_home,
                         },
                     }
                 )
@@ -260,7 +259,6 @@ async def listing(request):
                     "label": label,
                     "url": url,
                     "api_key": key,
-                    "hermes_home": "",
                 },
             }
         )

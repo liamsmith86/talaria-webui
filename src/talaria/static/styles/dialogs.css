@@ -43,7 +43,8 @@
   font-size: 12px;
   font-weight: 520;
 }
-.field input {
+.field input,
+.field textarea {
   padding: 12px 13px;
   background: var(--canvas);
   border: 1px solid var(--line-strong);
@@ -52,7 +53,8 @@
   width: 100%;
   font-size: 13px;
 }
-.field input:focus {
+.field input:focus,
+.field textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }

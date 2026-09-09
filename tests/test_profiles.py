@@ -187,19 +187,11 @@ def test_removal_only_forgets_the_connection(live_app, research):
 
 def test_named_settings_and_readiness_stay_with_their_profile(live_app, research, tmp_path):
     profile_id, second = research
-    home = tmp_path / "research-home"
-    home.mkdir()
-    (home / "SOUL.md").write_text("# Identity\nName: Research assistant\n")
+    second.extension = {"agent": {"name": "Research assistant"}}
     second.default_model = "research-model"
     second.discovery_overrides["/health/detailed"] = ({"status": "degraded"}, 200)
     original = live_app[2].state.settings
     with signed_in(live_app[0]) as client:
-        assert (
-            client.put(
-                scoped("/api/hermes-access", profile_id), json={"path": str(home)}
-            ).status_code
-            == 200
-        )
         second.api_key = "rotated-research-key"
         assert (
             client.put(
@@ -208,6 +200,7 @@ def test_named_settings_and_readiness_stay_with_their_profile(live_app, research
             ).status_code
             == 200
         )
+        client.get(scoped("/api/capabilities", profile_id))
         assert client.get(scoped("/api/bootstrap", profile_id)).json()["agent"]["name"] == (
             "Research assistant"
         )
@@ -217,7 +210,7 @@ def test_named_settings_and_readiness_stay_with_their_profile(live_app, research
         assert client.get("/api/readiness").json()["status"] == "ok"
         assert live_app[2].state.settings == original
         record = live_app[2].state.profiles.records[profile_id]
-        assert record["api_key"] == second.api_key and record["hermes_home"] == str(home)
+        assert record["api_key"] == second.api_key and "hermes_home" not in record
 
 
 def test_same_session_ids_and_images_are_isolated_and_responses_survive_switching(

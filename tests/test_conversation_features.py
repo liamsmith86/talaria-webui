@@ -244,20 +244,22 @@ def test_usage_distinguishes_zero_unknown_and_estimate(page, live_app):
 
 
 def test_reasoning_is_session_scoped_and_catalog_is_inherited(page, live_app):
-    chooser = page.get_by_role("button", name="Choose model", exact=True)
+    chooser = page.get_by_role("button", name="Choose reasoning", exact=True)
     chooser.click()
-    page.get_by_label("Reasoning effort", exact=True).select_option("high")
-    page.get_by_role("button", name="Close dialog").click()
+    expect(
+        page.get_by_text("Your reasoning selection will only apply to this session.")
+    ).to_be_visible()
+    page.get_by_role("button", name="High", exact=True).click()
     send(page, "Reason carefully")
     assert next(iter(live_app[1].runs.values()))["model_options"]["reasoning"]["effort"] == "high"
     page.reload()
     chooser.click()
-    expect(page.get_by_label("Reasoning effort", exact=True)).to_have_value("high")
+    expect(page.get_by_role("button", name="High", exact=True)).to_have_attribute(
+        "aria-pressed", "true"
+    )
     page.get_by_role("button", name="Close dialog").click()
     page.get_by_role("button", name=re.compile("^New conversation")).click()
-    chooser.click()
-    expect(page.get_by_label("Reasoning effort", exact=True)).to_have_value("auto")
-    page.get_by_role("button", name="Close dialog").click()
+    expect(chooser).to_contain_text("Auto")
     send(page, "Use the default reasoning")
     assert list(live_app[1].runs.values())[-1]["model_options"] is None
 
@@ -292,9 +294,6 @@ def test_catalog_warnings_prices_and_unavailable_models(page, live_app):
     page.get_by_role("button", name="Choose model", exact=True).click()
     expect(page.get_by_role("button", name=re.compile("locked.*Unavailable"))).to_be_disabled()
     expect(page.get_by_text("Per 1M tokens", exact=False)).to_contain_text("$0.25")
-    expect(
-        page.get_by_label("Reasoning effort", exact=True).locator('option[value="none"]')
-    ).to_have_count(0)
     page.locator(".catalog-warnings summary").click()
     expect(page.get_by_text("Account information needs refreshing.", exact=False)).to_be_visible()
     page.get_by_role("button", name="Refresh model catalog").click()
@@ -302,8 +301,9 @@ def test_catalog_warnings_prices_and_unavailable_models(page, live_app):
     assert ("GET", "/api/model/options", {"refresh": "1"}) in peer.calls
     screenshot(page, "model-information")
     page.get_by_role("button", name="plain Test provider", exact=True).click()
-    page.get_by_role("button", name="Choose model", exact=True).click()
-    expect(page.get_by_label("Reasoning effort", exact=True)).to_be_disabled()
+    page.get_by_role("button", name="Choose reasoning", exact=True).click()
+    expect(page.get_by_text("This model does not support adjustable reasoning.")).to_be_visible()
+    expect(page.get_by_role("button", name="High", exact=True)).to_have_count(0)
 
 
 def test_image_draft_history_display_and_download(page, live_app):

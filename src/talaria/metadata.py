@@ -5,7 +5,6 @@ import asyncio
 from starlette.responses import JSONResponse
 
 from .hermes import APIError
-from .hermes_access.files import inspect_home
 
 
 def text(value, limit=160):
@@ -19,14 +18,15 @@ def rows(value):
     return [row for row in data[:2000] if isinstance(row, dict) and text(row.get("name"))]
 
 
-def agent_identity(caps, local):
+def agent_identity(caps, extended):
     caps = caps if isinstance(caps, dict) else {}
     agent = caps.get("agent")
     name = text(agent.get("name"), 80) if isinstance(agent, dict) else ""
     name = name or text(caps.get("agent_name"), 80)
+    extension_name = text((extended.get("agent") or {}).get("name"), 80)
     return {
-        "name": name or local.name or "Hermes",
-        "name_source": "hermes" if name else "files" if local.name else "fallback",
+        "name": name or extension_name or "Hermes",
+        "name_source": "hermes" if name else "extension" if extension_name else "fallback",
     }
 
 
@@ -105,26 +105,26 @@ async def details(request):
         except APIError:
             return None
 
-    health, skills, toolsets, local = await asyncio.gather(
+    from .extensions import discover
+
+    health, skills, toolsets, extended = await asyncio.gather(
         read("/health/detailed"),
         read("/v1/skills", "skills" in advertised or features.get("skills_api") is True),
         read("/v1/toolsets", "toolsets" in advertised or features.get("skills_api") is True),
-        asyncio.to_thread(inspect_home, state.settings.hermes_home),
+        discover(state.hermes),
     )
+    state.extensions = extended
     health = health if isinstance(health, dict) and text(health.get("status")) else None
     skills, toolsets = rows(skills), rows(toolsets)
     platforms = (health or {}).get("platforms", {})
     return JSONResponse(
         {
-            **agent_identity(caps, local),
-            "extended_access": local.public(),
+            **agent_identity(caps, extended),
+            "extended_access": extended,
             "version": text((health or {}).get("version"), 40),
             "status": text((health or {}).get("status"), 32),
             "readiness": readiness_info(health),
             "gateway_state": text((health or {}).get("gateway_state"), 32),
-            "active_agents": (health or {}).get("active_agents")
-            if type((health or {}).get("active_agents")) is int
-            else None,
             "platforms": [
                 {"name": text(name), "state": text(value.get("state"), 32)}
                 for name, value in list(platforms.items())[:50]

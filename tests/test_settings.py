@@ -8,10 +8,6 @@ from .test_browser import screenshot
 def test_agent_settings_and_extended_access(page, live_app, tmp_path):
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
-    home = tmp_path / "hermes"
-    home.mkdir()
-    soul = home / "SOUL.md"
-    soul.write_text("You are Juniper, a personal agent.")
     page.get_by_role("button", name="Your space").click()
     expect(page.get_by_role("dialog")).to_be_visible()
     expect(page.get_by_text("1.2.3", exact=True)).to_be_visible()
@@ -21,14 +17,11 @@ def test_agent_settings_and_extended_access(page, live_app, tmp_path):
     expect(page.get_by_role("tab", name="Talaria", exact=True)).to_be_focused()
     page.keyboard.press("ArrowLeft")
     expect(page.get_by_role("tab", name="Connection", exact=True)).to_be_focused()
-    field = page.get_by_label("Hermes directory", exact=True)
-    expect(field).to_be_enabled()
-    field.fill(str(home))
-    page.get_by_role("button", name="Test access", exact=True).click()
-    expect(page.get_by_text("Found Juniper in SOUL.md.", exact=True)).to_be_visible()
-    assert not live_app[2].state.settings.hermes_home
-    page.get_by_role("button", name="Save access", exact=True).click()
-    expect(page.locator(".toast")).to_have_text("Extended access saved")
+    expect(page.get_by_label("Hermes directory", exact=True)).to_have_count(0)
+    expect(page.get_by_text("Talaria plugin not detected", exact=True)).to_be_visible()
+    live_app[1].extension = {"agent": {"name": "Juniper"}}
+    page.get_by_role("button", name="Check again", exact=True).click()
+    expect(page.get_by_text("Connected · Talaria plugin", exact=True)).to_be_visible()
     page.get_by_role("tab", name="Your agent", exact=True).click()
     expect(page.get_by_role("heading", name="Juniper", exact=True)).to_be_visible()
     assert page.locator(".settings-panel").evaluate("el => el.scrollTop") == 0
@@ -41,14 +34,11 @@ def test_agent_settings_and_extended_access(page, live_app, tmp_path):
     expect(page.get_by_text("Connected to Juniper", exact=True)).to_be_visible()
     page.reload()
     expect(page.get_by_text("Connected to Juniper", exact=True)).to_be_visible()
-    soul.write_text("Changed upstream identity format")
+    live_app[1].extension = None
     page.get_by_role("button", name="Your space").click()
     expect(page.get_by_role("heading", name="Hermes", exact=True)).to_be_visible()
     page.get_by_role("tab", name="Connection", exact=True).click()
-    expect(page.get_by_text("No supported agent name was found.", exact=False)).to_be_visible()
-    page.get_by_label("Hermes directory", exact=True).fill("")
-    page.get_by_role("button", name="Save access", exact=True).click()
-    expect(page.get_by_text("Extended access is off.", exact=False)).to_be_visible()
+    expect(page.get_by_text("Talaria plugin not detected", exact=True)).to_be_visible()
     page.get_by_role("button", name="Close dialog").click()
     expect(page.get_by_text("Connected to Hermes", exact=True)).to_be_visible()
     assert not errors
@@ -58,7 +48,7 @@ def test_models_are_scoped_to_each_session(page, live_app):
     chooser = page.get_by_role("button", name="Choose model", exact=True)
     expect(chooser).to_contain_text("Test provider")
     expect(chooser).to_contain_text("hermes-test")
-    expect(chooser).to_contain_text("Default")
+    expect(chooser).not_to_contain_text("Default")
     chooser.click()
     expect(
         page.get_by_text("Your model selection will only apply to this session.")
@@ -77,7 +67,7 @@ def test_models_are_scoped_to_each_session(page, live_app):
     first = next(iter(live_app[1].runs.values()))
     assert (first["model"], first["provider"]) == ("hermes-fast", "test")
     page.get_by_role("button", name=re.compile("^New conversation")).click()
-    expect(chooser).to_contain_text("Default")
+    expect(chooser).not_to_contain_text("Default")
     send("A default model")
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
     second = list(live_app[1].runs.values())[1]
@@ -88,7 +78,7 @@ def test_models_are_scoped_to_each_session(page, live_app):
     expect(chooser).to_contain_text("hermes-fast")
     chooser.click()
     page.get_by_role("button", name=re.compile("hermes-test.*Default")).click()
-    expect(chooser).to_contain_text("Default")
+    expect(chooser).not_to_contain_text("Default")
     send("Follow the configured default")
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_have_count(2)
     third = list(live_app[1].runs.values())[2]

@@ -18,6 +18,7 @@ pytestmark = pytest.mark.skipif(not AXE, reason="Set TALARIA_AXE_PATH to a local
 @pytest.mark.parametrize("theme", ["light", "dark"])
 @pytest.mark.parametrize("palette", ["blue", "sage", "violet", "rose"])
 def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
+    live_app[1].extension = {}
     monkeypatch.setattr(
         installation,
         "public_info",
@@ -75,8 +76,23 @@ def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
     page.get_by_role("button", name="Allow once").click()
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
     audit("conversation")
+    page.get_by_role("button", name="Response details", exact=True).last.click()
+    expect(page.get_by_role("dialog")).to_contain_text("actual-response-model")
+    audit("response-details")
+    page.get_by_role("button", name="Close dialog").click()
+    page.get_by_role("button", name="Context usage", exact=True).click()
+    expect(page.get_by_role("progressbar")).to_be_visible()
+    audit("context-usage")
+    page.get_by_role("button", name="Close dialog").click()
+    page.get_by_role("button", name="Edit and resend", exact=True).first.click()
+    expect(page.get_by_label("Edit message", exact=True)).to_be_visible()
+    audit("edit-message")
+    page.get_by_role("button", name="Close dialog").click()
     page.get_by_role("button", name="Choose model", exact=True).click()
-    audit("model-and-reasoning")
+    audit("model-picker")
+    page.get_by_role("button", name="Close dialog").click()
+    page.get_by_role("button", name="Choose reasoning", exact=True).click()
+    audit("reasoning-picker")
     page.get_by_role("button", name="Close dialog").click()
     page.get_by_role("button", name="Conversation options", exact=True).click()
     audit("conversation-menu")

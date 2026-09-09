@@ -1,4 +1,4 @@
-"""Optional, bounded reads of explicitly supported Hermes identity files."""
+"""Identity projection inside Hermes. No paths or file contents cross the API."""
 
 import os
 import re
@@ -18,22 +18,6 @@ class AccessDetails:
 
     def public(self):
         return asdict(self)
-
-
-def validate_home(value: str) -> str:
-    if not value.strip():
-        return ""
-    if any(ord(c) < 32 for c in value):
-        raise ValueError("Enter a directory on the Talaria server.")
-    try:
-        path = Path(value.strip()).expanduser()
-    except RuntimeError as exc:
-        raise ValueError("Enter an absolute directory on the Talaria server.") from exc
-    if not path.is_absolute():
-        raise ValueError("Enter an absolute directory, such as /home/you/.hermes.")
-    if path.name == "config.yaml":
-        path = path.parent
-    return str(path)
 
 
 def _name(value: str) -> str:
@@ -72,7 +56,7 @@ def inspect_home(directory: str) -> AccessDetails:
     if not isinstance(directory, str):
         return AccessDetails("unreadable")
     try:
-        home = Path(validate_home(directory)).resolve()
+        home = Path(directory)
         if not home.is_dir():
             return AccessDetails("not_found")
     except (OSError, ValueError, RuntimeError):

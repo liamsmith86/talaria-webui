@@ -67,6 +67,13 @@ def page(playwright_runtime, live_app):
     page.get_by_label("Password", exact=True).fill("test-password")
     page.get_by_role("button", name="Step inside").click()
     page.locator(".topbar-title").wait_for()
+    # Start scenarios after the simulator's initial discovery. Reloading while those
+    # reads are pending produces WebKit navigation-cancellation diagnostics.
+    state = page.evaluate_handle("async () => (await import('/static/store.js')).state")
+    page.wait_for_function(
+        "state => !!state.defaultModel && state.readiness.status === 'ok'", arg=state
+    )
+    state.dispose()
     yield page
     context.close()
     browser.close()

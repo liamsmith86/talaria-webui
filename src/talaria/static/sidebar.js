@@ -168,11 +168,6 @@ export function Sidebar({ app }) {
           : "A fresh start. Your conversations will find a home here."}
       </div>`}
       ${app.hasMore &&
-      query &&
-      html`<div class="sidebar-empty">
-        Searching loaded conversations. Load more to include older ones.
-      </div>`}
-      ${app.hasMore &&
       html`<button
         class="load-more"
         disabled=${moreBusy}

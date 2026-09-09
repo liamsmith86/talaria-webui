@@ -306,11 +306,6 @@ kbd {
   letter-spacing: -1.8px;
   margin: 17px 0 17px;
 }
-.welcome > p {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.9;
-}
 .suggestions {
   display: flex;
   gap: 10px;

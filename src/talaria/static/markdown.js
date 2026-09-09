@@ -28,7 +28,7 @@ renderer.code = ({ text, lang }) => {
       : escape(text);
   return `<div class="code-block"><div class="code-heading"><span>${language}</span><button type="button" data-copy-code="true">Copy code</button></div><pre tabindex="0" role="region" aria-label="${language} code"><code>${highlighted}</code></pre></div>`;
 };
-marked.use({ renderer, gfm: true, breaks: false });
+marked.use({ renderer, gfm: true, breaks: true });
 
 export function renderMarkdown(text) {
   return DOMPurify.sanitize(marked.parse(text || ""), {

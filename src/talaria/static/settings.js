@@ -181,11 +181,7 @@ function Overview({ app, navigate }) {
       >
       <div>
         <h3>${app.agent.name}</h3>
-        <p>
-          ${app.agent.name_source === "files"
-            ? "Name from Hermes files"
-            : "Hermes Agent"}
-        </p>
+        <p>Hermes Agent</p>
       </div>
       <span class=${`status-badge ${app.connected ? "positive" : ""}`}
         >${app.connected ? "Connected" : "Offline"}</span
@@ -217,7 +213,6 @@ function Overview({ app, navigate }) {
               ? readable(info.status)
               : "Not available",
         ],
-        ["Active agents", info?.active_agents],
       ]}
     />
     ${info?.platforms.length > 0 &&

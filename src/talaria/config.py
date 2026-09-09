@@ -18,7 +18,6 @@ class Settings:
     public_url: str = ""
     host: str = "127.0.0.1"
     port: int = 8766
-    hermes_home: str = ""
 
     @property
     def secure(self) -> bool:
@@ -70,7 +69,9 @@ def save_data(path: Path, data: dict) -> None:
 
 
 def load(path: Path) -> Settings:
-    settings = Settings(**json.loads(path.read_text())) if path.exists() else Settings()
+    data = json.loads(path.read_text()) if path.exists() else {}
+    data.pop("hermes_home", None)  # Retired in favor of the authenticated Hermes plugin.
+    settings = Settings(**data)
     if not settings.signing_key:
         settings.signing_key = secrets.token_hex(32)
     settings.hermes_url = validate_url(settings.hermes_url)

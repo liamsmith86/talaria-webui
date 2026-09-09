@@ -184,6 +184,7 @@ export async function refreshAgentInfo() {
   const info = await api("/agent");
   update({
     agentInfo: info,
+    caps: { ...state.caps, talaria_extensions: info.extended_access || {} },
     readiness: info.readiness || state.readiness,
     agent: { name: info.name, name_source: info.name_source },
   });

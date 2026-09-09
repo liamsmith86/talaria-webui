@@ -1,0 +1,220 @@
+"""Versioned routes through Hermes's native plugin seam; no patched core or second runtime."""
+
+import asyncio
+import hashlib
+import inspect
+import json
+import logging
+
+from .observations import Observations
+
+log = logging.getLogger(__name__)
+PREFIX = "/talaria/v1"
+MAX_MESSAGES = 20000
+
+
+def revision(ids, content):
+    return hashlib.sha256(json.dumps([ids, content], separators=(",", ":")).encode()).hexdigest()
+
+
+def rewind_preview(db, sid, message_id):
+    from agent.context_compressor import split_user_originated_turn
+    from agent.memory_manager import sanitize_context
+
+    if (db.get_session(sid) or {}).get("source") != "api_server":
+        raise ValueError("Only API conversations can be changed here.")
+
+    ids = db.get_active_message_ids(sid)
+    if len(ids) > MAX_MESSAGES:
+        raise ValueError("This conversation is too large to rewind here.")
+    rows = db.get_messages(sid, limit=MAX_MESSAGES + 1)
+    # Active-id CAS detects messages arriving during the read as well as during confirmation.
+    if [row["id"] for row in rows] != ids:
+        raise RuntimeError("The conversation changed. Reopen the action and try again.")
+    index = next((i for i, row in enumerate(rows) if row["id"] == message_id), None)
+    if index is None or rows[index].get("role") not in {"user", "assistant"}:
+        raise ValueError("This message is no longer available to change.")
+    target = next(
+        (i for i in range(index, -1, -1) if split_user_originated_turn(rows[i])[1] is not None),
+        None,
+    )
+    if target is None:
+        raise ValueError(
+            "The original message is in older, compacted history and cannot be changed here."
+        )
+    handoff, user = split_user_originated_turn(rows[target])
+    content = user.get("content")
+    if isinstance(content, str):
+        content = sanitize_context(content).strip()
+    return (
+        {
+            "revision": revision(ids, content),
+            "target_id": rows[target]["id"],
+            "message_count": len(rows) - target,
+            "turn_count": sum(
+                split_user_originated_turn(row)[1] is not None for row in rows[target:]
+            ),
+            "user": {"id": rows[target]["id"], "role": "user", "content": content},
+        },
+        ids,
+        handoff is not None,
+    )
+
+
+def rewind(db, sid, data):
+    preview, ids, composite = rewind_preview(db, sid, data["message_id"])
+    if data.get("preview") is True:
+        return preview
+    if data.get("revision") != preview["revision"]:
+        raise RuntimeError("The conversation changed. Reopen the action and try again.")
+    result = db.rewind_to_message(
+        sid,
+        preview["target_id"],
+        expected_active_ids=ids,
+        preserve_compaction_handoff=composite,
+        expected_target_content=preview["user"]["content"],
+    )
+    return {"ok": True, "removed": result["rewound_count"]}
+
+
+def wire(app, adapter):
+    from aiohttp import web
+    from hermes_constants import get_hermes_home
+
+    if not callable(getattr(adapter, "_check_auth", None)) or not callable(
+        getattr(adapter, "_ensure_session_db_async", None)
+    ):
+        log.warning("Talaria routes unavailable: incompatible Hermes API adapter")
+        return
+
+    async def dispatch(request):
+        auth_error = adapter._check_auth(request)
+        if auth_error is not None:
+            return auth_error
+        # Named profiles opt in independently, even when the root listener wires the routes.
+        from hermes_cli.config import load_config
+
+        plugins = (load_config() or {}).get("plugins") or {}
+        if "talaria" not in plugins.get("enabled", []) or "talaria" in plugins.get("disabled", []):
+            return web.json_response(
+                {"error": "Talaria plugin is not enabled for this profile."}, status=404
+            )
+        try:
+            db = await adapter._ensure_session_db_async()
+            if db is None:
+                return web.json_response(
+                    {"error": "Hermes session storage is unavailable."}, status=503
+                )
+            can_rewind = (
+                callable(getattr(db, "get_active_message_ids", None))
+                and callable(getattr(db, "rewind_to_message", None))
+                and "expected_active_ids" in inspect.signature(db.rewind_to_message).parameters
+            )
+            action = request.match_info.get("action", "capabilities")
+            if action == "capabilities":
+                from .identity import inspect_home
+
+                identity = await asyncio.to_thread(inspect_home, str(get_hermes_home()))
+                return web.json_response(
+                    {
+                        "version": 1,
+                        "response_details": True,
+                        "context_usage": True,
+                        "rewind": can_rewind,
+                        "agent": {"name": identity.name},
+                    }
+                )
+            sid = request.match_info["session_id"]
+            session = await asyncio.to_thread(db.get_session, sid)
+            if session is None:
+                return web.json_response({"error": "Conversation not found."}, status=404)
+            observations = Observations(get_hermes_home())
+            if action == "rewind":
+                if not can_rewind:
+                    return web.json_response(
+                        {"error": "Update Hermes to enable conversation changes."}, status=501
+                    )
+                data = await request.json()
+                if not isinstance(data, dict) or type(data.get("message_id")) is not int:
+                    raise ValueError("Choose a saved message.")
+                return web.json_response(await asyncio.to_thread(rewind, db, sid, data))
+            message_id = request.query.get("message_id")
+            if action == "response":
+                message_id = int(message_id)
+                rows = await asyncio.to_thread(
+                    db.get_messages, sid, after_id=message_id - 1, limit=1
+                )
+                if not rows or rows[0]["id"] != message_id:
+                    return web.json_response({"error": "Message not found."}, status=404)
+                row = rows[0]
+                detail = await asyncio.to_thread(observations.read, sid, message_id)
+                return web.json_response(
+                    {
+                        "message_id": message_id,
+                        "timestamp": row.get("timestamp"),
+                        "finish_reason": row.get("finish_reason"),
+                        "has_reasoning": bool(row.get("reasoning") or row.get("reasoning_content")),
+                        **(detail or {}),
+                    }
+                )
+            detail = await asyncio.to_thread(observations.read, sid)
+            if detail:
+                rows = await asyncio.to_thread(
+                    db.get_messages, sid, after_id=detail["message_id"] - 1, limit=1
+                )
+                if not rows or rows[0]["id"] != detail["message_id"]:
+                    detail = None  # A rewind invalidates the removed turn's context observation.
+            return web.json_response(
+                {
+                    "context": {
+                        "used": detail["usage"].get("input_tokens"),
+                        "maximum": detail.get("context_max"),
+                        "model": detail.get("model"),
+                        "observed_at": detail.get("observed_at"),
+                    }
+                    if detail
+                    else None
+                }
+            )
+        except (ValueError, TypeError):
+            return web.json_response(
+                {
+                    "error": "This message cannot be changed safely. "
+                    "Refresh the conversation and try again."
+                },
+                status=400,
+            )
+        except RuntimeError:
+            return web.json_response(
+                {
+                    "error": "The conversation changed or is busy. "
+                    "Wait for it to finish, then reopen this action."
+                },
+                status=409,
+            )
+        except Exception:
+            log.exception("Talaria extension request failed")
+            return web.json_response(
+                {
+                    "error": "Hermes could not complete this action. "
+                    "Your conversation is still available."
+                },
+                status=503,
+            )
+
+    for prefix in (PREFIX, f"/p/{{profile}}{PREFIX}"):
+        app.router.add_get(f"{prefix}/capabilities", dispatch)
+        app.router.add_get(
+            f"{prefix}/sessions/{{session_id}}/{{action:context|response}}", dispatch
+        )
+        app.router.add_post(f"{prefix}/sessions/{{session_id}}/{{action:rewind}}", dispatch)
+
+
+def register(ctx):
+    from hermes_constants import get_hermes_home
+
+    observations = Observations(get_hermes_home())
+    ctx.register_platform_handler("api_server", wire)
+    ctx.register_hook("pre_api_request", observations.before)
+    ctx.register_hook("post_api_request", observations.after)
+    ctx.register_hook("on_session_end", observations.end)
