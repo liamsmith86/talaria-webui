@@ -14,7 +14,8 @@ KEY = "test-hermes-key-do-not-use"
 
 
 class FakeHermes:
-    def __init__(self):
+    def __init__(self, api_key=KEY):
+        self.api_key = api_key
         self.sessions = {}
         self.messages = {}
         self.runs = {}
@@ -36,7 +37,7 @@ class FakeHermes:
         )
 
     async def handle(self, request: Request):
-        if request.headers.get("authorization") != f"Bearer {KEY}":
+        if request.headers.get("authorization") != f"Bearer {self.api_key}":
             return JSONResponse({"error": "Unauthorized"}, 401)
         path = request.url.path
         self.calls.append((request.method, path, dict(request.query_params)))

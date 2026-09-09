@@ -8,11 +8,12 @@ from dataclasses import replace
 from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 
-from . import __version__, auth, config
+from . import __version__, auth
 from .content import MAX_CHAT_BODY, REASONING, image_inputs
 from .hermes import APIError, Hermes, identifier
 from .hermes_access.files import inspect_home, validate_home
 from .metadata import agent_identity
+from .profiles import connection_url
 from .relay import Relay
 from .transcripts import message_page
 
@@ -48,10 +49,15 @@ async def bootstrap(request: Request):
     return JSONResponse(
         {
             "version": __version__,
+            "environment": "development" if request.app.state.development else "production",
             "authenticated": logged_in,
             "csrf": auth.csrf_token(request) if logged_in else None,
             "connected": bool(settings.api_key) if logged_in else False,
             "agent": agent_identity(request.app.state.capabilities, local) if logged_in else None,
+            "profile": request.app.state.profiles.describe(request.app.state.profile_id)
+            if logged_in
+            else None,
+            "profiles": request.app.state.profiles.public()["profiles"] if logged_in else [],
         }
     )
 
@@ -69,7 +75,7 @@ async def login(request: Request):
     cookie = auth.issue_cookie(state.settings)
     response = JSONResponse({"ok": True})
     response.set_cookie(
-        auth.COOKIE,
+        state.cookie_name,
         cookie,
         max_age=auth.TTL,
         httponly=True,
@@ -82,7 +88,7 @@ async def login(request: Request):
 
 async def logout(request: Request):
     response = JSONResponse({"ok": True})
-    response.delete_cookie(auth.COOKIE, path="/")
+    response.delete_cookie(request.app.state.cookie_name, path="/")
     return response
 
 
@@ -90,19 +96,26 @@ async def connection(request: Request):
     state = request.app.state
     if request.method == "GET":
         return JSONResponse(
-            {"url": state.settings.hermes_url, "key_set": bool(state.settings.api_key)}
+            {
+                "url": state.settings.hermes_url,
+                "key_set": bool(state.settings.api_key),
+                **state.profiles.describe(state.profile_id),
+            }
         )
     data = await body(request)
     try:
-        url = config.validate_url(text_field(data, "url", 2048))
-    except ValueError as exc:
+        text_field(data, "url", 2048)
+        url = connection_url(data)
+    except (ValueError, TypeError, AttributeError) as exc:
         raise APIError(str(exc), 400, "invalid_url") from exc
     key = text_field(data, "api_key", 4096)
-    if not key and url == state.settings.hermes_url:
+    if not key and url == state.settings.hermes_url and request.url.path != "/api/profiles/test":
         key = state.settings.api_key
     if not key or any(ord(c) < 32 for c in key):
         raise APIError("Enter the API key from your Hermes API server.", 400)
-    client = Hermes(url, key)
+    if request.method == "PUT" and state.settings.api_key and url != state.settings.hermes_url:
+        raise APIError("Add a profile to connect to another Hermes address or profile.", 409)
+    client = Hermes(url, key, transport=state.profiles.transport)
     try:
         caps = await client.request("GET", "/v1/capabilities")
         if caps.get("platform") != "hermes-agent" and not caps.get("features"):
@@ -114,7 +127,7 @@ async def connection(request: Request):
                         "Wait for active conversations to finish before changing Hermes.", 409
                     )
                 settings = replace(state.settings, hermes_url=url, api_key=key)
-                await asyncio.to_thread(config.save, state.config_path, settings)
+                await state.profiles.save_settings(state.profile_id, settings)
                 await state.relay.close()
                 await state.hermes.close()
                 state.settings, state.hermes = settings, client
@@ -148,7 +161,7 @@ async def hermes_access(request: Request):
     if request.method == "PUT":
         async with state.connection_lock:
             settings = replace(state.settings, hermes_home=directory)
-            await asyncio.to_thread(config.save, state.config_path, settings)
+            await state.profiles.save_settings(state.profile_id, settings)
             state.settings = settings
     return JSONResponse(
         {"path": directory, **local.public(), "agent": agent_identity(state.capabilities, local)}
@@ -259,8 +272,15 @@ async def start_run(request: Request):
     idem = text_field(data, "request_id", 128) or secrets.token_hex(16)
     identifier(idem)
     state = request.app.state
-    async with state.connection_lock:
-        if len([c for c in state.relay.channels.values() if not c.finished]) >= 16:
+    async with state.connection_lock, state.profiles.run_lock:
+        if (
+            sum(
+                not c.finished
+                for app in state.profiles.apps.values()
+                for c in app.state.relay.channels.values()
+            )
+            >= 16
+        ):
             raise APIError("There are too many active conversations. Wait for one to finish.", 429)
         result = await state.hermes.request(
             "POST",
@@ -269,7 +289,7 @@ async def start_run(request: Request):
             headers={"Idempotency-Key": idem, "X-Hermes-Session-Key": f"talaria:{sid}"},
         )
         run_id = identifier(result.get("run_id", ""))
-        state.relay.attach(run_id)
+        state.profiles.attach(state, run_id)
     return JSONResponse(result, status_code=202)
 
 
@@ -307,7 +327,8 @@ async def events(request: Request):
         cursor = max(0, int(request.headers.get("last-event-id", "0")))
     except ValueError as exc:
         raise APIError("Invalid event cursor.", 400) from exc
-    channel = request.app.state.relay.attach(rid)
+    state = request.app.state
+    channel = state.profiles.attach(state, rid)
     return StreamingResponse(
         request.app.state.relay.stream(channel, cursor),
         media_type="text/event-stream",

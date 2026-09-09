@@ -34,10 +34,11 @@ import {
 } from "./conversation-actions.js";
 import { ReadinessNotice } from "./readiness.js";
 import { Settings } from "./settings.js";
+import { ProfilePicker } from "./profiles.js";
 import { sessionModel, sessionReasoning } from "./models.js";
 import { restoreRuns, running } from "./runs.js";
 
-function Login() {
+function Login({ development }) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -55,7 +56,10 @@ function Login() {
     }
   }
   return html`<main class="login-page">
-    <div class="login-brand"><${Mark} size=${42} /><span>Talaria</span></div>
+    <div class="login-brand">
+      <${Mark} size=${42} /><span>Talaria</span>
+      ${development && html`<small class="environment-badge">Dev</small>`}
+    </div>
     <div class="login-card">
       <span class="eyebrow">YOUR SPACE, AWAITING YOU</span>
       <h1>Welcome back.</h1>
@@ -178,7 +182,8 @@ function App() {
     return html`<div class="initial-loader" role="status">
       <${Mark} size=${40} /><span>Opening your space…</span>
     </div>`;
-  if (!app.auth) return html`<${Login} />`;
+  if (!app.auth)
+    return html`<${Login} development=${app.environment === "development"} />`;
   return html`<div class="app-shell">
     <${Sidebar} app=${app} />${app.sidebar &&
     html`<button
@@ -203,6 +208,9 @@ function App() {
               ? current.title || "Untitled conversation"
               : "New conversation"}</span
           >
+          ${mobile &&
+          app.environment === "development" &&
+          html`<small class="environment-badge">Dev</small>`}
         </div>
         ${app.active &&
         html`<div class="topbar-actions">
@@ -284,8 +292,14 @@ function App() {
     html`<div class="toast" role="status">
       <${Icon} name="check" size=${17} />${app.toast}
     </div>`}
-    ${app.modal === "settings" &&
-    html`<${Settings} app=${app} onClose=${close} />`}
+    ${(app.modal === "settings" || app.modal?.type === "settings") &&
+    html`<${Settings}
+      app=${app}
+      onClose=${close}
+      initialSection=${app.modal?.section}
+    />`}
+    ${app.modal === "profiles" &&
+    html`<${ProfilePicker} app=${app} onClose=${close} />`}
     ${app.modal === "connection" &&
     html`<${Connection} initial=${!app.connected} onClose=${close} />`}
     ${app.modal?.type === "session-menu" &&

@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { apiURL } from "./profile-context.js";
 import {
   state,
   update,
@@ -297,7 +298,7 @@ export function subscribe(sid) {
   const live = state.lives[sid];
   if (!live?.id) return;
   const source = new EventSource(
-    `/api/runs/${encodeURIComponent(live.id)}/events`,
+    apiURL(`/runs/${encodeURIComponent(live.id)}/events`),
   );
   sources.set(sid, source);
   source.onmessage = (message) => {

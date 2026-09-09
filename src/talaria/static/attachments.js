@@ -1,4 +1,5 @@
 // Drafts, submission receipts, and a bounded cache of originals Hermes may omit.
+import { databaseName } from "./profile-context.js";
 const MAX_IMAGE = 2 * 1024 * 1024;
 export const MAX_IMAGES_TOTAL = 6 * 1024 * 1024;
 const TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
@@ -6,7 +7,7 @@ let database;
 function openDatabase() {
   if (!database)
     database = new Promise((resolve, reject) => {
-      const request = indexedDB.open("talaria-drafts", 1);
+      const request = indexedDB.open(databaseName, 1);
       request.onupgradeneeded = () =>
         request.result.createObjectStore("pending");
       request.onsuccess = () => resolve(request.result);

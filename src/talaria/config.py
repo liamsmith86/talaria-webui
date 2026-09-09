@@ -51,11 +51,15 @@ def default_path() -> Path:
 
 
 def save(path: Path, settings: Settings) -> None:
+    save_data(path, asdict(settings))
+
+
+def save_data(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd, name = tempfile.mkstemp(dir=path.parent, prefix=".talaria-")
     try:
         with os.fdopen(fd, "w") as file:
-            json.dump(asdict(settings), file, indent=2)
+            json.dump(data, file, indent=2)
             file.write("\n")
             file.flush()
             os.fsync(file.fileno())

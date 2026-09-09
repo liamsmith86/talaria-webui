@@ -10,9 +10,12 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import auth, metadata, routes, transcripts
+from . import auth, installation, metadata, routes, transcripts
 from .config import Settings
 from .hermes import APIError, Hermes
+from .profiles import ProfileRouter, Profiles
+from .profiles import listing as profile_listing
+from .profiles import remove as profile_remove
 from .relay import Relay
 
 STATIC = Path(__file__).parent / "static"
@@ -75,19 +78,26 @@ async def index(request):
 
 
 async def health(request):
-    return JSONResponse({"status": "ok"})
+    return JSONResponse({"status": "ok", **installation.build_info()})
 
 
 async def api_error(request, exc: APIError):
     return JSONResponse({"error": exc.message, "code": exc.code}, status_code=exc.status)
 
 
-def create_app(settings: Settings, config_path: Path, *, transport=None) -> Starlette:
+def create_app(
+    settings: Settings,
+    config_path: Path,
+    *,
+    transport=None,
+    development=False,
+    profiles=None,
+    profile_id="default",
+) -> Starlette:
     @asynccontextmanager
     async def lifespan(app):
         yield
-        await app.state.relay.close()
-        await app.state.hermes.close()
+        await app.state.profiles.close()
 
     app = Starlette(
         lifespan=lifespan,
@@ -96,6 +106,10 @@ def create_app(settings: Settings, config_path: Path, *, transport=None) -> Star
             Route("/", index),
             Route("/health", health),
             Route("/api/bootstrap", routes.bootstrap),
+            Route("/api/installation", installation.details),
+            Route("/api/profiles", profile_listing, methods=["GET", "POST"]),
+            Route("/api/profiles/test", routes.connection, methods=["POST"]),
+            Route("/api/profiles/{profile_id}", profile_remove, methods=["DELETE"]),
             Route("/api/login", routes.login, methods=["POST"]),
             Route("/api/logout", routes.logout, methods=["POST"]),
             Route("/api/connection", routes.connection, methods=["GET", "PUT"]),
@@ -119,10 +133,16 @@ def create_app(settings: Settings, config_path: Path, *, transport=None) -> Star
         ],
     )
     app.state.settings, app.state.config_path = settings, config_path
+    app.state.development = development
+    app.state.cookie_name = "talaria_dev_session" if development else auth.COOKIE
     app.state.hermes = Hermes(settings.hermes_url, settings.api_key, transport=transport)
     app.state.relay = Relay(app.state.hermes)
     app.state.limiter = auth.LoginLimiter()
     app.state.connection_lock = asyncio.Lock()
     app.state.capabilities = {}
-    app.add_middleware(BrowserBoundary)
+    app.state.profile_id = profile_id
+    app.state.profiles = profiles or Profiles(app, transport)
+    if profiles is None:
+        app.add_middleware(ProfileRouter, profiles=app.state.profiles)
+        app.add_middleware(BrowserBoundary)
     return app

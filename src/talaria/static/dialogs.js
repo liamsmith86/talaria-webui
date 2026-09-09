@@ -34,6 +34,7 @@ export function Dialog({
   onClose,
   wide = false,
   className = "",
+  dismissible = true,
 }) {
   const ref = useRef();
   const titleId = useRef(`dialog-${crypto.randomUUID()}`).current;
@@ -52,10 +53,10 @@ export function Dialog({
     ref=${ref}
     onCancel=${(e) => {
       e.preventDefault();
-      onClose();
+      if (dismissible) onClose();
     }}
     onClick=${(e) => {
-      if (e.target === e.currentTarget) {
+      if (dismissible && e.target === e.currentTarget) {
         const r = e.currentTarget.getBoundingClientRect();
         if (
           e.clientX < r.left ||
@@ -69,23 +70,40 @@ export function Dialog({
   >
     <div class="dialog-heading">
       <h2 id=${titleId}>${title}</h2>
-      <${IconButton} name="close" label="Close dialog" onClick=${onClose} />
+      ${dismissible &&
+      html`<${IconButton}
+        name="close"
+        label="Close dialog"
+        onClick=${onClose}
+      />`}
     </div>
     ${children}
   </dialog>`;
 }
 
-export function Connection({ initial = false, onClose, embedded = false }) {
+export function Connection({
+  initial = false,
+  onClose,
+  embedded = false,
+  creating = false,
+}) {
   const [url, setUrl] = useState("http://127.0.0.1:8642");
+  const [profile, setProfile] = useState("default");
+  const [label, setLabel] = useState("");
   const [key, setKey] = useState("");
   const [keySet, setKeySet] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [tested, setTested] = useState(false);
   useEffect(() => {
+    if (creating) {
+      setUrl(state.profile?.server_url || state.profiles[0]?.server_url || url);
+      return;
+    }
     api("/connection")
       .then((d) => {
-        setUrl(d.url);
+        setUrl(d.server_url || d.url);
+        setProfile(d.profile || "default");
         setKeySet(d.key_set);
       })
       .catch((e) => setError(e.message));
@@ -95,14 +113,23 @@ export function Connection({ initial = false, onClose, embedded = false }) {
     setError("");
     setTested(false);
     try {
-      await api(save ? "/connection" : "/connection/test", {
-        method: save ? "PUT" : "POST",
-        body: { url, api_key: key },
-      });
+      await api(
+        save
+          ? creating
+            ? "/profiles"
+            : "/connection"
+          : creating
+            ? "/profiles/test"
+            : "/connection/test",
+        {
+          method: save && !creating ? "PUT" : "POST",
+          body: { url, profile, label, api_key: key },
+        },
+      );
       if (save) {
-        await connect();
+        if (!creating) await connect();
         onClose();
-        toast(`Connected to ${state.agent.name}`);
+        toast(creating ? "Profile added" : `Connected to ${state.agent.name}`);
       } else setTested(true);
     } catch (e) {
       setError(e.message);
@@ -112,8 +139,9 @@ export function Connection({ initial = false, onClose, embedded = false }) {
   }
   const content = html`
     <p class="dialog-intro">
-      Connect to your Hermes Agent. Your conversations, tools, and memory stay
-      with Hermes.
+      ${creating
+        ? "Use the profile’s name and API key from Hermes. Its conversations, tools, and memory stay with Hermes."
+        : "This connection belongs to the selected profile. Add another profile to connect elsewhere."}
     </p>
     <form
       onSubmit=${(e) => {
@@ -121,10 +149,20 @@ export function Connection({ initial = false, onClose, embedded = false }) {
         submit(true);
       }}
     >
+      ${creating &&
+      html`<label class="field"
+        >Display name<input
+          value=${label}
+          onInput=${(e) => setLabel(e.target.value)}
+          maxlength="80"
+          required
+          placeholder="Research"
+      /></label>`}
       <label class="field"
         >Hermes address<input
           type="url"
           value=${url}
+          readonly=${keySet && !creating}
           onInput=${(e) => {
             setUrl(e.target.value);
             setTested(false);
@@ -133,6 +171,23 @@ export function Connection({ initial = false, onClose, embedded = false }) {
           spellcheck="false"
           placeholder="http://127.0.0.1:8642"
       /></label>
+      <label class="field"
+        >Hermes profile<input
+          value=${profile}
+          onInput=${(e) => {
+            setProfile(e.target.value);
+            setTested(false);
+          }}
+          readonly=${keySet && !creating}
+          required
+          spellcheck="false"
+          maxlength="64"
+          placeholder="default"
+      /></label>
+      <p class="field-help">
+        Use <code>default</code> for the main agent, or the name of an existing
+        Hermes profile. Named profiles need their own API key.
+      </p>
       <label class="field"
         >API key<input
           type="password"
@@ -164,7 +219,7 @@ export function Connection({ initial = false, onClose, embedded = false }) {
         >
           Test connection</button
         ><button class="button primary" disabled=${busy}>
-          ${busy ? "Connecting…" : "Save connection"}
+          ${busy ? "Connecting…" : creating ? "Add profile" : "Save connection"}
         </button>
       </div>
     </form>

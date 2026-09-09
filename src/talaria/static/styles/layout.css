@@ -29,6 +29,18 @@
   font-weight: 610;
   letter-spacing: -1.1px;
 }
+.environment-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
 .new-chat {
   display: flex;
   gap: 9px;

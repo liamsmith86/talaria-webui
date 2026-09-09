@@ -5,10 +5,11 @@ import {
   Icon,
   readStorage,
   writeStorage,
+  useMediaQuery,
 } from "./lib.js";
 import { api } from "./api.js";
-import { Dialog, Connection } from "./dialogs.js";
-import { ExtendedAccess } from "./access-settings.js";
+import { Dialog } from "./dialogs.js";
+import { ProfileConnections } from "./profiles.js";
 import { refreshAgentInfo, refreshModels, supports, fail } from "./store.js";
 import { ReadinessNotice } from "./readiness.js";
 
@@ -18,6 +19,7 @@ const sections = [
   ["providers", "globe", "Providers"],
   ["tools", "terminal", "Tools & skills"],
   ["connection", "link", "Connection"],
+  ["installation", "monitor", "Talaria"],
 ];
 const readable = (value = "") =>
   value.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
@@ -32,6 +34,140 @@ function Facts({ items }) {
         </div>`,
     )}
   </dl>`;
+}
+
+function Installation() {
+  const [info, setInfo] = useState(null);
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    let active = true;
+    api("/installation")
+      .then((data) => {
+        if (active) setInfo(data);
+      })
+      .catch(() => {
+        if (active)
+          setError(
+            "Installation information could not be loaded. Reopen this section to try again.",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const date = (value) =>
+    value && Number.isFinite(Date.parse(value))
+      ? new Date(value).toLocaleString([], {
+          dateStyle: "medium",
+          timeStyle: "short",
+        })
+      : "Not available";
+  if (!info)
+    return html`<h3>Talaria</h3>
+      <p class="field-help" role="status">
+        ${error || "Loading installation information…"}
+      </p>`;
+  const development = info.environment === "development";
+  return html`<div class="section-heading">
+      <h3>Talaria</h3>
+      <span class="${development ? "environment-badge" : "quiet-badge"}"
+        >${development ? "Development" : "Production"}</span
+      >
+    </div>
+    <${Facts}
+      items=${[
+        ["Version", info.version],
+        [
+          "Build",
+          development
+            ? "Working checkout"
+            : info.commit?.slice(0, 10) || "Installed package",
+        ],
+        ...(info.managed
+          ? [
+              ["Update branch", info.branch],
+              ["Installed", date(info.installed_at)],
+            ]
+          : []),
+      ]}
+    />
+    ${development
+      ? html`<p class="dialog-intro">
+            Edits appear here as you develop. Production changes when you deploy
+            a release.
+          </p>
+          <p class="field-help">
+            Connect development to a separate Hermes profile to keep its
+            conversations and memory apart.
+          </p>`
+      : info.managed
+        ? html`<section class="settings-section installation-update">
+            <div class="section-heading">
+              <h4>Updates</h4>
+              ${!info.update.error &&
+              info.update.checked_at &&
+              html`<span
+                class="${info.update.available
+                  ? "default-badge"
+                  : "quiet-badge"}"
+                >${info.update.available
+                  ? "Update available"
+                  : "Up to date at last check"}</span
+              >`}
+            </div>
+            <p class="field-help">
+              Update this installation from the server. Your previous release is
+              kept for rollback.
+            </p>
+            <div class="update-command">
+              <code>${info.update_command}</code
+              ><button
+                class="icon-button"
+                aria-label="Copy update command"
+                title="Copy update command"
+                onClick=${async () => {
+                  try {
+                    await navigator.clipboard.writeText(info.update_command);
+                    setCopied(true);
+                    setError("");
+                  } catch {
+                    setError(
+                      "Could not copy. Select the command to copy it manually.",
+                    );
+                  }
+                }}
+              >
+                <${Icon} name=${copied ? "check" : "copy"} size=${16} />
+              </button>
+            </div>
+            <span class="sr-only" role="status"
+              >${copied ? "Update command copied" : ""}</span
+            >
+            <p class="field-help">
+              ${info.update.checked_at
+                ? `Last checked ${date(info.update.checked_at)}.`
+                : "Updates have not been checked yet."}
+            </p>
+            ${info.update.error &&
+            html`<p class="form-error" role="status">${info.update.error}</p>`}
+            ${error && html`<p class="form-error" role="status">${error}</p>`}
+            ${info.previous?.commit &&
+            html`<div class="installation-rollback">
+              <h4>Previous release</h4>
+              <p class="field-help">
+                ${info.previous.version} ·
+                ${info.previous.commit.slice(0, 10)}<br />Restore it with
+                <code
+                  >${info.update_command.replace(/update$/, "rollback")}</code
+                >.
+              </p>
+            </div>`}
+          </section>`
+        : html`<p class="field-help">
+            This copy was installed separately. Update it with the package
+            manager used to install it.
+          </p>`}`;
 }
 
 function Overview({ app, navigate }) {
@@ -266,8 +402,16 @@ function Tools({ info }) {
     </section>`;
 }
 
-export function Settings({ app, onClose }) {
-  const [section, setSection] = useState("agent");
+export function Settings({ app, onClose, initialSection = "agent" }) {
+  const [section, setSection] = useState(initialSection);
+  const [installationRefresh, setInstallationRefresh] = useState(0);
+  const mobile = useMediaQuery("(max-width: 700px)");
+  useEffect(() => {
+    if (mobile)
+      document
+        .getElementById(`settings-tab-${section}`)
+        ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [section, mobile]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function refresh() {
@@ -325,16 +469,17 @@ export function Settings({ app, onClose }) {
       ${section === "appearance" && html`<${Appearance} />`}
       ${section === "providers" && html`<${Providers} app=${app} />`}
       ${section === "tools" && html`<${Tools} info=${app.agentInfo} />`}
+      ${section === "installation" && html`<${Installation} key=${installationRefresh} />`}
       ${
         section === "connection" &&
-        html`<section class="settings-section">
-            <h3>Hermes API</h3>
-            <${Connection} embedded onClose=${refresh} />
-          </section>
-          <${ExtendedAccess} onSaved=${refresh} />`
+        html`<${ProfileConnections} app=${app} onRefresh=${refresh} />`
       }
     </div></div>
-    <footer class="settings-footer"><span>Talaria ${app.version}</span><div><button disabled=${busy} onClick=${refresh}>${busy ? "Refreshing…" : "Refresh information"}</button><button onClick=${async () => {
+    <footer class="settings-footer"><span>Talaria ${app.version}</span><div><button disabled=${busy} onClick=${() => {
+      if (section === "installation")
+        setInstallationRefresh((value) => value + 1);
+      else refresh();
+    }}>${busy ? "Refreshing…" : "Refresh information"}</button><button onClick=${async () => {
       try {
         await api("/logout", { method: "POST", body: {} });
         location.reload();

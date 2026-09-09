@@ -18,6 +18,8 @@ def test_agent_settings_and_extended_access(page, live_app, tmp_path):
     expect(page.locator(".default-model-card")).to_contain_text("hermes-test")
     page.get_by_role("tab", name="Your agent", exact=True).focus()
     page.keyboard.press("End")
+    expect(page.get_by_role("tab", name="Talaria", exact=True)).to_be_focused()
+    page.keyboard.press("ArrowLeft")
     expect(page.get_by_role("tab", name="Connection", exact=True)).to_be_focused()
     field = page.get_by_label("Hermes directory", exact=True)
     expect(field).to_be_enabled()

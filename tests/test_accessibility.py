@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
+from talaria import installation
+
 from .test_conversation_features import png
 
 AXE = os.environ.get("TALARIA_AXE_PATH")
@@ -15,7 +17,22 @@ pytestmark = pytest.mark.skipif(not AXE, reason="Set TALARIA_AXE_PATH to a local
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
 @pytest.mark.parametrize("palette", ["blue", "sage", "violet", "rose"])
-def test_theme_accessibility(page, live_app, theme, palette):
+def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
+    monkeypatch.setattr(
+        installation,
+        "public_info",
+        lambda _: {
+            "environment": "production",
+            "version": "0.2.0",
+            "commit": "a" * 40,
+            "managed": True,
+            "branch": "main",
+            "installed_at": "2026-09-08T20:00:00Z",
+            "previous": {"version": "0.1.0", "commit": "b" * 40},
+            "update_command": "sudo talaria update",
+            "update": {"error": None, "available": True, "checked_at": "2026-09-08T21:00:00Z"},
+        },
+    )
     page.context.add_init_script(path=AXE)
     page.emulate_media(reduced_motion="reduce")
     page.reload()
@@ -35,12 +52,21 @@ def test_theme_accessibility(page, live_app, theme, palette):
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), name
 
     audit("welcome")
+    page.get_by_role("button", name="Switch profile").click()
+    expect(page.get_by_role("dialog", name="Choose a profile")).to_be_visible()
+    audit("profile-picker")
+    page.get_by_role("button", name="Close dialog").click()
     page.get_by_role("button", name="Your space").click()
     expect(page.get_by_role("dialog")).to_be_visible()
     audit("settings")
-    for section in ("Appearance", "Providers", "Tools & skills", "Connection"):
+    for section in ("Appearance", "Providers", "Tools & skills", "Connection", "Talaria"):
         page.get_by_role("tab", name=section, exact=True).click()
         audit("settings-" + section)
+        if section == "Connection":
+            page.get_by_role("button", name="Add profile", exact=True).click()
+            expect(page.get_by_label("Display name")).to_be_visible()
+            audit("add-profile")
+            page.get_by_role("button", name="Back", exact=True).click()
     page.get_by_role("button", name="Close dialog").click()
     page.get_by_label("Message Hermes").fill("An approval check")
     page.get_by_role("button", name="Send message", exact=True).click()
@@ -112,6 +138,8 @@ def test_theme_accessibility(page, live_app, theme, palette):
     page.get_by_role("button", name="Close dialog").click()
     page.get_by_role("button", name="Open sidebar").click()
     audit("mobile-sidebar")
+    page.get_by_role("button", name="Switch profile").click()
+    audit("mobile-profile-picker")
     Path("test-results").mkdir(exist_ok=True)
     Path(f"test-results/accessibility-{theme}-{palette}.json").write_text(
         json.dumps(reports, indent=2)

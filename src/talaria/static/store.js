@@ -38,6 +38,10 @@ export const state = {
   agent: { name: "Hermes", name_source: "fallback" },
   agentInfo: null,
   version: "",
+  environment: "production",
+  profiles: [],
+  profile: null,
+  profileMissing: false,
   modal: null,
   sidebar: false,
   error: "",
@@ -74,7 +78,15 @@ export function toast(message) {
 }
 export function fail(error) {
   if (error.code === "unauthenticated") update({ auth: false });
-  else
+  else if (error.code === "profile_missing") {
+    update({
+      connected: false,
+      profileMissing: true,
+      modal: "profiles",
+      error: "",
+    });
+    refreshProfiles().catch(() => {});
+  } else
     update({
       error: error.message || "Something went wrong. Please try again.",
     });
@@ -82,17 +94,43 @@ export function fail(error) {
 export async function initialize() {
   try {
     const data = await api("/bootstrap");
+    document.title =
+      data.environment === "development" ? "Talaria · Dev" : "Talaria";
     setCSRF(data.csrf || "");
     update({
       auth: data.authenticated,
       agent: data.agent || state.agent,
       version: data.version,
+      environment: data.environment || "production",
+      profiles: data.profiles || [],
+      profile: data.profile || null,
     });
     if (data.authenticated) await connect(data.connected);
   } catch (error) {
+    if (error.code === "profile_missing") {
+      try {
+        const data = await api("/profiles");
+        setCSRF(data.csrf || "");
+        update({
+          auth: true,
+          connected: false,
+          profileMissing: true,
+          profiles: data.profiles,
+          modal: "profiles",
+        });
+        return;
+      } catch (failure) {
+        error = failure;
+      }
+    }
     fail(error);
     update({ auth: false });
   }
+}
+export async function refreshProfiles() {
+  const data = await api("/profiles");
+  update({ profiles: data.profiles });
+  return data;
 }
 export async function connect(configured = true) {
   if (!configured) {

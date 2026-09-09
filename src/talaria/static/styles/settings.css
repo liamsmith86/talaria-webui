@@ -327,6 +327,148 @@
   color: var(--muted);
   font-size: 10px;
 }
+.installation-update .section-heading {
+  flex-wrap: wrap;
+}
+.profile-connection {
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
+}
+.saved-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+.saved-profile > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.saved-profile strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.saved-profile small {
+  display: block;
+  font-size: 11px;
+  margin-top: 5px;
+  color: var(--muted);
+}
+.profile-removal {
+  border: 1px solid var(--line);
+  padding: 14px;
+  border-radius: 9px;
+  margin-top: 14px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.agent-switcher {
+  display: flex;
+  align-items: center;
+  text-align: left;
+  gap: 10px;
+  padding: 10px 11px;
+  margin: 0 0 15px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--muted);
+}
+.agent-switcher > span {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.agent-switcher small {
+  font-size: 10px;
+}
+.agent-switcher strong {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.agent-switcher:hover,
+.profile-option:hover {
+  background: var(--surface-hover);
+}
+.profile-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+.profile-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  text-decoration: none;
+}
+.profile-option[aria-current="page"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.profile-option > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.profile-option strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.profile-option small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+.profile-monogram {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--accent-text);
+  border: 1px solid var(--line);
+  font-size: 14px;
+}
+.update-command {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px 9px 14px;
+  margin: 14px 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--canvas);
+}
+.update-command code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  user-select: all;
+}
+.installation-rollback {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
 .settings-footer > div {
   display: flex;
   gap: 15px;

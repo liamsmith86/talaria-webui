@@ -36,7 +36,7 @@ def issue_cookie(settings) -> str:
 
 
 def authenticated(request: Request) -> bool:
-    value = request.cookies.get(COOKIE, "")
+    value = request.cookies.get(request.app.state.cookie_name, "")
     try:
         timestamp, nonce, sig = value.split(".")
         age = time.time() - int(timestamp)
@@ -48,7 +48,10 @@ def authenticated(request: Request) -> bool:
 
 
 def csrf_token(request: Request) -> str:
-    return signature(request.app.state.settings, "csrf:" + request.cookies.get(COOKIE, ""))
+    return signature(
+        request.app.state.settings,
+        "csrf:" + request.cookies.get(request.app.state.cookie_name, ""),
+    )
 
 
 def browser_request_valid(request: Request, *, login: bool = False) -> bool:

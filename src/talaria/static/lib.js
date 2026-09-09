@@ -1,6 +1,7 @@
 import { h, render } from "./vendor/preact.js";
 import htm from "./vendor/htm.js";
 import { useEffect, useState } from "./vendor/hooks.js";
+import { storagePrefix } from "./profile-context.js";
 export { useEffect, useState };
 export { useRef, useMemo, useCallback } from "./vendor/hooks.js";
 export const html = htm.bind(h);
@@ -20,14 +21,20 @@ export function useMediaQuery(query) {
 
 export function readStorage(key, fallback = "") {
   try {
-    return localStorage.getItem(`talaria.${key}`) ?? fallback;
+    const prefix = ["theme", "palette"].includes(key)
+      ? "talaria."
+      : storagePrefix;
+    return localStorage.getItem(`${prefix}${key}`) ?? fallback;
   } catch {
     return fallback;
   }
 }
 export function writeStorage(key, value) {
   try {
-    localStorage.setItem(`talaria.${key}`, value);
+    const prefix = ["theme", "palette"].includes(key)
+      ? "talaria."
+      : storagePrefix;
+    localStorage.setItem(`${prefix}${key}`, value);
   } catch {
     /* Storage is optional. */
   }

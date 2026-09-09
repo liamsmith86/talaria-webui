@@ -1,3 +1,4 @@
+import { apiURL } from "./profile-context.js";
 let csrf = "";
 export const setCSRF = (value) => {
   csrf = value;
@@ -12,7 +13,7 @@ export class RequestError extends Error {
 export async function api(path, options = {}) {
   let response;
   try {
-    response = await fetch(`/api${path}`, {
+    response = await fetch(apiURL(path), {
       credentials: "same-origin",
       ...options,
       headers: {

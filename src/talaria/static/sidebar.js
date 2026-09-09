@@ -18,6 +18,7 @@ import {
 import { running } from "./runs.js";
 import { sourceLabel } from "./content.js";
 import { readinessLabel } from "./readiness.js";
+import { ProfileSwitch } from "./profiles.js";
 
 function groupName(session) {
   const now = new Date();
@@ -87,7 +88,9 @@ export function Sidebar({ app }) {
         onClick=${newConversation}
         aria-label="Talaria home"
       >
-        <${Mark} size=${30} /><span>Talaria</span></button
+        <${Mark} size=${30} /><span>Talaria</span> ${app.environment ===
+          "development" &&
+        html`<small class="environment-badge">Dev</small>`}</button
       ><${IconButton}
         name="sidebar"
         label="Close sidebar"
@@ -95,6 +98,7 @@ export function Sidebar({ app }) {
         onClick=${() => update({ sidebar: false })}
       />
     </div>
+    <${ProfileSwitch} app=${app} />
     <button class="new-chat" onClick=${newConversation}>
       <${Icon} name="plus" size=${18} /><span>New conversation</span
       ><kbd>⌘ N</kbd>
