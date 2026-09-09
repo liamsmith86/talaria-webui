@@ -56,8 +56,8 @@ async def login(request: Request):
         raise APIError("Too many attempts. Please try again in five minutes.", 429)
     password = text_field(data, "password", 1024)
     if not await asyncio.to_thread(auth.verify_password, password, state.settings.password_hash):
-        state.limiter.fail(address)
         raise APIError("That password didn’t match. Please try again.", 401, "login_failed")
+    state.limiter.success(address)
     cookie = auth.issue_cookie(state.settings)
     response = JSONResponse({"ok": True})
     response.set_cookie(
@@ -146,9 +146,18 @@ async def sessions(request: Request):
         )
     data = await body(request)
     payload = {"title": text_field(data, "title", 160, "New conversation"), "source": "api_server"}
-    return JSONResponse(
-        await client.request("POST", "/api/sessions", json=payload), status_code=201
-    )
+    for attempt in range(6):
+        try:
+            result = await client.request("POST", "/api/sessions", json=payload)
+            return JSONResponse(result.get("session", result), status_code=201)
+        except APIError as exc:
+            if exc.code != "invalid_title":
+                raise
+            base = text_field(data, "title", 160, "New conversation")[:140]
+            payload["title"] = f"{base} ({attempt + 2})"
+    payload.pop("title", None)
+    result = await client.request("POST", "/api/sessions", json=payload)
+    return JSONResponse(result.get("session", result), status_code=201)
 
 
 async def session(request: Request):
@@ -167,8 +176,16 @@ async def session(request: Request):
 
 async def messages(request: Request):
     sid = identifier(request.path_params["session_id"])
+    try:
+        offset = max(0, min(int(request.query_params.get("offset", "0")), 1_000_000))
+    except ValueError as exc:
+        raise APIError("Invalid message page.", 400) from exc
     return JSONResponse(
-        await request.app.state.hermes.request("GET", f"/api/sessions/{sid}/messages")
+        await request.app.state.hermes.request(
+            "GET",
+            f"/api/sessions/{sid}/messages",
+            params={"offset": offset, "limit": 100, "order": "latest"},
+        )
     )
 
 
@@ -176,10 +193,10 @@ async def fork(request: Request):
     sid = identifier(request.path_params["session_id"])
     data = await body(request)
     payload = {"title": text_field(data, "title", 160, "Branched conversation")}
-    return JSONResponse(
-        await request.app.state.hermes.request("POST", f"/api/sessions/{sid}/fork", json=payload),
-        status_code=201,
+    result = await request.app.state.hermes.request(
+        "POST", f"/api/sessions/{sid}/fork", json=payload
     )
+    return JSONResponse(result.get("session", result), status_code=201)
 
 
 async def start_run(request: Request):

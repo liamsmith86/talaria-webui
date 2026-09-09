@@ -21,7 +21,7 @@ def identifier(value: str) -> str:
     return value
 
 
-def response_error(status: int) -> APIError:
+def response_error(status: int, body: dict | None = None) -> APIError:
     messages = {
         400: "Hermes could not accept that request. Check the selected model and try again.",
         401: "The Hermes API key was not accepted. Check Connection in Settings.",
@@ -30,6 +30,10 @@ def response_error(status: int) -> APIError:
         409: "This action conflicts with the current conversation state. Refresh and try again.",
         429: "Hermes is busy. Please wait a moment and try again.",
     }
+    code = (body or {}).get("error", {})
+    code = code.get("code") if isinstance(code, dict) else None
+    if code == "invalid_title":
+        return APIError("That conversation name is already in use or is not valid.", status, code)
     return APIError(
         messages.get(status, "Hermes is temporarily unavailable. Try again shortly."),
         status if status in messages else 502,
@@ -54,13 +58,22 @@ class Hermes:
     async def request(self, method: str, path: str, **kwargs):
         try:
             async with self.client.stream(method, path.lstrip("/"), **kwargs) as response:
-                if not 200 <= response.status_code < 300:
-                    raise response_error(response.status_code)
                 data = bytearray()
                 async for chunk in response.aiter_bytes():
                     data.extend(chunk)
-                    if len(data) > MAX_RESPONSE:
+                    limit = MAX_RESPONSE if response.is_success else 65536
+                    if len(data) > limit:
+                        if not response.is_success:
+                            raise response_error(response.status_code)
                         raise APIError("This Hermes response is too large to display.")
+                if not response.is_success:
+                    try:
+                        detail = json.loads(data)
+                    except ValueError:
+                        detail = {}
+                    raise response_error(
+                        response.status_code, detail if isinstance(detail, dict) else {}
+                    )
                 if not data:
                     return {}
                 return json.loads(data)

@@ -75,7 +75,10 @@ class LoginLimiter:
         self.failures[address] = times
         while len(self.failures) > 1024:
             self.failures.popitem(last=False)
-        return len(times) < 8
+        if len(times) >= 8:
+            return False
+        times.append(now)
+        return True
 
-    def fail(self, address: str) -> None:
-        self.failures.setdefault(address, []).append(time.monotonic())
+    def success(self, address: str) -> None:
+        self.failures.pop(address, None)

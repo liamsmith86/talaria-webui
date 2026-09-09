@@ -1,0 +1,422 @@
+@keyframes rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes breathe {
+  50% {
+    opacity: 0.4;
+  }
+}
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    translate: 0 5px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@media (min-width: 1500px) {
+  .sidebar {
+    width: 282px;
+  }
+  .welcome h1 {
+    font-size: 49px;
+  }
+  .welcome {
+    padding-bottom: 55px;
+  }
+  .is-new .composer-area {
+    padding-bottom: 50px;
+  }
+}
+@media (max-width: 1050px) {
+  .sidebar {
+    width: 236px;
+    padding: 0 12px;
+  }
+  .sidebar-search kbd,
+  .new-chat kbd {
+    display: none;
+  }
+  .suggestions {
+    gap: 8px;
+  }
+  .suggestions button {
+    padding: 12px;
+    font-size: 10px;
+  }
+  .suggestion-arrow {
+    display: none;
+  }
+  .topbar {
+    padding: 0 25px;
+  }
+  .composer-area {
+    padding-left: 25px;
+    padding-right: 25px;
+  }
+  .welcome h1 {
+    font-size: 39px;
+  }
+  .conversation-viewport {
+    padding-left: 25px;
+    padding-right: 25px;
+  }
+  .keyboard-hint {
+    display: none;
+  }
+}
+@media (max-width: 700px) {
+  body {
+    font-size: 14px;
+  }
+  .mobile-only {
+    display: inline-flex;
+  }
+  .desktop-only {
+    display: none;
+  }
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 30;
+    width: 290px;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: none;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .sidebar.open {
+    transform: translateX(0);
+    box-shadow: 15px 0 50px #0001;
+  }
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: var(--overlay);
+    z-index: 20;
+  }
+  .sidebar-brand {
+    height: 80px;
+  }
+  .sidebar-search input {
+    font-size: 14px;
+  }
+  .session-select {
+    font-size: 13px;
+    padding: 14px 12px;
+  }
+  .session-more {
+    opacity: 1;
+    min-height: 40px;
+    min-width: 36px;
+    justify-content: center;
+  }
+  .session-group {
+    font-size: 11px;
+  }
+  .new-chat {
+    font-size: 13px;
+    padding: 13px;
+  }
+  .topbar {
+    height: 64px;
+    padding: 0 14px;
+    gap: 10px;
+  }
+  .topbar-title {
+    font-size: 12px;
+  }
+  .private-label {
+    font-size: 9px;
+  }
+  .welcome {
+    padding: 12px 25px 18px;
+    min-height: 260px;
+  }
+  .welcome-mark {
+    margin-bottom: 20px;
+  }
+  .welcome-mark svg {
+    width: 43px;
+    height: 43px;
+  }
+  .welcome .eyebrow {
+    font-size: 8px;
+    letter-spacing: 1.8px;
+  }
+  .welcome h1 {
+    font-size: 37px;
+    letter-spacing: -1.6px;
+    margin: 16px 0;
+  }
+  .welcome > p {
+    font-size: 12px;
+    max-width: 300px;
+  }
+  .suggestions {
+    margin-top: 27px;
+    gap: 8px;
+  }
+  .suggestions button {
+    padding: 10px 12px;
+    font-size: 10px;
+  }
+  .suggestions button svg {
+    width: 15px;
+    height: 15px;
+  }
+  .suggestions button:last-child {
+    display: none;
+  }
+  .composer-area,
+  .is-new .composer-area {
+    padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+    max-width: 100%;
+  }
+  .composer-input {
+    padding: 16px 16px 4px;
+  }
+  .composer textarea {
+    font-size: 16px;
+    line-height: 1.5;
+    min-height: 40px;
+  }
+  .composer-toolbar {
+    padding: 6px 10px 10px;
+  }
+  .composer-left {
+    gap: 2px;
+  }
+  .model-button {
+    font-size: 10px;
+    padding: 10px 5px;
+  }
+  .model-button span {
+    max-width: 145px;
+  }
+  .composer-footnote {
+    justify-content: center;
+    font-size: 8px;
+    padding-top: 10px;
+  }
+  .toolbar-divider {
+    margin: 0 4px;
+  }
+  .send-button {
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+  }
+  .icon-button {
+    width: 40px;
+    height: 40px;
+  }
+  .composer .icon-button {
+    width: 36px;
+    height: 38px;
+  }
+  .working-label {
+    font-size: 9px;
+    margin-right: 4px;
+  }
+  .conversation-viewport {
+    padding: 8px 20px 0;
+  }
+  .conversation-content {
+    padding-top: 12px;
+  }
+  .user-content {
+    font-size: 14px;
+    padding: 12px 15px;
+    max-width: 92%;
+  }
+  .markdown {
+    font-size: 14px;
+    line-height: 1.8;
+  }
+  .markdown code {
+    font-size: 12px;
+  }
+  .message {
+    margin-bottom: 25px;
+  }
+  .message-actions {
+    opacity: 1;
+  }
+  .message-byline {
+    font-size: 11px;
+  }
+  .tool-card summary {
+    padding: 10px;
+    gap: 8px;
+  }
+  .tool-label {
+    font-size: 11px;
+  }
+  .tool-label small {
+    font-size: 10px;
+  }
+  .tool-content pre {
+    font-size: 11px;
+  }
+  .error-banner,
+  .connection-banner {
+    margin: 0 14px 9px;
+    font-size: 11px;
+    gap: 8px;
+  }
+  .connection-banner {
+    flex-wrap: wrap;
+  }
+  .dialog {
+    padding: 20px;
+    border-radius: 15px;
+    max-height: calc(100dvh - 30px);
+  }
+  .dialog h2 {
+    font-size: 18px;
+  }
+  .field input {
+    font-size: 16px;
+  }
+  .search-field input {
+    font-size: 16px;
+  }
+  .palette-option {
+    min-height: 66px;
+  }
+  .session-menu button {
+    min-height: 48px;
+  }
+  .dialog-actions .button {
+    font-size: 12px;
+  }
+  .settings-footnote {
+    font-size: 9px;
+  }
+  .settings-footnote span {
+    max-width: 210px;
+    text-align: right;
+  }
+  .approval-card {
+    padding: 15px;
+  }
+  .approval-actions .button {
+    min-height: 42px;
+  }
+  .toast {
+    bottom: calc(24px + env(safe-area-inset-bottom));
+    font-size: 11px;
+  }
+  .login-brand {
+    margin-bottom: 40px;
+  }
+  .login-card .field input {
+    font-size: 16px;
+  }
+  .login-card .button {
+    min-height: 46px;
+  }
+  .model-option {
+    padding: 15px 10px;
+  }
+  .jump-bottom {
+    bottom: 178px;
+  }
+  .session-list {
+    margin-top: 5px;
+  }
+}
+@media (max-width: 380px) {
+  .welcome h1 {
+    font-size: 32px;
+  }
+  .suggestions {
+    gap: 6px;
+  }
+  .suggestions button {
+    font-size: 9px;
+    padding: 10px;
+  }
+  .private-label {
+    display: none;
+  }
+  .model-button span {
+    max-width: 115px;
+  }
+  .working-label {
+    display: none;
+  }
+}
+@media (max-height: 700px) {
+  .welcome-mark {
+    margin-bottom: 10px;
+  }
+  .welcome-mark svg {
+    height: 30px;
+  }
+  .welcome h1 {
+    font-size: 33px;
+    margin: 12px 0;
+  }
+  .welcome > p {
+    line-height: 1.6;
+  }
+  .welcome {
+    padding-top: 0;
+    min-height: 230px;
+  }
+  .suggestions {
+    margin-top: 20px;
+  }
+  .is-new .composer-area {
+    padding-bottom: 20px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+@media (max-width: 700px) and (max-height: 600px) {
+  .welcome {
+    min-height: 0;
+    padding: 4px 20px;
+  }
+  .welcome-mark,
+  .welcome .eyebrow,
+  .welcome > p,
+  .suggestions {
+    display: none;
+  }
+  .welcome h1 {
+    font-size: 25px;
+    margin: 8px 0;
+    line-height: 1.15;
+  }
+  .topbar {
+    height: 48px;
+  }
+  .is-new .composer-area {
+    padding-bottom: 10px;
+  }
+}

@@ -60,7 +60,8 @@ class FakeHermes:
                 {
                     "providers": [
                         {
-                            "id": "test",
+                            "slug": "test",
+                            "authenticated": True,
                             "label": "Test provider",
                             "models": [
                                 {"id": "hermes-test", "name": "Hermes Test"},
@@ -78,21 +79,35 @@ class FakeHermes:
                     {"data": values[offset : offset + 100], "has_more": len(values) > offset + 100}
                 )
             sid = uuid.uuid4().hex
+            if body.get("title") and any(
+                s.get("title") == body["title"] for s in self.sessions.values()
+            ):
+                return JSONResponse(
+                    {"error": {"code": "invalid_title", "message": "Duplicate title"}}, 400
+                )
             record = {"id": sid, "title": body.get("title", "Untitled"), "started_at": time.time()}
             self.sessions[sid], self.messages[sid] = record, []
-            return JSONResponse(record, 201)
+            return JSONResponse({"object": "hermes.session", "session": record}, 201)
         parts = path.strip("/").split("/")
         if path.startswith("/api/sessions/"):
             sid = parts[2]
             if sid not in self.sessions:
                 return JSONResponse({}, 404)
             if path.endswith("/messages"):
-                return JSONResponse({"session_id": sid, "data": self.messages[sid]})
+                offset = int(request.query_params.get("offset", "0"))
+                limit = int(request.query_params.get("limit", "100"))
+                all_messages = self.messages[sid]
+                end = max(0, len(all_messages) - offset)
+                return JSONResponse(
+                    {"session_id": sid, "data": all_messages[max(0, end - limit) : end]}
+                )
             if path.endswith("/fork"):
                 new_id = uuid.uuid4().hex
                 self.sessions[new_id] = {**self.sessions[sid], "id": new_id, "title": body["title"]}
                 self.messages[new_id] = list(self.messages[sid])
-                return JSONResponse(self.sessions[new_id], 201)
+                return JSONResponse(
+                    {"object": "hermes.session", "session": self.sessions[new_id]}, 201
+                )
             if request.method == "PATCH":
                 self.sessions[sid]["title"] = body["title"]
             if request.method == "DELETE":
@@ -115,6 +130,8 @@ class FakeHermes:
                 "approved": False,
             }
             self.messages[body["session_id"]].append({"role": "user", "content": body["input"]})
+            queue = self.runs[rid]["_queue"] = asyncio.Queue()
+            self.runs[rid]["_task"] = asyncio.create_task(self.produce(self.runs[rid], queue))
             return JSONResponse({"run_id": rid, "status": "started"}, 202)
         if path.startswith("/v1/runs/"):
             rid = parts[2]
@@ -122,7 +139,9 @@ class FakeHermes:
                 return JSONResponse({}, 404)
             run = self.runs[rid]
             if path.endswith("/events"):
-                return StreamingResponse(self.events(run), media_type="text/event-stream")
+                if run.get("_queue") is None:
+                    return JSONResponse({}, 404)
+                return StreamingResponse(self.subscribe(run), media_type="text/event-stream")
             if path.endswith("/stop"):
                 self.stops += 1
                 run["status"] = "cancelled"
@@ -135,8 +154,21 @@ class FakeHermes:
             if path.endswith("/steer"):
                 run["steer"] = body["input"]
                 return JSONResponse({"accepted": True})
-            return JSONResponse(run)
+            return JSONResponse({k: v for k, v in run.items() if not k.startswith("_")})
         return JSONResponse({}, 404)
+
+    async def subscribe(self, run):
+        queue = run["_queue"]
+        try:
+            while (event := await queue.get()) is not None:
+                yield event
+        finally:
+            run["_queue"] = None
+
+    async def produce(self, run, queue):
+        async for event in self.events(run):
+            await queue.put(event)
+        await queue.put(None)
 
     async def events(self, run):
         def event(name, **fields):
