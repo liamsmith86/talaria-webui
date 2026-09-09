@@ -408,6 +408,7 @@ export function ReasoningPicker({ model, selected, onSelect, onClose }) {
   return html`<${Dialog} title="Choose reasoning" onClose=${onClose}>
     <p class="dialog-intro">Your reasoning selection will only apply to this session.</p>
     ${model?.capabilities?.reasoning === false && html`<p class="field-help">This model does not support adjustable reasoning.</p>`}
+    ${model?.capabilities?.reasoning !== false && !Array.isArray(model?.capabilities?.supported_efforts) && html`<p class="field-help">Hermes may adjust the level to match the model’s supported settings.</p>`}
     <div class="model-list reasoning-list">${options.map(
       (value) =>
         html`<button

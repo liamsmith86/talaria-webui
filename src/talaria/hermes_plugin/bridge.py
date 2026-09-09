@@ -100,6 +100,13 @@ def wire(app, adapter):
                 {"error": "Talaria plugin is not enabled for this profile."}, status=404
             )
         try:
+            action = request.match_info.get("action", "capabilities")
+            if action == "models":
+                from .models import model_options
+
+                return web.json_response(
+                    await asyncio.to_thread(model_options, request.query.get("refresh") == "1")
+                )
             db = await adapter._ensure_session_db_async()
             if db is None:
                 return web.json_response(
@@ -110,7 +117,6 @@ def wire(app, adapter):
                 and callable(getattr(db, "rewind_to_message", None))
                 and "expected_active_ids" in inspect.signature(db.rewind_to_message).parameters
             )
-            action = request.match_info.get("action", "capabilities")
             if action == "capabilities":
                 from .identity import inspect_home
 
@@ -120,6 +126,7 @@ def wire(app, adapter):
                         "version": 1,
                         "response_details": True,
                         "context_usage": True,
+                        "model_details": True,
                         "rewind": can_rewind,
                         "agent": {"name": identity.name},
                     }
@@ -204,6 +211,7 @@ def wire(app, adapter):
 
     for prefix in (PREFIX, f"/p/{{profile}}{PREFIX}"):
         app.router.add_get(f"{prefix}/capabilities", dispatch)
+        app.router.add_get(f"{prefix}/{{action:models}}", dispatch)
         app.router.add_get(
             f"{prefix}/sessions/{{session_id}}/{{action:context|response}}", dispatch
         )

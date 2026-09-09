@@ -64,7 +64,7 @@ async def discover(client):
                 "agent": {"name": name[:80] if isinstance(name, str) else ""},
                 **{
                     key: result.get(key) is True
-                    for key in ("response_details", "context_usage", "rewind")
+                    for key in ("response_details", "context_usage", "model_details", "rewind")
                 },
             }
     except APIError:

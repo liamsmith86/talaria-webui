@@ -157,10 +157,18 @@ async def capabilities(request: Request):
 
 
 async def model_options(request: Request):
+    from .extensions import PREFIX
+
+    state = request.app.state
     params = {"refresh": "1"} if request.query_params.get("refresh") == "1" else {}
-    return JSONResponse(
-        await request.app.state.hermes.request("GET", "/api/model/options", params=params)
-    )
+    if state.extensions.get("model_details"):
+        try:
+            result = await state.hermes.request("GET", f"{PREFIX}/models", params=params)
+            if isinstance(result, dict) and isinstance(result.get("providers"), list):
+                return JSONResponse(result)
+        except APIError:
+            pass  # Optional enrichment never makes the standard picker unavailable.
+    return JSONResponse(await state.hermes.request("GET", "/api/model/options", params=params))
 
 
 async def sessions(request: Request):

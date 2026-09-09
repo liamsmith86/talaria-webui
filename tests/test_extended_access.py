@@ -147,6 +147,47 @@ def test_replacement_validation_precedes_native_mutation(live_app):
         )
 
 
+def test_extended_model_limits_and_standard_catalog_fallback(page, live_app):
+    peer = live_app[1]
+    peer.extension = {"model_details": True}
+    peer.discovery_overrides["/talaria/v1/models"] = (
+        {
+            "model": "limited-model",
+            "provider": "test",
+            "providers": [
+                {
+                    "slug": "test",
+                    "is_current": True,
+                    "models": ["limited-model"],
+                    "capabilities": {
+                        "limited-model": {
+                            "reasoning": True,
+                            "supported_efforts": ["high", "xhigh"],
+                        }
+                    },
+                }
+            ],
+        },
+        200,
+    )
+    page.reload()
+    expect(page.get_by_role("button", name="Choose model", exact=True)).to_contain_text(
+        "limited-model"
+    )
+    page.get_by_role("button", name="Choose reasoning", exact=True).click()
+    expect(page.get_by_role("button", name="Low", exact=True)).to_have_count(0)
+    expect(page.get_by_role("button", name="Extra high", exact=True)).to_be_visible()
+    page.get_by_role("button", name="High", exact=True).click()
+    with signed_in(live_app[0]) as client:
+        # A disabled/incompatible plugin and malformed enrichment keep the picker usable.
+        for result in (({"error": "Unavailable"}, 503), ({"future_shape": True}, 200)):
+            peer.discovery_overrides["/talaria/v1/models"] = result
+            catalog = client.get("/api/models?refresh=1")
+            assert catalog.status_code == 200 and catalog.json()["model"] == peer.default_model
+        assert ("GET", "/talaria/v1/models", {"refresh": "1"}) in peer.calls
+        assert ("GET", "/api/model/options", {"refresh": "1"}) in peer.calls
+
+
 def test_legacy_path_migration_and_plugin_export(tmp_path):
     config = tmp_path / "config.json"
     config.write_text(json.dumps({"hermes_home": "/root/.hermes"}))

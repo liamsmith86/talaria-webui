@@ -4,13 +4,19 @@ import asyncio
 import json
 import sys
 import time
+from copy import deepcopy
 from pathlib import Path
+from unittest.mock import patch
 
 from agent.api_request_hooks import ApiRequestHooksMixin
 from agent.context_compressor import _SUMMARY_END_MARKER, HISTORICAL_TASK_HEADING, SUMMARY_PREFIX
+from hermes_cli import inventory
+from hermes_cli import models_reasoning_caps as native_caps
 from hermes_state import SessionDB
+from providers import get_provider_profile
 
 from talaria.hermes_plugin.bridge import rewind, rewind_preview, wire
+from talaria.hermes_plugin.models import model_options
 from talaria.hermes_plugin.observations import Observations
 
 home = Path(sys.argv[1])
@@ -107,6 +113,43 @@ assert observed["model"] == "actual-model" and observed["reasoning"] == "high"
 assert "never-save" not in json.dumps(observed)
 
 
+# The native inventory intentionally omits levels, while its transport still clamps
+# to them. Use that same cached catalog; do not maintain our own model rules.
+native_catalog = {
+    "providers": [{"slug": "openrouter", "capabilities": {"contract-model": {"reasoning": True}}}]
+}
+with (
+    patch.object(inventory, "load_picker_context", return_value=None),
+    patch.object(
+        inventory,
+        "build_model_options_payload",
+        side_effect=lambda *a, **k: deepcopy(native_catalog),
+    ),
+    patch.object(native_caps, "warm_openrouter_reasoning_caps_async"),
+    patch.object(
+        native_caps,
+        "openrouter_model_reasoning_capabilities",
+        return_value={
+            "supports_reasoning": True,
+            "supported_efforts": ["xhigh", "high"],
+            "mandatory": False,
+        },
+    ),
+):
+    limits = model_options()["providers"][0]["capabilities"]["contract-model"]["supported_efforts"]
+    assert limits == ["high", "xhigh"]
+    profile = get_provider_profile("openrouter")
+    for requested in ["low", *limits]:
+        extra, _ = profile.build_api_kwargs_extras(
+            model="contract-model",
+            supports_reasoning=True,
+            reasoning_config={"enabled": True, "effort": requested},
+        )
+        assert extra["reasoning"]["effort"] == ("high" if requested == "low" else requested)
+    with patch.object(inventory, "_reasoning_catalog_reader", side_effect=AttributeError):
+        assert model_options() == native_catalog
+
+
 async def http_contract():
 
     from aiohttp import web
@@ -134,6 +177,7 @@ async def http_contract():
     wire(app, Adapter())
     async with TestClient(TestServer(app)) as client:
         assert (await client.get("/talaria/v1/capabilities")).status == 401
+        assert (await client.get("/talaria/v1/models")).status == 401
         headers = {"Authorization": "Bearer contract-test-secret"}
         caps = await (await client.get("/talaria/v1/capabilities", headers=headers)).json()
         assert caps["rewind"] is True and caps["agent"]["name"] == "Contract agent"
