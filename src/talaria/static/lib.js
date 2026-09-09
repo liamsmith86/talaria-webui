@@ -1,14 +1,22 @@
 import { h, render } from "./vendor/preact.js";
 import htm from "./vendor/htm.js";
-export {
-  useState,
-  useEffect,
-  useRef,
-  useMemo,
-  useCallback,
-} from "./vendor/hooks.js";
+import { useEffect, useState } from "./vendor/hooks.js";
+export { useEffect, useState };
+export { useRef, useMemo, useCallback } from "./vendor/hooks.js";
 export const html = htm.bind(h);
 export { render };
+
+export function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() => matchMedia(query).matches);
+  useEffect(() => {
+    const media = matchMedia(query);
+    const update = () => setMatches(media.matches);
+    media.addEventListener("change", update);
+    update();
+    return () => media.removeEventListener("change", update);
+  }, [query]);
+  return matches;
+}
 
 export function readStorage(key, fallback = "") {
   try {

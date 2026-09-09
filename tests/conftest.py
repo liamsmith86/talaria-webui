@@ -48,7 +48,7 @@ def live_app(tmp_path):
     assert not thread.is_alive(), "Talaria did not shut down cleanly"
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def playwright_runtime():
     from playwright.sync_api import sync_playwright
 

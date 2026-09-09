@@ -4,6 +4,7 @@ import {
   useEffect,
   useState,
   useRef,
+  useMediaQuery,
   Icon,
   IconButton,
   Mark,
@@ -114,6 +115,7 @@ function Welcome({ onSuggestion }) {
 
 function App() {
   const app = useStore();
+  const mobile = useMediaQuery("(max-width: 700px)");
   const [model, setModel] = useState(() => {
     try {
       return JSON.parse(readStorage("model", "null"));
@@ -167,10 +169,14 @@ function App() {
     <${Sidebar} app=${app} />${app.sidebar &&
     html`<button
       class="sidebar-overlay"
+      tabindex="-1"
       aria-label="Close sidebar"
       onClick=${() => update({ sidebar: false })}
     />`}
-    <main class=${`main-panel ${!app.active ? "is-new" : ""}`}>
+    <main
+      class=${`main-panel ${!app.active ? "is-new" : ""}`}
+      inert=${mobile && app.sidebar}
+    >
       <header class="topbar">
         <div class="topbar-left">
           <${IconButton}
@@ -216,6 +222,12 @@ function App() {
         >
           Set up connection<${Icon} name="link" size=${15} />
         </button>
+      </div>`}
+      ${app.connected &&
+      (!supports("session_resources") || !supports("run_submission")) &&
+      html`<div class="connection-banner" role="status">
+        Update Hermes to a version that supports conversations and chat through
+        its API.
       </div>`}
       ${app.active
         ? html`<${Conversation} app=${app} />`

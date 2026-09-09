@@ -1,4 +1,13 @@
-import { html, useState, Icon, IconButton, Mark } from "./lib.js";
+import {
+  html,
+  useState,
+  useRef,
+  useEffect,
+  useMediaQuery,
+  Icon,
+  IconButton,
+  Mark,
+} from "./lib.js";
 import {
   update,
   newConversation,
@@ -28,6 +37,16 @@ function groupName(session) {
 }
 
 export function Sidebar({ app }) {
+  const mobile = useMediaQuery("(max-width: 700px)");
+  const drawer = useRef();
+  useEffect(() => {
+    if (!mobile || !app.sidebar) return;
+    const previous = document.querySelector('[aria-label="Open sidebar"]');
+    drawer.current?.querySelector("button")?.focus();
+    return () => {
+      if (!document.querySelector("dialog[open]")) previous?.focus();
+    };
+  }, [mobile, app.sidebar]);
   const [query, setQuery] = useState("");
   const [moreBusy, setMoreBusy] = useState(false);
   const sessions = app.sessions.filter((s) =>
@@ -37,8 +56,26 @@ export function Sidebar({ app }) {
   );
   let lastGroup = "";
   return html`<aside
+    ref=${drawer}
     class=${`sidebar ${app.sidebar ? "open" : ""}`}
     aria-label="Conversations"
+    role=${mobile && app.sidebar ? "dialog" : undefined}
+    aria-modal=${mobile && app.sidebar ? "true" : undefined}
+    inert=${mobile && !app.sidebar}
+    onKeyDown=${(e) => {
+      if (!mobile || !app.sidebar || e.key !== "Tab") return;
+      const controls = [
+        ...drawer.current.querySelectorAll(
+          "button:not(:disabled), input:not(:disabled), a[href]",
+        ),
+      ];
+      const target = e.shiftKey ? controls.at(-1) : controls[0];
+      const edge = e.shiftKey ? controls[0] : controls.at(-1);
+      if (document.activeElement === edge) {
+        e.preventDefault();
+        target?.focus();
+      }
+    }}
   >
     <div class="sidebar-brand">
       <button
@@ -103,6 +140,11 @@ export function Sidebar({ app }) {
         ${query
           ? "No conversations found."
           : "A fresh start. Your conversations will find a home here."}
+      </div>`}
+      ${app.hasMore &&
+      query &&
+      html`<div class="sidebar-empty">
+        Searching loaded conversations. Load more to include older ones.
       </div>`}
       ${app.hasMore &&
       html`<button

@@ -21,6 +21,7 @@ class FakeHermes:
         self.requests = {}
         self.stops = 0
         self.approvals = 0
+        self.approval_choices = ["once", "session", "deny"]
         self.app = Starlette(
             routes=[
                 Route(
@@ -40,18 +41,25 @@ class FakeHermes:
                     "object": "hermes.api_server.capabilities",
                     "platform": "hermes-agent",
                     "features": {
-                        key: True
-                        for key in [
-                            "run_submission",
-                            "run_stop",
-                            "run_steer",
-                            "run_status",
-                            "run_events_sse",
-                            "run_approval_response",
-                            "session_resources",
-                            "session_fork",
-                            "model_options",
-                        ]
+                        "runs_idempotency": {
+                            "supported": True,
+                            "durable": True,
+                            "retention_seconds": 86400,
+                        },
+                        **{
+                            key: True
+                            for key in [
+                                "run_submission",
+                                "run_stop",
+                                "run_steer",
+                                "run_status",
+                                "run_events_sse",
+                                "run_approval_response",
+                                "session_resources",
+                                "session_fork",
+                                "model_options",
+                            ]
+                        },
                     },
                 }
             )
@@ -148,6 +156,7 @@ class FakeHermes:
                 return JSONResponse({"status": "stopping"})
             if path.endswith("/approval"):
                 self.approvals += 1
+                run["approval_choice"] = body["choice"]
                 run["approved"] = True
                 run["status"] = "running"
                 return JSONResponse({"ok": True})
@@ -185,7 +194,7 @@ class FakeHermes:
             run["approval"] = {
                 "request_id": "test-approval",
                 "command": "python -m pytest",
-                "choices": ["once", "session", "deny"],
+                "choices": self.approval_choices,
             }
             run["status"] = "waiting_for_approval"
             yield event("approval.request", **run["approval"])
@@ -193,6 +202,10 @@ class FakeHermes:
                 if run["approved"] or run["status"] == "cancelled":
                     break
                 await asyncio.sleep(0.1)
+        if "delegate" in run["input"].lower():
+            yield event("subagent.start", task_index=0, goal="Review the project notes")
+            await asyncio.sleep(0.2)
+            yield event("subagent.complete", task_index=0, summary="The notes are ready.")
         output = (
             "## A thoughtful place to start\n\n"
             "I’ve looked through the notes. Here’s a simple plan:\n\n"

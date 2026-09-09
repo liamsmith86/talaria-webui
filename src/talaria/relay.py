@@ -24,6 +24,11 @@ class Channel:
 
     async def publish(self, event: dict):
         encoded = json.dumps(event, separators=(",", ":"))
+        if len(encoded) > 2 * 1024 * 1024:
+            kind = event.get("event")
+            if kind not in {f"run.{status}" for status in TERMINAL}:
+                kind = "talaria.reconcile"
+            encoded = json.dumps({"event": kind, "needs_history": True})
         async with self.condition:
             self.sequence += 1
             self.events.append((self.sequence, encoded))

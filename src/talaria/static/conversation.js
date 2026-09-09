@@ -24,8 +24,25 @@ export function plainContent(content) {
   return "";
 }
 
+function toolText(value, input = false) {
+  if (typeof value !== "string") return "";
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object") return value;
+    const keys = input
+      ? ["command", "path", "query", "url"]
+      : ["output", "content", "text"];
+    for (const key of keys)
+      if (typeof parsed[key] === "string") return parsed[key];
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return value;
+  }
+}
+
 function ToolCard({ tool }) {
   const isAgent = tool.kind === "agent";
+  const preview = toolText(tool.preview, !isAgent);
   const icon = isAgent
     ? "branch"
     : /search|browse|web/.test(tool.name)
@@ -44,7 +61,7 @@ function ToolCard({ tool }) {
           : (tool.name || "Tool").replace(/_/g, " ")}<small
           >${isAgent
             ? tool.name
-            : tool.preview?.split("\n")[0]?.slice(0, 110) ||
+            : preview.split("\n")[0]?.slice(0, 110) ||
               (tool.status === "running" ? "Working…" : "Finished")}</small
         ></span
       ><span class="tool-status"
@@ -57,14 +74,17 @@ function ToolCard({ tool }) {
       ><${Icon} name="chevron" size=${14} />
     </summary>
     <div class="tool-content">
-      ${tool.preview
-        ? html`<pre>${tool.preview}</pre>`
+      ${preview
+        ? html`<pre>${preview}</pre>`
         : html`<p>
             ${tool.status === "running"
               ? "Hermes is using this tool."
               : "This tool has finished."}
-          </p>`}${tool.duration !== undefined &&
-      html`<small>${tool.duration}s</small>`}
+          </p>`}
+      ${tool.output !== undefined &&
+      html`<small>Result</small>
+        <pre>${toolText(tool.output) || "No output"}</pre>`}
+      ${tool.duration !== undefined && html`<small>${tool.duration}s</small>`}
     </div>
   </details>`;
 }
@@ -140,6 +160,7 @@ function Approval({ sid, request }) {
     }
   }
   const choices = request.choices || ["once", "deny"];
+  const unavailable = !supports("run_approval_response");
   return html`<section class="approval-card" aria-label="Approval required">
     <div class="approval-heading">
       <${Icon} name="alert" size=${18} /><strong
@@ -155,27 +176,34 @@ ${request.command ||
     >
     ${error && html`<div class="form-error" role="alert">${error}</div>`}
     <div class="approval-actions">
-      <button
-        class="button secondary"
-        disabled=${busy}
-        onClick=${() => respond("deny")}
-      >
-        Deny</button
-      >${choices.includes("session") &&
+      ${choices.includes("deny") &&
       html`<button
         class="button secondary"
-        disabled=${busy}
+        disabled=${busy || unavailable}
+        onClick=${() => respond("deny")}
+      >
+        Deny
+      </button>`}${choices.includes("session") &&
+      html`<button
+        class="button secondary"
+        disabled=${busy || unavailable}
         onClick=${() => respond("session")}
       >
         Allow for session
-      </button>`}<button
+      </button>`}${choices.includes("once") &&
+      html`<button
         class="button primary"
-        disabled=${busy || !supports("run_approval_response")}
+        disabled=${busy || unavailable}
         onClick=${() => respond("once")}
       >
         ${busy ? "Sending…" : "Allow once"}
-      </button>
+      </button>`}
     </div>
+    ${unavailable &&
+    html`<p>
+      This Hermes version cannot receive approvals here. Respond in Hermes to
+      continue.
+    </p>`}
   </section>`;
 }
 
@@ -186,7 +214,7 @@ function historyItems(history) {
     if (message.role === "tool") {
       const call = calls.get(message.tool_call_id);
       if (call) {
-        call.preview = plainContent(message.content).slice(0, 20000);
+        call.output = plainContent(message.content).slice(0, 20000);
         call.status = "completed";
       }
     } else if (message.role === "user" || message.role === "assistant") {
@@ -303,9 +331,10 @@ export function Conversation({ app }) {
         ${live.error}${live.submissionFailed &&
         html`<button
           class="text-button"
+          disabled=${live.retrying}
           onClick=${() => retrySubmission(app.active).catch(fail)}
         >
-          Retry submission
+          ${live.retrying ? "Recovering…" : "Retry submission"}
         </button>`}
       </div>`}
       ${live?.status === "cancelled" &&

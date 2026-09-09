@@ -139,7 +139,7 @@ summary {
 }
 .danger {
   background: var(--danger);
-  color: white;
+  color: var(--on-accent);
 }
 .text-button {
   display: inline-flex;

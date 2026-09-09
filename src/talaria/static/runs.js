@@ -17,13 +17,31 @@ function publish(sid, live) {
 }
 function remember() {
   const entries = Object.entries(state.lives)
-    .filter(([, r]) => r.id && !terminal.has(r.status))
+    .filter(([, r]) => !terminal.has(r.status) || r.uncertain)
+    .slice(-16)
     .map(([sid, r]) => [
       sid,
-      { id: r.id, requestId: r.requestId, userText: r.userText },
+      {
+        id: r.id,
+        requestId: r.requestId,
+        userText: r.userText,
+        ...(!r.id ? { payload: r.payload, createdAt: r.createdAt } : {}),
+      },
     ]);
   writeStorage("runs", JSON.stringify(Object.fromEntries(entries)));
 }
+function canRetry(live) {
+  if (!live.uncertain) return true;
+  const protection = state.caps.features?.runs_idempotency;
+  const retention = Math.min(protection?.retention_seconds || 0, 86400) * 1000;
+  return (
+    protection?.supported === true &&
+    retention > 0 &&
+    Date.now() - live.createdAt < retention
+  );
+}
+const receiptError =
+  "The submission confirmation was lost. Check the conversation before sending another message.";
 export const running = (sid, lives = state.lives) =>
   !!lives[sid] && !terminal.has(lives[sid].status);
 
@@ -57,9 +75,9 @@ export function applyEvent(live, event) {
   }
   if (type === "subagent.start" || type === "subagent.complete") {
     const id =
-      event.subagent_id ||
-      event.child_session_id ||
-      event.task_index ||
+      event.subagent_id ??
+      event.child_session_id ??
+      event.task_index ??
       "agent";
     const index = next.tools.findIndex(
       (t) => t.kind === "agent" && t.id === id,
@@ -67,7 +85,11 @@ export function applyEvent(live, event) {
     const tool = {
       id,
       kind: "agent",
-      name: event.goal || event.preview || "Delegated task",
+      name:
+        event.goal ||
+        event.preview ||
+        next.tools[index]?.name ||
+        "Delegated task",
       preview: event.summary || event.output_tail || "",
       status: type.endsWith("start") ? "running" : event.status || "completed",
     };
@@ -85,6 +107,7 @@ export function applyEvent(live, event) {
     next.error = event.error;
     next.approval = null;
     next.pendingSteer = event.pending_steer;
+    next.needsHistory = live.needsHistory || event.needs_history;
   }
   return next;
 }
@@ -133,8 +156,10 @@ export async function sendMessage(text, model = null) {
     tools: [],
     status: "starting",
     payload,
+    createdAt: Date.now(),
   };
   publish(sid, live);
+  remember();
   try {
     const result = await api("/runs", { method: "POST", body: payload });
     publish(sid, { ...state.lives[sid], id: result.run_id, status: "running" });
@@ -142,30 +167,50 @@ export async function sendMessage(text, model = null) {
     subscribe(sid);
     return sid;
   } catch (error) {
-    publish(sid, {
+    const failed = {
       ...live,
       status: "failed",
       error: error.message,
-      submissionFailed: true,
       uncertain: error.status === 0 || error.status >= 500,
-    });
+    };
+    failed.submissionFailed = canRetry(failed);
+    if (failed.uncertain && !failed.submissionFailed)
+      failed.error = receiptError;
+    publish(sid, failed);
+    remember();
     throw error;
   }
 }
 
 export async function retrySubmission(sid) {
   const live = state.lives[sid];
-  const result = await api("/runs", { method: "POST", body: live.payload });
-  publish(sid, {
-    ...live,
-    id: result.run_id,
-    status: "running",
-    error: null,
-    submissionFailed: false,
-    uncertain: false,
-  });
-  remember();
-  subscribe(sid);
+  if (live.retrying) return;
+  if (!canRetry(live)) throw new Error(receiptError);
+  publish(sid, { ...live, retrying: true });
+  try {
+    const result = await api("/runs", { method: "POST", body: live.payload });
+    publish(sid, {
+      ...live,
+      id: result.run_id,
+      status: "running",
+      error: null,
+      submissionFailed: false,
+      uncertain: false,
+      retrying: false,
+    });
+    remember();
+    subscribe(sid);
+  } catch (error) {
+    const failed = {
+      ...state.lives[sid],
+      retrying: false,
+      uncertain: live.uncertain || error.status === 0 || error.status >= 500,
+    };
+    failed.submissionFailed = canRetry(failed);
+    publish(sid, failed);
+    remember();
+    throw error;
+  }
 }
 
 export function subscribe(sid) {
@@ -185,11 +230,16 @@ export function subscribe(sid) {
       return;
     }
     if (event.event === "talaria.reconcile") {
-      publish(sid, { ...state.lives[sid], reconnecting: true });
+      publish(sid, {
+        ...state.lives[sid],
+        reconnecting: true,
+        needsHistory: true,
+      });
       return;
     }
     if (event.event === "talaria.unavailable") {
       source.close();
+      sources.delete(sid);
       publish(sid, {
         ...state.lives[sid],
         status: "interrupted",
@@ -224,7 +274,12 @@ async function settle(sid, live) {
     .reverse()
     .find((m) => m.role === "assistant" && m.content);
   const content = typeof final?.content === "string" ? final.content : "";
-  if (content && live.text && content.trim() === live.text.trim()) {
+  const lastUser = [...history].reverse().find((m) => m.role === "user");
+  if (
+    content &&
+    ((live.text && content.trim() === live.text.trim()) ||
+      (live.needsHistory && lastUser?.content === live.userText))
+  ) {
     publish(sid, { ...state.lives[sid], persisted: true });
   }
   await refreshSessions();
@@ -241,6 +296,21 @@ export async function restoreRuns() {
   }
   for (const [sid, record] of Object.entries(saved).slice(0, 16)) {
     try {
+      if (!record.id && record.payload) {
+        const live = {
+          ...record,
+          text: "",
+          tools: [],
+          status: "failed",
+          uncertain: true,
+        };
+        live.submissionFailed = canRetry(live);
+        live.error = live.submissionFailed
+          ? "The submission confirmation was lost. Retry safely to recover this response."
+          : receiptError;
+        publish(sid, live);
+        continue;
+      }
       const status = await api(`/runs/${encodeURIComponent(record.id)}`);
       const live = {
         ...record,

@@ -6,7 +6,26 @@ import re
 import httpx
 
 MAX_RESPONSE = 16 * 1024 * 1024
+MAX_EVENT = 2 * 1024 * 1024
 IDENTIFIER = re.compile(r"[A-Za-z0-9_.:-]{1,256}\Z")
+
+
+async def event_lines(response):
+    pending = bytearray()
+    size = 0
+    async for chunk in response.aiter_bytes():
+        pending.extend(chunk)
+        while (end := pending.find(b"\n")) >= 0:
+            raw = pending[:end].rstrip(b"\r")
+            del pending[: end + 1]
+            size += len(raw)
+            if size > MAX_EVENT:
+                raise APIError("A Hermes event exceeded the display limit.")
+            if not raw:
+                size = 0
+            yield raw.decode("utf-8")
+        if size + len(pending) > MAX_EVENT:
+            raise APIError("A Hermes event exceeded the display limit.")
 
 
 class APIError(Exception):
@@ -89,22 +108,17 @@ class Hermes:
             ) as response:
                 if response.status_code != 200:
                     raise response_error(response.status_code)
-                lines, size = [], 0
-                async for line in response.aiter_lines():
-                    size += len(line)
-                    if size > 2 * 1024 * 1024:
-                        raise APIError("A Hermes event exceeded the display limit.")
+                lines = []
+                async for line in event_lines(response):
                     if line.startswith("data:"):
                         lines.append(line[5:].lstrip())
                     elif not line and lines:
                         payload = "\n".join(lines)
-                        lines, size = [], 0
+                        lines = []
                         if payload == "[DONE]":
                             return
                         event = json.loads(payload)
                         if isinstance(event, dict):
                             yield event
-                    elif not line:
-                        size = 0
-        except (httpx.HTTPError, json.JSONDecodeError) as exc:
+        except (httpx.HTTPError, ValueError) as exc:
             raise APIError("Live updates paused. Checking the run in Hermes.") from exc

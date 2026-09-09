@@ -19,7 +19,7 @@
   --surface-hover: #f4f5f1;
   --text: #272b29;
   --muted: #676f65;
-  --faint: #6b7269;
+  --faint: #646d62;
   --line: #e4e6df;
   --line-strong: #d2d6cd;
   --on-accent: #fff;
@@ -49,7 +49,7 @@
   --accent-text: #7051a7;
 }
 :root[data-palette="rose"] {
-  --accent: #b55b6b;
+  --accent: #ac5263;
   --accent-hover: #a14d5c;
   --accent-soft: #faedf0;
   --accent-text: #a04759;
@@ -107,7 +107,7 @@
     --line: #343a34;
     --line-strong: #4b554b;
     --on-accent: #191c1b;
-  --accent: #88a8fb;
+    --accent: #88a8fb;
     --accent-hover: #a0baff;
     --accent-soft: #283347;
     --accent-text: #a1bafb;

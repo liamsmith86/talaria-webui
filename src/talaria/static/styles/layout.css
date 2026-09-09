@@ -54,7 +54,7 @@ kbd {
   margin-left: auto;
 }
 .new-chat kbd {
-  opacity: 0.6;
+  color: var(--faint);
 }
 .search-field {
   display: flex;

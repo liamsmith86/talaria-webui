@@ -39,7 +39,7 @@ export function Composer({ app, model, onModel, draftSuggestion }) {
   }, [draft]);
   async function send(e) {
     e?.preventDefault();
-    if (sending || !draft.trim()) return;
+    if (sending || live?.uncertain || !draft.trim()) return;
     const text = draft.trim();
     setSending(true);
     try {
@@ -162,6 +162,8 @@ export function Composer({ app, model, onModel, draftSuggestion }) {
               sending ||
               !app.connected ||
               !supports("run_submission") ||
+              !supports("session_resources") ||
+              live?.uncertain ||
               (active && !supports("run_steer"))}
             >
               <${Icon} name="arrow" size=${19} />

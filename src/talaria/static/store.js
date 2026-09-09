@@ -76,14 +76,16 @@ export async function connect(configured = true) {
   try {
     const caps = await api("/capabilities");
     update({ caps, connected: true, connecting: false });
-    await refreshSessions();
+    if (caps.features?.session_resources) await refreshSessions();
+    else update({ sessions: [], hasMore: false, history: [] });
     if (caps.features?.model_options) {
       api("/models")
         .then((result) => update({ models: flattenModels(result) }))
         .catch(() => {});
-    }
+    } else update({ models: [] });
     const last = readStorage("last-session");
-    if (last && !state.active) await openSession(last);
+    if (last && !state.active && caps.features?.session_resources)
+      await openSession(last);
   } catch (error) {
     update({ connecting: false, connected: false });
     fail(error);

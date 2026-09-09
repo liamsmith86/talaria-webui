@@ -28,8 +28,8 @@ def main():
     settings = load(args.config)
     if args.set_password:
         password = getpass.getpass("New password (at least 12 characters): ")
-        if len(password) < 12 or password != getpass.getpass("Confirm password: "):
-            parser.error("Passwords must match and contain at least 12 characters.")
+        if not 12 <= len(password) <= 1024 or password != getpass.getpass("Confirm password: "):
+            parser.error("Passwords must match and contain 12 to 1024 characters.")
         settings.password_hash = hash_password(password)
         settings.signing_key = secrets.token_hex(32)
         save(args.config, settings)
