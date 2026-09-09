@@ -75,7 +75,9 @@ function ToolCard({ tool }) {
     </summary>
     <div class="tool-content">
       ${preview
-        ? html`<pre>${preview}</pre>`
+        ? html`<pre tabindex="0" role="region" aria-label="Tool details">
+${preview}</pre
+          >`
         : html`<p>
             ${tool.status === "running"
               ? "Hermes is using this tool."
@@ -83,7 +85,9 @@ function ToolCard({ tool }) {
           </p>`}
       ${tool.output !== undefined &&
       html`<small>Result</small>
-        <pre>${toolText(tool.output) || "No output"}</pre>`}
+        <pre tabindex="0" role="region" aria-label="Tool result">
+${toolText(tool.output) || "No output"}</pre
+        >`}
       ${tool.duration !== undefined && html`<small>${tool.duration}s</small>`}
     </div>
   </details>`;
@@ -168,7 +172,7 @@ function Approval({ sid, request }) {
       >
     </div>
     <p>Hermes would like to run this command.</p>
-    <pre>
+    <pre tabindex="0" role="region" aria-label="Command awaiting approval">
 ${request.command ||
       request.description ||
       request.preview ||

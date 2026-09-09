@@ -123,3 +123,21 @@ def test_missing_required_capability_explains_unavailable_chat(page):
     expect(page.get_by_text("Update Hermes to a version", exact=False)).to_be_visible()
     page.get_by_label("Message Hermes").fill("Unavailable")
     expect(page.get_by_role("button", name="Send message", exact=True)).to_be_disabled()
+
+
+def test_wide_code_is_keyboard_scrollable(page, live_app):
+    peer = live_app[1]
+    peer.sessions["wide-code"] = {"id": "wide-code", "title": "A wide code sample"}
+    peer.messages["wide-code"] = [
+        {
+            "id": 1,
+            "role": "assistant",
+            "content": '```python\nprint("' + "wide text " * 100 + '")\n```',
+        }
+    ]
+    page.reload()
+    page.get_by_role("button", name="A wide code sample", exact=True).click()
+    code = page.get_by_role("region", name="python code")
+    code.focus()
+    page.keyboard.press("ArrowRight")
+    expect(code).not_to_have_js_property("scrollLeft", 0)

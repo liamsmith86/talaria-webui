@@ -287,12 +287,13 @@
   padding: 0;
   font-size: 11px;
 }
-.markdown table {
-  display: block;
+.table-scroll {
   overflow: auto;
+  margin: 16px 0;
+}
+.markdown table {
   border-collapse: collapse;
   width: 100%;
-  margin: 16px 0;
 }
 .markdown th,
 .markdown td {

@@ -12,6 +12,10 @@ const escape = (text) =>
 renderer.html = ({ text }) => escape(text);
 renderer.image = ({ text, href }) =>
   `<a href="${escape(href)}">${escape(text || "Image attachment")}</a>`;
+const table = renderer.table;
+renderer.table = function (token) {
+  return `<div class="table-scroll" role="region" aria-label="Table" tabindex="0">${table.call(this, token)}</div>`;
+};
 renderer.code = ({ text, lang }) => {
   const language = (lang || "text")
     .split(/\s/)[0]
@@ -22,7 +26,7 @@ renderer.code = ({ text, lang }) => {
     grammar && text.length < 50000
       ? window.Prism.highlight(text, grammar, language)
       : escape(text);
-  return `<div class="code-block"><div class="code-heading"><span>${language}</span><button type="button" data-copy-code="true">Copy code</button></div><pre><code>${highlighted}</code></pre></div>`;
+  return `<div class="code-block"><div class="code-heading"><span>${language}</span><button type="button" data-copy-code="true">Copy code</button></div><pre tabindex="0" role="region" aria-label="${language} code"><code>${highlighted}</code></pre></div>`;
 };
 marked.use({ renderer, gfm: true, breaks: false });
 
