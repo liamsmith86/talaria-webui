@@ -280,15 +280,16 @@ async def start_run(request: Request):
             >= 16
         ):
             raise APIError("There are too many active conversations. Wait for one to finish.", 429)
-        path = f"{PREFIX}/runs" if state.extensions.get("context_runs") else "/v1/runs"
         options = {
             "json": payload,
             "headers": {"Idempotency-Key": idem, "X-Hermes-Session-Key": f"talaria:{sid}"},
         }
         try:
-            result = await state.hermes.request("POST", path, **options)
+            # Probe at admission: an open tab can submit before discovery finishes
+            # after a Talaria restart. Hermes checks support before accepting a run.
+            result = await state.hermes.request("POST", f"{PREFIX}/runs", **options)
         except APIError as exc:
-            if path == "/v1/runs" or exc.status != 404:
+            if exc.status != 404:
                 raise
             # An absent extension cannot have admitted a run. Other failures stay
             # on the same recovery path; never retry an ambiguous dispatch elsewhere.

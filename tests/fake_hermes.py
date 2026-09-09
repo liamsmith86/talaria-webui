@@ -46,7 +46,9 @@ class FakeHermes:
         body = await request.json() if request.method in {"POST", "PATCH", "PUT"} else {}
         if path in self.discovery_overrides:
             return JSONResponse(*self.discovery_overrides[path])
-        if path == "/talaria/v1/runs" and self.extension and self.extension.get("context_runs"):
+        if path == "/talaria/v1/runs":
+            if not (self.extension or {}).get("context_runs"):
+                return JSONResponse({"error": "Not installed"}, 404)
             path = "/v1/runs"  # Both entry points share Hermes's run/event lifecycle.
         if path.startswith("/talaria/v1/"):
             if self.extension is None:
