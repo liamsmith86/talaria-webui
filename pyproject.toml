@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "talaria-webui"
+version = "0.1.0"
+description = "A considered web client for Hermes Agent"
+requires-python = ">=3.12"
+dependencies = [
+  "starlette>=0.47,<1",
+  "httpx>=0.28,<1",
+  "uvicorn>=0.35,<1",
+]
+
+[project.scripts]
+talaria = "talaria.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.4,<10", "pytest-asyncio>=1,<2", "playwright>=1.55,<2", "ruff>=0.12,<1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/talaria"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
