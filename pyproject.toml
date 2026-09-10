@@ -17,10 +17,13 @@ dependencies = [
 talaria = "talaria.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=9.1,<10", "pytest-asyncio>=1.4,<2", "playwright>=1.62,<2", "ruff>=0.16.7,<1"]
+dev = ["pytest>=9.1,<10", "pytest-asyncio>=1.4,<2", "playwright>=1.62,<2", "ruff>=0.16.6,<1"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/talaria"]
+
+[tool.uv]
+exclude-newer = "7 days"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
