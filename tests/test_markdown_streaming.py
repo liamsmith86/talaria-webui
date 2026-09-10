@@ -137,3 +137,35 @@ def test_large_code_stays_complete_without_expensive_highlighting(page):
         copy:!!root.querySelector('[data-copy-code]')};
     }""")
     assert result == {"same": True, "tokens": 0, "copy": True}
+
+
+def test_deferred_highlighting_preserves_code_focus_and_scroll(page):
+    page.evaluate(r"""async () => {
+      const {html, render} = await import('/static/lib.js');
+      const {Markdown} = await import('/static/markdown.js');
+      const original = window.IntersectionObserver;
+      window.IntersectionObserver = class {
+        constructor(callback) {
+          window.highlightVisibleCode = () => callback([{isIntersecting:true}]);
+        }
+        observe() {}
+        disconnect() {}
+      };
+      const root = document.createElement('div'); document.body.append(root);
+      window.cleanupCodeTest = () => {
+        render(null,root); root.remove(); window.IntersectionObserver = original;
+      };
+      const text = '```javascript\nconst answer = "' + 'wide text '.repeat(100) + '";\n```';
+      render(html`<${Markdown} text=${text} deferHighlight=${true} />`,root);
+      window.originalCodeRegion = root.querySelector('pre');
+      originalCodeRegion.focus(); originalCodeRegion.scrollLeft = 100;
+    }""")
+    try:
+        page.wait_for_function("() => !!window.highlightVisibleCode")
+        page.evaluate("window.highlightVisibleCode()")
+        page.wait_for_function("() => document.querySelector('pre .token')")
+        assert page.evaluate("""() => originalCodeRegion.isConnected &&
+            document.activeElement === originalCodeRegion &&
+            originalCodeRegion.scrollLeft === 100""")
+    finally:
+        page.evaluate("window.cleanupCodeTest()")

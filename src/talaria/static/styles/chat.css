@@ -162,8 +162,6 @@
   margin: 0 0 29px;
   animation: arrive 0.2s ease;
   min-width: 0;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 200px;
 }
 .message.user {
   display: flex;

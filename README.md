@@ -89,7 +89,9 @@ Managed installations support `update`, `status`, and `rollback` through `~/.loc
 
 ## Development and platform support
 
-CI covers Python 3.12 and 3.14 on Linux and macOS (x86-64 and ARM64), plus Python 3.13 on Linux. Each platform exercises backend tests, fresh wheel installation, startup, plugin export, update, and rollback. Browser regressions and accessibility run in Chromium, Firefox, and WebKit. Native Hermes contracts use the revision pinned in [CI](.github/workflows/ci.yml).
+The full CI matrix covers Python 3.12 and 3.14 on Linux and macOS (x86-64 and ARM64), plus Python 3.13 on Linux. Each platform exercises backend tests, fresh wheel installation, startup, plugin export, update, and rollback. Browser regressions and accessibility run in Chromium, Firefox, and WebKit. Native Hermes contracts use the revision pinned in [CI](.github/workflows/ci.yml).
+
+While private, routine CI runs Linux/Python 3.12 and 3.14, Chromium/accessibility, native Hermes contracts, and the amd64 container check. Releases and manual full runs exercise every platform. Public repositories automatically use the full matrix on GitHub-hosted runners.
 
 On Windows, use Ubuntu under WSL2 and follow the Linux installation instructions; keep the checkout in the Linux filesystem. CI tests this route. Native Windows installation is not supported. Docker Desktop can run the Linux image; connect to host services through `host.docker.internal` and publish the port with `-p 127.0.0.1:8766:8766` instead of `--network host`.
 

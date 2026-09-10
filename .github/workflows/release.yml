@@ -35,6 +35,8 @@ jobs:
   checks:
     needs: version
     uses: ./.github/workflows/ci.yml
+    with:
+      full: true
 
   publish:
     needs: checks

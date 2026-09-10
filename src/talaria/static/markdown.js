@@ -79,7 +79,7 @@ export function Markdown({ text, streaming = false, deferHighlight = false }) {
     // Saved messages need one sanitization pass. Offscreen code stays readable
     // as plain text, with syntax highlighting added as it approaches the viewport.
     if (!streamed.current)
-      return [{ markup: renderMarkdown(text, highlightVisible) }];
+      return [{ markup: renderMarkdown(text, !deferHighlight) }];
     // Lex the complete source so setext headings, lists, and references that
     // arrive later retain Marked's semantics. Cache only this message's current
     // blocks; no growing global cache and no reparsing/highlighting old HTML.
@@ -127,7 +127,20 @@ export function Markdown({ text, streaming = false, deferHighlight = false }) {
     });
     previous.current = next;
     return next;
-  }, [text, streaming, highlightVisible]);
+  }, [text, streaming, highlightVisible, deferHighlight]);
+  useEffect(() => {
+    if (streamed.current || !deferHighlight || !highlightVisible) return;
+    // Enrich code in place: replacing the whole saved message would discard
+    // keyboard focus, code scrolling, and expanded controls when it becomes visible.
+    for (const block of root.current.querySelectorAll(".code-block")) {
+      const code = block.querySelector("code");
+      const language = block.querySelector(".code-heading span").textContent;
+      const grammar = window.Prism?.languages[language];
+      const source = code.textContent;
+      if (grammar && source.length < 10000)
+        code.innerHTML = sanitize(window.Prism.highlight(source, grammar, language));
+    }
+  }, [text, deferHighlight, highlightVisible]);
   return html`<div
     ref=${root}
     class=${`markdown ${streaming ? "streaming" : ""}`}

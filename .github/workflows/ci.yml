@@ -5,7 +5,16 @@ on:
   push:
     branches: [main]
   workflow_call:
+    inputs:
+      full:
+        type: boolean
+        default: false
   workflow_dispatch:
+    inputs:
+      full:
+        description: Run every platform and browser
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -15,7 +24,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      full: ${{ steps.matrix.outputs.full }}
+      platforms: ${{ steps.matrix.outputs.platforms }}
+      browsers: ${{ steps.matrix.outputs.browsers }}
+      docker: ${{ steps.matrix.outputs.docker }}
+    steps:
+      - id: matrix
+        env:
+          FULL: ${{ inputs.full || !github.event.repository.private }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          full = os.environ['FULL'] == 'true'
+          systems = ['ubuntu-24.04', 'ubuntu-24.04-arm', 'macos-15-intel', 'macos-15'] if full else ['ubuntu-24.04']
+          platforms = [{'os': system, 'python': version}
+                       for system in systems for version in ['3.12', '3.14']]
+          if full:
+              platforms.append({'os': 'ubuntu-24.04', 'python': '3.13'})
+          docker = [{'os': 'ubuntu-24.04', 'arch': 'amd64'}]
+          if full:
+              docker.append({'os': 'ubuntu-24.04-arm', 'arch': 'arm64'})
+          values = {'full': str(full).lower(),
+                    'platforms': json.dumps(platforms), 'docker': json.dumps(docker),
+                    'browsers': json.dumps(['chromium', 'firefox', 'webkit'] if full else ['chromium'])}
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              for key, value in values.items():
+                  print(f'{key}={value}', file=output)
+          PY
+
   lint:
+    needs: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -30,17 +72,14 @@ jobs:
       - run: uv run --locked ruff check . .github/scripts
 
   platforms:
+    needs: plan
     name: Platform (${{ matrix.os }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15-intel, macos-15]
-        python: ['3.12', '3.14']
-        include:
-          - os: ubuntu-24.04
-            python: '3.13'
+        include: ${{ fromJSON(needs.plan.outputs.platforms) }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -60,13 +99,14 @@ jobs:
           retention-days: 7
 
   browsers:
+    needs: plan
     name: Browser (${{ matrix.browser }})
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, firefox, webkit]
+        browser: ${{ fromJSON(needs.plan.outputs.browsers) }}
     env:
       TALARIA_TEST_BROWSER: ${{ matrix.browser }}
       TALARIA_AXE_PATH: ${{ github.workspace }}/.local/axe.min.js
@@ -94,6 +134,7 @@ jobs:
           retention-days: 7
 
   hermes:
+    needs: plan
     name: Native Hermes
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -128,6 +169,8 @@ jobs:
           retention-days: 7
 
   wsl:
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
     name: Windows WSL2
     runs-on: windows-2025
     timeout-minutes: 25
@@ -152,17 +195,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   docker:
+    needs: plan
     name: Docker (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-24.04
-            arch: amd64
-          - os: ubuntu-24.04-arm
-            arch: arm64
+        include: ${{ fromJSON(needs.plan.outputs.docker) }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -179,16 +219,19 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [lint, platforms, browsers, hermes, wsl, docker]
+    needs: [plan, lint, platforms, browsers, hermes, wsl, docker]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require every test job to pass
         env:
           RESULTS: ${{ toJSON(needs) }}
+          FULL: ${{ needs.plan.outputs.full }}
         run: |
           python3 - <<'PY'
           import json, os
           results = json.loads(os.environ['RESULTS'])
-          assert all(job['result'] == 'success' for job in results.values()), results
+          assert all(job['result'] == 'success' or
+                     (name == 'wsl' and os.environ['FULL'] == 'false' and job['result'] == 'skipped')
+                     for name, job in results.items()), results
           PY
