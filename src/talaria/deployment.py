@@ -78,13 +78,23 @@ def write_json(path: Path, data: dict):
 
 def stop(process):
     """Also stop build-tool children when an update is interrupted."""
+
+    def signal_group(sig):
+        with suppress(ProcessLookupError):
+            try:
+                os.killpg(process.pid, sig)
+            except PermissionError:
+                # macOS can report EPERM for an exited, unreaped group leader.
+                # Reap it and retry; genuine permission failures still propagate.
+                if process.poll() is None:
+                    raise
+                os.killpg(process.pid, sig)
+
     # A build's group can outlive its leader, including children that ignore TERM.
-    with suppress(ProcessLookupError):
-        os.killpg(process.pid, signal.SIGTERM)
+    signal_group(signal.SIGTERM)
     with suppress(subprocess.TimeoutExpired):
         process.wait(timeout=5)
-    with suppress(ProcessLookupError):
-        os.killpg(process.pid, signal.SIGKILL)
+    signal_group(signal.SIGKILL)
     process.wait(timeout=5)
 
 

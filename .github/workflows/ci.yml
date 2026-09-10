@@ -138,9 +138,9 @@ jobs:
       - name: Install Ubuntu in WSL2
         shell: pwsh
         run: |
-          wsl --install --distribution Ubuntu-24.04 --web-download --no-launch
+          wsl --set-default-version 2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          wsl --set-version Ubuntu-24.04 2
+          wsl --install --distribution Ubuntu-24.04 --web-download --no-launch
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           wsl --distribution Ubuntu-24.04 --user root -- bash -c 'uname -r | grep -i microsoft-standard-WSL2'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
