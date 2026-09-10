@@ -6,7 +6,7 @@ mkdir -p /tmp/talaria-ci
 cp -a "$1/." /tmp/talaria-ci/
 cd /tmp/talaria-ci
 # Pin the bootstrap tool; project dependencies still observe the seven-day cooldown.
-curl -fsSL https://astral.sh/uv/0.11.17/install.sh -o /tmp/install-uv.sh
+curl -fsSL https://astral.sh/uv/0.12.9/install.sh -o /tmp/install-uv.sh
 sh /tmp/install-uv.sh
 export PATH="/root/.local/bin:$PATH"
 uv sync --locked --python 3.12

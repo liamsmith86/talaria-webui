@@ -1,3 +1,4 @@
+import os
 import socket
 import threading
 import time
@@ -30,9 +31,15 @@ def pytest_sessionfinish(session, exitstatus):
 
 
 def serve(app):
-    sock = socket.socket()
-    sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
+    # Some hosts allocate low ephemeral ports, including browser-blocked ports.
+    # Keep the socket bound while selecting a port outside that range.
+    while True:
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+        if port >= 16384:
+            break
+        sock.close()
     server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False))
     thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
@@ -65,7 +72,7 @@ def live_app(tmp_path):
     assert not thread.is_alive(), "Talaria did not shut down cleanly"
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def playwright_runtime():
     from playwright.sync_api import sync_playwright
 
@@ -73,26 +80,32 @@ def playwright_runtime():
         yield runtime
 
 
-@pytest.fixture
-def page(playwright_runtime, live_app):
-    import os
-
+@pytest.fixture(scope="session")
+def browser(playwright_runtime):
     browser = getattr(playwright_runtime, os.getenv("TALARIA_TEST_BROWSER", "chromium")).launch()
-    context = browser.new_context(viewport={"width": 1440, "height": 960})
-    page = context.new_page()
-    page.goto(live_app[0])
-    page.get_by_label("Password", exact=True).fill("test-password")
-    page.get_by_role("button", name="Step inside").click()
-    page.locator(".topbar-title").wait_for()
-    # Start scenarios after the simulator's initial discovery. Reloading while those
-    # reads are pending produces WebKit navigation-cancellation diagnostics.
-    state = page.evaluate_handle("async () => (await import('/static/store.js')).state")
-    page.wait_for_function(
-        "state => !!state.defaultModel && state.readiness.status === 'ok'", arg=state
-    )
-    state.dispose()
-    yield page
-    # Let intercepted requests finish before closing their response context.
-    page.unroute_all(behavior="wait")
-    context.close()
+    yield browser
     browser.close()
+
+
+@pytest.fixture
+def page(browser, live_app):
+    # Reuse the process, but isolate cookies, storage, permissions, and routes per test.
+    context = browser.new_context(viewport={"width": 1440, "height": 960})
+    try:
+        page = context.new_page()
+        page.goto(live_app[0])
+        page.get_by_label("Password", exact=True).fill("test-password")
+        page.get_by_role("button", name="Step inside").click()
+        page.locator(".topbar-title").wait_for()
+        # Let the simulator's initial discovery finish before starting a scenario.
+        state = page.evaluate_handle("async () => (await import('/static/store.js')).state")
+        page.wait_for_function(
+            "state => !!state.defaultModel && state.readiness.status === 'ok'", arg=state
+        )
+        state.dispose()
+        yield page
+    finally:
+        # Let intercepted requests finish before closing their response context.
+        for tab in context.pages:
+            tab.unroute_all(behavior="wait")
+        context.close()
