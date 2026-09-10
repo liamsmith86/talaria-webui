@@ -66,3 +66,21 @@ def test_unrecognized_provider_observations_stay_unknown():
     assert reasoning({"thinking": {"type": ["unexpected"]}}) is None
     assert reasoning({"thinking": {"type": {"unexpected": True}}}) is None
     assert reasoning({"thinking": {"type": "adaptive"}}) == "enabled"
+
+
+def test_new_model_call_cannot_inherit_prior_usage_or_accept_a_late_hook(tmp_path):
+    observations = Observations(tmp_path)
+    observations.before(task_id="s", turn_id="t", api_request_id="first",
+                        request={}, started_at=1, model="first-model", provider="test")
+    observations.after(task_id="s", turn_id="t", api_request_id="first",
+                       usage={"prompt_tokens": 100, "output_tokens": 20}, api_duration=2)
+    observations.before(task_id="s", turn_id="t", api_request_id="second",
+                        request={"reasoning_effort": "high"}, started_at=4,
+                        model="second-model", provider="test")
+    observations.after(task_id="s", turn_id="t", api_request_id="first",
+                       usage={"prompt_tokens": 999}, api_duration=99)
+    pending = observations.pending[("s", "t")]
+    assert pending["model"] == "second-model"
+    assert pending["reasoning"] == "high"
+    assert pending["started_at"] == 1
+    assert "usage" not in pending and "duration_seconds" not in pending

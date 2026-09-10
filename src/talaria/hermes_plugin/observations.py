@@ -105,16 +105,23 @@ class Observations:
         except (OSError, sqlite3.Error, ValueError, TypeError, OverflowError):
             return None
 
-    def before(self, *, turn_id=None, task_id=None, request=None, started_at=None, **kwargs):
+    def before(
+        self, *, turn_id=None, task_id=None, request=None, started_at=None,
+        model=None, provider=None, api_request_id=None, **kwargs,
+    ):
         if not turn_id or not task_id or not isinstance(request, dict):
             return
         key = (task_id, turn_id)
         with self.lock:
             prior = self.pending.pop(key, {})
             self.pending[key] = {
-                **prior,
+                # A new model call invalidates the previous call's usage and
+                # duration. An interrupted request may never emit an after hook.
                 "reasoning": reasoning(request),
                 "started_at": prior.get("started_at", number(started_at)),
+                "model": label(model),
+                "provider": label(provider),
+                "api_request_id": api_request_id,
             }
             while len(self.pending) > 128:
                 self.pending.popitem(last=False)
@@ -132,6 +139,7 @@ class Observations:
         api_duration=None,
         ended_at=None,
         finish_reason=None,
+        api_request_id=None,
         **kwargs,
     ):
         try:
@@ -145,10 +153,12 @@ class Observations:
             data = self.pending.get((task_id, turn_id))
             if data is None:
                 return
+            if api_request_id is not None and data.get("api_request_id") != api_request_id:
+                return
             usage = usage if isinstance(usage, dict) else {}
             data.update(
-                model=label(response_model) or label(model),
-                provider=label(provider),
+                model=label(response_model) or label(model) or data.get("model"),
+                provider=label(provider) or data.get("provider"),
                 duration_seconds=number(api_duration),
                 observed_at=number(ended_at),
                 finish_reason=label(finish_reason),
@@ -182,10 +192,9 @@ class Observations:
         if (
             not data
             or not session_id
-            or not completed
+            or not (completed or interrupted)
             or failed
-            or interrupted
-            or not data.get("usage")
+            or (not interrupted and not data.get("usage"))
         ):
             return
         db = acquire(self.home / "state.db")
@@ -199,4 +208,6 @@ class Observations:
         if (number(rows[0].get("timestamp")) or 0) < (data.get("started_at") or 0):
             return
         data.pop("started_at", None)
+        data.pop("api_request_id", None)
+        data["status"] = "interrupted" if interrupted else "completed"
         self.save(session_id, rows[0]["id"], data)

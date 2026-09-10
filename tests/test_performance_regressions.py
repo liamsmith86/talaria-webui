@@ -93,13 +93,14 @@ def test_mobile_network_reconnect_replays_without_duplicate_messages(page, live_
 def test_historical_code_highlights_on_approach_and_find_still_reaches_it(page):
     page.evaluate("""async () => {
       const {update}=await import('/static/store.js');
-      update({active:'history',history:Array.from({length:100},(_,i)=>({
-        id:i+1,role:'assistant',content:'```javascript\\nconst entry'+i+' = 42;\\n```',
-      })),sessions:[{id:'history',title:'History'}],loading:false});
+      update({active:'history',history:Array.from({length:100},(_,i)=>[
+        {id:i*2+1,role:'user',content:'Example '+i},
+        {id:i*2+2,role:'assistant',content:'```javascript\\nconst entry'+i+' = 42;\\n```'},
+      ]).flat(),sessions:[{id:'history',title:'History'}],loading:false});
     }""")
     last = page.locator(".message").last
     expect(last.locator(".token").first).to_be_attached()
-    first = page.locator(".message").first
+    first = page.locator(".message.assistant").first
     assert "entry0" in first.locator("code").text_content()
     page.get_by_role("button", name="Find in conversation", exact=True).click()
     page.get_by_label("Find text in conversation").fill("entry0")
@@ -136,7 +137,9 @@ def test_completed_response_cache_is_bounded_without_losing_recovery_state(page)
 
 def test_text_deltas_reuse_sidebar_rows_and_tool_cards(page):
     result = page.evaluate("""async () => {
-      const {state,update}=await import('/static/store.js');
+      const {state,update,refreshSessions}=await import('/static/store.js');
+      // Supersede any startup listing before installing the synthetic rows.
+      await refreshSessions();
       const {applyEvent}=await import('/static/runs.js');
       let titles=0,tools=0;
       const sessions=Array.from({length:300},(_,i)=>({id:'stable-'+i,source:'api_server',
