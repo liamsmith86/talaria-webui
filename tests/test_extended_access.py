@@ -218,6 +218,7 @@ def test_observation_store_is_bounded_and_profile_scoped(tmp_path):
     assert reasoning({}) is None
 
 
+@pytest.mark.hermes
 @pytest.mark.skipif(
     not os.getenv("HERMES_SOURCE"), reason="Set HERMES_SOURCE for native contract checks"
 )

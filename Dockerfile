@@ -1,11 +1,11 @@
-FROM python:3.14-slim AS build
-COPY --from=ghcr.io/astral-sh/uv:0.11.17 /uv /usr/local/bin/uv
+FROM python:3.14.7-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS build
+COPY --from=ghcr.io/astral-sh/uv:0.11.17@sha256:03bdc89bb9798628846e60c3a9ad19006c8c3c724ccd2985a33145c039a0577b /uv /usr/local/bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock /app/
 COPY src /app/src
 RUN uv sync --locked --no-dev --no-editable --python /usr/local/bin/python
 
-FROM python:3.14-slim
+FROM python:3.14.7-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 XDG_CONFIG_HOME=/data
 ENV PATH="/app/.venv/bin:$PATH"
 WORKDIR /app

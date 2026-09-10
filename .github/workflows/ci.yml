@@ -1,0 +1,194 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: '0.11.17'
+          python-version: '3.12'
+      - run: uv sync --locked
+      - run: uv run --locked ruff check .
+
+  platforms:
+    name: Platform (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15-intel, macos-15]
+        python: ['3.12', '3.14']
+        include:
+          - os: ubuntu-24.04
+            python: '3.13'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: '0.11.17'
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked
+      - name: Backend, fresh wheel, startup, plugin export, update and rollback
+        run: uv run --locked pytest -q -m 'not browser and not hermes' --fail-on-skip --junitxml=test-results/platform.xml
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: platform-${{ matrix.os }}-${{ matrix.python }}
+          path: test-results/
+          retention-days: 7
+
+  browsers:
+    name: Browser (${{ matrix.browser }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    env:
+      TALARIA_TEST_BROWSER: ${{ matrix.browser }}
+      TALARIA_AXE_PATH: ${{ github.workspace }}/.local/axe.min.js
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: '0.11.17'
+          python-version: '3.12'
+      - run: uv sync --locked
+      - run: uv run --locked playwright install --with-deps "$TALARIA_TEST_BROWSER"
+      - name: Fetch and verify pinned accessibility engine
+        run: |
+          mkdir -p .local
+          curl --fail --show-error --silent --location --retry 3 https://cdn.jsdelivr.net/npm/axe-core@4.13.0/axe.min.js -o "$TALARIA_AXE_PATH"
+          echo 'c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1  .local/axe.min.js' | sha256sum --check
+      - run: uv run --locked pytest -q -m browser --fail-on-skip --junitxml=test-results/browser.xml
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: browser-${{ matrix.browser }}
+          path: test-results/
+          retention-days: 7
+
+  hermes:
+    name: Native Hermes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      HERMES_SOURCE: ${{ github.workspace }}/.local/hermes
+      HERMES_DISABLE_LAZY_INSTALLS: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: NousResearch/hermes-agent
+          ref: 564aef2946c436500a5e80ee117b66b789b3f99a
+          path: .local/hermes
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: '0.11.17'
+          python-version: '3.12'
+      - run: uv sync --locked
+      - name: Install Hermes from its own lockfile (sms extra supplies aiohttp)
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ env.HERMES_SOURCE }}/venv
+        run: uv sync --project "$HERMES_SOURCE" --frozen --no-dev --extra sms --python 3.12
+      - run: uv run --locked pytest -q -m hermes --fail-on-skip --junitxml=test-results/hermes.xml
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: native-hermes
+          path: test-results/
+          retention-days: 7
+
+  wsl:
+    name: Windows WSL2
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install Ubuntu in WSL2
+        shell: pwsh
+        run: |
+          wsl --install --distribution Ubuntu-24.04 --web-download --no-launch
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          wsl --set-version Ubuntu-24.04 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          wsl --distribution Ubuntu-24.04 --user root -- bash -c 'uname -r | grep -i microsoft-standard-WSL2'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test from the Linux filesystem
+        shell: pwsh
+        run: |
+          $source = (wsl --distribution Ubuntu-24.04 --user root -- wslpath -u "$env:GITHUB_WORKSPACE").Trim()
+          wsl --distribution Ubuntu-24.04 --user root -- bash "$source/.github/scripts/wsl.sh" "$source"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  docker:
+    name: Docker (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: amd64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          tags: talaria-ci:test
+      - run: python3 .github/scripts/docker_smoke.py talaria-ci:test
+
+  required:
+    name: Required checks
+    if: always()
+    needs: [lint, platforms, browsers, hermes, wsl, docker]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every test job to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          assert all(job['result'] == 'success' for job in results.values()), results
+          PY
