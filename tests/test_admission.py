@@ -2,11 +2,53 @@
 
 import asyncio
 import json
+from contextlib import asynccontextmanager
 
 import httpx
 import pytest
 
-from benchmarks.admission import admission_app
+from talaria import auth
+from talaria.app import create_app
+from talaria.config import Settings
+
+
+@asynccontextmanager
+async def admission_app(path, handler):
+    async def transport(request):
+        if request.method == "POST" and request.url.path.endswith("/runs"):
+            return await handler(request)
+        return httpx.Response(200, json={"platform": "hermes-agent", "features": {}})
+
+    settings = Settings(
+        hermes_url="http://hermes.test",
+        api_key="synthetic-key",
+        signing_key="synthetic-signing-key",
+    )
+    app = create_app(settings, path, transport=httpx.MockTransport(transport))
+    profiles = app.state.profiles
+    profiles.records["other"] = {
+        "id": "other",
+        "url": "http://hermes.test/p/other",
+        "api_key": "synthetic-key",
+        "label": "Other",
+    }
+    other = profiles.resolve("other")
+
+    async def observe(channel):
+        await asyncio.Event().wait()
+
+    for child in (app, other):
+        child.state.relay.observe = observe
+    async with httpx.AsyncClient(
+        base_url="http://talaria.test", transport=httpx.ASGITransport(app=app)
+    ) as client:
+        client.cookies.set(auth.COOKIE, auth.issue_cookie(settings))
+        client.headers["X-Talaria-Request"] = "1"
+        client.headers["X-CSRF-Token"] = (await client.get("/api/bootstrap")).json()["csrf"]
+        try:
+            yield client, app
+        finally:
+            await profiles.close()
 
 
 @pytest.mark.parametrize("profile", ["default", "other"])
