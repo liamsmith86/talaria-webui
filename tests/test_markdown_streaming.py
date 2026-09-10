@@ -9,6 +9,7 @@ def test_streamed_markdown_matches_full_parse_at_every_prefix(page):
       const {Markdown, renderMarkdown} = await import('/static/markdown.js');
       const root = document.createElement('div');
       document.body.append(root);
+      const prism = window.Prism; window.Prism = undefined;
       const cases = [
         'A heading\n=========\n\nParagraph with **bold**, _emphasis_, and `code`.\n\n---\n\nEnd',
         '- One\n  - Nested\n\n    Paragraph\n- Two\n\n> Quote\n>\n> More\n\nAfter',
@@ -18,6 +19,11 @@ def test_streamed_markdown_matches_full_parse_at_every_prefix(page):
         '<script>alert(1)</script>\n\n[x](javascript:alert(1))\n\n' +
           '<div onclick="bad()">Raw HTML</div>\n',
         'First\r\n\r\nSecond\r\n\r\n    indented\r\n\r\nEnd',
+        'First\n\nSecond\n\nThird\n\n  10. One\n  11. Two\n  12. Three\n\n    Nested\n',
+        '| A | B |\n|:-|--:|\n| `one` | **two** |\n| x\\|y | z |\n' +
+          '| [link][r] | &amp; |\n\n[r]: /safe\n',
+        '- One\n- Two\n- Three\n\n  More in the third item\n\nAfter\n\n---\n',
+        'A sentence. More words! www.example.com and 1. item\n\n```text\nA\n\nB\n```\n',
       ];
       function actual() {
         return [...root.querySelector('.markdown').children].map(el => el.innerHTML).join('');
@@ -30,6 +36,9 @@ def test_streamed_markdown_matches_full_parse_at_every_prefix(page):
             const text = source.slice(0,i);
             // Completed output must be identical to the existing sanitized parser.
             render(html`<${Markdown} text=${text} streaming=${true} />`, root);
+            if(normalize(actual()) !== normalize(renderMarkdown(text, false)))
+              return {phase:'streaming', source, i, actual:actual(),
+                expected:renderMarkdown(text, false)};
             render(html`<${Markdown} text=${text} streaming=${false} />`, root);
             if(normalize(actual()) !== normalize(renderMarkdown(text)))
               return {source, i, actual:actual(), expected:renderMarkdown(text)};
@@ -37,9 +46,67 @@ def test_streamed_markdown_matches_full_parse_at_every_prefix(page):
           }
         }
         return {checked};
-      } finally { render(null,root); root.remove(); }
+      } finally { window.Prism = prism; render(null,root); root.remove(); }
     }""")
     assert result.get("checked", 0) > 400, result
+
+
+def test_incremental_scanning_bounds_work_for_long_replies(page):
+    result = page.evaluate(r"""async () => {
+      const {MarkdownStream}=await import('/static/markdown-stream.js');
+      const {marked}=await import('/static/vendor/marked.js');
+      const original=marked.Lexer.prototype.lex;
+      let scanned=0;
+      marked.Lexer.prototype.lex=function(text,...args) {
+        scanned+=text.length; return original.call(this,text,...args);
+      };
+      try {
+        return [
+          'A **useful** paragraph.\n\n'.repeat(200),
+          'A useful paragraph. More detail! '.repeat(200),
+          '```text\n'+'A line of code\n'.repeat(300),
+          '| A | B |\n|---|---|\n'+'| One | Two |\n'.repeat(300),
+          '- A **useful** item\n'.repeat(300),
+        ].map(source=>{
+          scanned=0;
+          const scanner=new MarkdownStream();
+          for(let end=64;end<source.length;end+=64) scanner.read(source.slice(0,end),true);
+          scanner.read(source,false);
+          return {characters:source.length,scanned};
+        });
+      } finally {marked.Lexer.prototype.lex=original;}
+    }""")
+    for case in result:
+        assert case["scanned"] < case["characters"] * 6, case
+
+
+def test_rows_and_items_keep_nodes_through_appends_and_final_reconciliation(page):
+    result = page.evaluate(r"""async () => {
+      const {html,render}=await import('/static/lib.js');
+      const {Markdown}=await import('/static/markdown.js');
+      const root=document.createElement('div');document.body.append(root);
+      try {
+        const results=[];
+        for(const [source,more,selector] of [
+          ['| A | B |\n|---|---|\n| One | Two |\n| Three | Four |','\n| Five | Six |','tbody tr'],
+          ['- **One**\n- Two\n- Three','\n- Four','li'],
+        ]) {
+          render(null,root);
+          render(html`<${Markdown} text=${source} streaming=${true} />`,root);
+          const first=root.querySelector(selector);
+          const range=document.createRange();range.selectNodeContents(first);
+          getSelection().removeAllRanges();getSelection().addRange(range);
+          const selected=getSelection().toString();
+          for(let i=1;i<=more.length;i++)
+            render(html`<${Markdown} text=${source+more.slice(0,i)} streaming=${true} />`,root);
+          render(html`<${Markdown} text=${source+more} streaming=${false} />`,root);
+          results.push(first===root.querySelector(selector) &&
+            getSelection().toString()===selected);
+        }
+        return results;
+      } finally {getSelection().removeAllRanges();render(null,root);root.remove();}
+    }""")
+    assert result == [True, True]
 
 
 def test_completed_blocks_keep_nodes_selection_and_code_scroll_during_stream(page):

@@ -1,6 +1,8 @@
 import { html, useEffect, useMemo, useRef, useState } from "./lib.js";
 import { marked } from "./vendor/marked.js";
 import DOMPurify from "./vendor/purify.js";
+import { MarkdownStream, flatList } from "./markdown-stream.js";
+import { StreamText, useStreamReveal } from "./stream-reveal.js";
 
 const renderer = new marked.Renderer();
 const escape = (text) =>
@@ -53,7 +55,13 @@ export function renderMarkdown(text, highlight = true) {
     }),
   );
 }
-export function Markdown({ text, streaming = false, deferHighlight = false }) {
+export function Markdown({
+  text,
+  streaming = false,
+  deferHighlight = false,
+  smooth = false,
+}) {
+  text = useStreamReveal(text || "", smooth && streaming);
   const root = useRef();
   const streamed = useRef(false);
   const [nearby, setNearby] = useState(false);
@@ -74,16 +82,31 @@ export function Markdown({ text, streaming = false, deferHighlight = false }) {
     return () => observer.disconnect();
   }, [highlightVisible]);
   const previous = useRef([]);
+  const scanner = useRef(new MarkdownStream());
+  const pieces = useRef(new WeakMap());
+  function row(cells, index) {
+    let view = pieces.current.get(cells);
+    if (!view) {
+      view = html`<tr key=${index}>
+        ${cells.map((cell) => {
+          const tag = cell.header ? "th" : "td";
+          return html`<${tag}
+            align=${cell.align || undefined}
+            dangerouslySetInnerHTML=${{ __html: sanitize(marked.Parser.parseInline(cell.tokens, marked.defaults)) }}
+          />`;
+        })}
+      </tr>`;
+      pieces.current.set(cells, view);
+    }
+    return view;
+  }
   const blocks = useMemo(() => {
     streamed.current ||= streaming;
     // Saved messages need one sanitization pass. Offscreen code stays readable
     // as plain text, with syntax highlighting added as it approaches the viewport.
     if (!streamed.current)
       return [{ markup: renderMarkdown(text, !deferHighlight) }];
-    // Lex the complete source so setext headings, lists, and references that
-    // arrive later retain Marked's semantics. Cache only this message's current
-    // blocks; no growing global cache and no reparsing/highlighting old HTML.
-    const tokens = marked.lexer(text || "");
+    const tokens = scanner.current.read(text || "", streaming);
     const links = JSON.stringify(tokens.links);
     const visible = tokens.filter((token) => token.type !== "space");
     const next = visible.map((token, index) => {
@@ -96,6 +119,96 @@ export function Markdown({ text, streaming = false, deferHighlight = false }) {
         old.highlight === highlight
       )
         return old;
+      const block = { raw: token.raw, links, highlight, token };
+      if (token.streamPlain) {
+        block.content = html`<p>
+          ${
+            smooth
+              ? html`<${StreamText}
+                  text=${token.text}
+                  active=${streaming && index === visible.length - 1}
+                />`
+              : token.text
+          }
+        </p>`;
+      } else if (token.type === "code") {
+        const language = (token.lang || "text")
+          .split(/\s/)[0]
+          .replace(/[^a-z0-9-]/gi, "")
+          .slice(0, 30);
+        const grammar = window.Prism?.languages[language];
+        const highlighted = highlight && grammar && token.text.length < 10000;
+        block.content = html`<div class="code-block">
+          <div class="code-heading">
+            <span>${language}</span
+            ><button type="button" data-copy-code="true">Copy code</button>
+          </div>
+          <pre tabindex="0" role="region" aria-label=${`${language} code`}><code
+            dangerouslySetInnerHTML=${highlighted ? { __html: sanitize(window.Prism.highlight(token.text, grammar, language)) } : undefined}
+          >${
+            highlighted
+              ? undefined
+              : smooth
+                ? html`<${StreamText}
+                    text=${token.text}
+                    active=${streaming && index === visible.length - 1}
+                  />`
+                : token.text
+          }</code></pre>
+        </div>`;
+      } else if (token.type === "table") {
+        if (old?.links === links && old.token?.type === "table") {
+          const same = (a, b) =>
+            a &&
+            a.length === b.length &&
+            a.every(
+              (cell, i) => cell.text === b[i].text && cell.align === b[i].align,
+            );
+          if (same(old.token.header, token.header))
+            token.header = old.token.header;
+          token.rows = token.rows.map((cells, i) =>
+            same(old.token.rows[i], cells) ? old.token.rows[i] : cells,
+          );
+        }
+        block.content = html`<div
+          class="table-scroll"
+          role="region"
+          aria-label="Table"
+          tabindex="0"
+        >
+          <table>
+            <thead>
+              ${row(token.header, "header")}
+            </thead>
+            ${
+              token.rows.length > 0 &&
+              html`<tbody>
+                ${token.rows.map(row)}
+              </tbody>`
+            }
+          </table>
+        </div>`;
+      } else if (flatList(token)) {
+        if (old?.links === links && old.token && flatList(old.token))
+          token.items = token.items.map((item, i) =>
+            old.token.items[i]?.text === item.text ? old.token.items[i] : item,
+          );
+        const tag = token.ordered ? "ol" : "ul";
+        block.content = html`<${tag} start=${token.ordered && token.start !== 1 ? token.start : undefined}>
+          ${token.items.map((item, i) => {
+            let view = pieces.current.get(item);
+            if (!view) {
+              view = html`<li
+                key=${i}
+                dangerouslySetInnerHTML=${{ __html: sanitize(marked.Parser.parseInline(item.tokens[0]?.tokens || [], marked.defaults)) }}
+              />`;
+              pieces.current.set(item, view);
+            }
+            return view;
+          })}
+        </${tag}>`;
+      }
+      if (block.content) return block;
       if (token.type === "paragraph" && token.raw.length > 4096) {
         const parts = [];
         // Keep complete inline tokens together (links, emphasis, code, etc.).
@@ -127,7 +240,7 @@ export function Markdown({ text, streaming = false, deferHighlight = false }) {
     });
     previous.current = next;
     return next;
-  }, [text, streaming, highlightVisible, deferHighlight]);
+  }, [text, streaming, highlightVisible, deferHighlight, smooth]);
   useEffect(() => {
     if (streamed.current || !deferHighlight || !highlightVisible) return;
     // Enrich code in place: replacing the whole saved message would discard
@@ -138,7 +251,9 @@ export function Markdown({ text, streaming = false, deferHighlight = false }) {
       const grammar = window.Prism?.languages[language];
       const source = code.textContent;
       if (grammar && source.length < 10000)
-        code.innerHTML = sanitize(window.Prism.highlight(source, grammar, language));
+        code.innerHTML = sanitize(
+          window.Prism.highlight(source, grammar, language),
+        );
     }
   }, [text, deferHighlight, highlightVisible]);
   return html`<div
@@ -160,11 +275,16 @@ export function Markdown({ text, streaming = false, deferHighlight = false }) {
       }
     }}
   >
-    ${blocks.map((block, index) =>
-      block.parts
-        ? html`<div class="markdown-block" key=${index}>
-            <p>
-              ${block.parts.map(
+    ${blocks.map(
+      (block, index) =>
+        (block.view ||= block.content
+          ? html`<div class="markdown-block" key=${index}>
+              ${block.content}
+            </div>`
+          : block.parts
+            ? html`<div class="markdown-block" key=${index}>
+                <p>
+                  ${block.parts.map(
                 (part, i) =>
                   html`<span
                     class="markdown-inline"
@@ -172,13 +292,13 @@ export function Markdown({ text, streaming = false, deferHighlight = false }) {
                     dangerouslySetInnerHTML=${{ __html: part.markup }}
                   />`,
               )}
-            </p>
-          </div>`
-        : html`<div
-            class="markdown-block"
-            key=${index}
-            dangerouslySetInnerHTML=${{ __html: block.markup }}
-          />`,
+                </p>
+              </div>`
+            : html`<div
+                class="markdown-block"
+                key=${index}
+                dangerouslySetInnerHTML=${{ __html: block.markup }}
+              />`),
     )}
   </div>`;
 }
