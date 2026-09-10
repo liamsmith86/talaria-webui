@@ -345,8 +345,12 @@ def test_pasted_images_recover_an_ambiguous_submission_without_duplication(
       const transfer = new DataTransfer();
       const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
       transfer.items.add(new File([bytes], 'pasted.png', {type:'image/png'}));
-      el.dispatchEvent(new ClipboardEvent('paste', {
-        clipboardData: transfer, bubbles: true, cancelable: true}));
+      const event = new ClipboardEvent('paste', {
+        clipboardData: transfer, bubbles: true, cancelable: true});
+      // Firefox strips constructor-supplied files from synthetic clipboard
+      // events. Supply the fixture explicitly; this tests app recovery, not OS paste.
+      Object.defineProperty(event, 'clipboardData', {value: transfer});
+      el.dispatchEvent(event);
     }""",
         base64.b64encode(png()).decode(),
     )

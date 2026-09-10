@@ -166,7 +166,7 @@ def check_health(url: str, commit: str | None, *, timeout=15, assets=False):
             ):
                 raise ValueError("Unexpected release or health response")
             if assets:
-                for path in ("/", "/static/app.js", "/static/style.css", "/api/bootstrap"):
+                for path in ("/", "/static/app.js", "/static/styles/chat.css", "/api/bootstrap"):
                     with opener.open(url.rstrip("/") + path, timeout=2) as response:
                         if response.status != 200 or not response.read(1):
                             raise ValueError(f"Missing packaged asset: {path}")

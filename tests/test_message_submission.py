@@ -118,10 +118,17 @@ def test_touch_keyboard_newline_and_repeated_submit_preserve_intentional_guidanc
         expect(text).to_have_value("A slow mobile response\n")
         assert not live_app[1].runs
         held = []
-        mobile.route("**/api/runs", lambda route: held.append(route), times=1)
-        mobile.get_by_role("button", name="Send message", exact=True).tap()
-        expect(text).to_be_disabled()
-        mobile.locator(".composer").dispatch_event("submit")
+
+        def hold_run(route):
+            held.append(route)
+            mobile.evaluate("window.talariaTestRunHeld = true")
+
+        mobile.route("**/api/runs", hold_run, times=1)
+        with mobile.expect_request("**/api/runs"):
+            mobile.get_by_role("button", name="Send message", exact=True).tap()
+            expect(text).to_be_disabled()
+            mobile.locator(".composer").dispatch_event("submit")
+        mobile.wait_for_function("() => window.talariaTestRunHeld === true")
         assert len(held) == 1
         held[0].continue_()
         expect(text).to_have_value("")

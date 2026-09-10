@@ -39,11 +39,14 @@ export function writeStorage(key, value) {
     /* Storage is optional. */
   }
 }
-export const humanTime = (stamp) =>
-  new Date(typeof stamp === "number" ? stamp * 1000 : stamp).toLocaleTimeString(
-    [],
-    { hour: "numeric", minute: "2-digit" },
-  );
+const timeFormat = new Intl.DateTimeFormat([], {
+  hour: "numeric",
+  minute: "2-digit",
+});
+export const humanTime = (stamp) => {
+  const date = new Date(typeof stamp === "number" ? stamp * 1000 : stamp);
+  return Number.isNaN(date.getTime()) ? "" : timeFormat.format(date);
+};
 
 const paths = {
   info: "M12 11v6m0-10v.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0",

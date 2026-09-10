@@ -1,0 +1,761 @@
+{
+  "performance-before": {
+    "platform": "Linux-7.0.14-12-pve-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cases": [
+      {
+        "historyCount": 0,
+        "answerBytes": 81920,
+        "chunks": 80,
+        "historyMountMs": 30.100000143051147,
+        "streamingMs": 8328.199999809265,
+        "frameP95Ms": 150,
+        "frameMaxMs": 183.30000000000018,
+        "inputTimerP95Ms": 0.7999999523162842,
+        "longTasks": 62,
+        "longTaskTotalMs": 6976,
+        "removedNodes": 23582,
+        "domNodes": 17944,
+        "messages": 2,
+        "cpuThrottle": 1,
+        "width": 1440,
+        "metrics": {
+          "ScriptDuration": 0.031137,
+          "LayoutDuration": 0.820632,
+          "RecalcStyleDuration": 1.195389,
+          "TaskDuration": 7.923693
+        },
+        "heapBytes": 5229924
+      },
+      {
+        "historyCount": 100,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 179.59999990463257,
+        "streamingMs": 2582.0999999046326,
+        "frameP95Ms": 83.30000000000018,
+        "frameMaxMs": 83.5,
+        "inputTimerP95Ms": 2,
+        "longTasks": 22,
+        "longTaskTotalMs": 1584,
+        "removedNodes": 5857,
+        "domNodes": 19080,
+        "messages": 102,
+        "cpuThrottle": 1,
+        "width": 1440,
+        "metrics": {
+          "ScriptDuration": 0.03122,
+          "LayoutDuration": 0.231085,
+          "RecalcStyleDuration": 0.338256,
+          "TaskDuration": 2.527962
+        },
+        "heapBytes": 5783196
+      },
+      {
+        "historyCount": 1000,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 1414.1000001430511,
+        "streamingMs": 4404.299999952316,
+        "frameP95Ms": 116.69999999999982,
+        "frameMaxMs": 133.30000000000018,
+        "inputTimerP95Ms": 22.700000047683716,
+        "longTasks": 41,
+        "longTaskTotalMs": 3829,
+        "removedNodes": 5857,
+        "domNodes": 109980,
+        "messages": 1002,
+        "cpuThrottle": 1,
+        "width": 1440,
+        "metrics": {
+          "ScriptDuration": 0.189537,
+          "LayoutDuration": 0.421282,
+          "RecalcStyleDuration": 0.615502,
+          "TaskDuration": 5.758569
+        },
+        "heapBytes": 39551392
+      },
+      {
+        "historyCount": 0,
+        "answerBytes": 81920,
+        "chunks": 80,
+        "historyMountMs": 30.5,
+        "streamingMs": 32105.799999952316,
+        "frameP95Ms": 666.7000000000007,
+        "frameMaxMs": 816.6000000000022,
+        "inputTimerP95Ms": 6.8999998569488525,
+        "longTasks": 78,
+        "longTaskTotalMs": 30911,
+        "removedNodes": 23582,
+        "domNodes": 17944,
+        "messages": 2,
+        "cpuThrottle": 4,
+        "width": 390,
+        "metrics": {
+          "ScriptDuration": 0.135053,
+          "LayoutDuration": 3.653387,
+          "RecalcStyleDuration": 5.092859,
+          "TaskDuration": 31.925756999999997
+        },
+        "heapBytes": 23558560
+      },
+      {
+        "historyCount": 100,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 710.4000000953674,
+        "streamingMs": 9337.299999952316,
+        "frameP95Ms": 349.89999999999964,
+        "frameMaxMs": 400.0000000000009,
+        "inputTimerP95Ms": 7.700000047683716,
+        "longTasks": 39,
+        "longTaskTotalMs": 8738,
+        "removedNodes": 5857,
+        "domNodes": 19080,
+        "messages": 102,
+        "cpuThrottle": 4,
+        "width": 390,
+        "metrics": {
+          "ScriptDuration": 0.115284,
+          "LayoutDuration": 1.022874,
+          "RecalcStyleDuration": 1.423841,
+          "TaskDuration": 10.033359
+        },
+        "heapBytes": 5794524
+      },
+      {
+        "historyCount": 1000,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 5864.700000047684,
+        "streamingMs": 17342.799999952316,
+        "frameP95Ms": 516.6000000000022,
+        "frameMaxMs": 566.7000000000007,
+        "inputTimerP95Ms": 63.700000047683716,
+        "longTasks": 42,
+        "longTaskTotalMs": 15635,
+        "removedNodes": 5857,
+        "domNodes": 109980,
+        "messages": 1002,
+        "cpuThrottle": 4,
+        "width": 390,
+        "metrics": {
+          "ScriptDuration": 0.798466,
+          "LayoutDuration": 1.89258,
+          "RecalcStyleDuration": 2.455658,
+          "TaskDuration": 23.3244
+        },
+        "heapBytes": 12568708
+      }
+    ],
+    "browser": "151.0.7922.34"
+  },
+  "performance-after": {
+    "platform": "Linux-7.0.14-12-pve-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cases": [
+      {
+        "historyCount": 0,
+        "answerBytes": 81920,
+        "chunks": 80,
+        "historyMountMs": 25.5,
+        "streamingMs": 2666.5,
+        "frameP95Ms": 16.700000000000273,
+        "frameMaxMs": 16.800000000000182,
+        "inputTimerP95Ms": 0.5999999046325684,
+        "longTasks": 0,
+        "longTaskTotalMs": 0,
+        "removedNodes": 115,
+        "domNodes": 18354,
+        "messages": 2,
+        "cpuThrottle": 1,
+        "width": 1440,
+        "metrics": {
+          "ScriptDuration": 0.046795,
+          "LayoutDuration": 0.059507,
+          "RecalcStyleDuration": 0.055682,
+          "TaskDuration": 0.7824990000000001
+        },
+        "heapBytes": 10855628
+      },
+      {
+        "historyCount": 100,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 53.5,
+        "streamingMs": 1331.2000000476837,
+        "frameP95Ms": 16.799999999999955,
+        "frameMaxMs": 16.799999999999955,
+        "inputTimerP95Ms": 1.6000001430511475,
+        "longTasks": 0,
+        "longTaskTotalMs": 0,
+        "removedNodes": 59,
+        "domNodes": 11836,
+        "messages": 102,
+        "cpuThrottle": 1,
+        "width": 1440,
+        "metrics": {
+          "ScriptDuration": 0.02267,
+          "LayoutDuration": 0.035385,
+          "RecalcStyleDuration": 0.038021,
+          "TaskDuration": 0.469453
+        },
+        "heapBytes": 5567252
+      },
+      {
+        "historyCount": 1000,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 329.89999985694885,
+        "streamingMs": 1467.7999999523163,
+        "frameP95Ms": 33.30000000000018,
+        "frameMaxMs": 50,
+        "inputTimerP95Ms": 16.100000143051147,
+        "longTasks": 0,
+        "longTaskTotalMs": 0,
+        "removedNodes": 59,
+        "domNodes": 35686,
+        "messages": 1002,
+        "cpuThrottle": 1,
+        "width": 1440,
+        "metrics": {
+          "ScriptDuration": 0.042992,
+          "LayoutDuration": 0.076258,
+          "RecalcStyleDuration": 0.087136,
+          "TaskDuration": 1.046972
+        },
+        "heapBytes": 12928200
+      },
+      {
+        "historyCount": 0,
+        "answerBytes": 81920,
+        "chunks": 80,
+        "historyMountMs": 21.200000047683716,
+        "streamingMs": 3256.2999999523163,
+        "frameP95Ms": 33.40000000000009,
+        "frameMaxMs": 100.10000000000002,
+        "inputTimerP95Ms": 1.8000001907348633,
+        "longTasks": 1,
+        "longTaskTotalMs": 87,
+        "removedNodes": 115,
+        "domNodes": 18354,
+        "messages": 2,
+        "cpuThrottle": 4,
+        "width": 390,
+        "metrics": {
+          "ScriptDuration": 0.140037,
+          "LayoutDuration": 0.213345,
+          "RecalcStyleDuration": 0.202933,
+          "TaskDuration": 2.813763
+        },
+        "heapBytes": 5937656
+      },
+      {
+        "historyCount": 100,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 212.40000009536743,
+        "streamingMs": 1476.0999999046326,
+        "frameP95Ms": 33.40000000000009,
+        "frameMaxMs": 50,
+        "inputTimerP95Ms": 5.5,
+        "longTasks": 1,
+        "longTaskTotalMs": 50,
+        "removedNodes": 59,
+        "domNodes": 11836,
+        "messages": 102,
+        "cpuThrottle": 4,
+        "width": 390,
+        "metrics": {
+          "ScriptDuration": 0.051073,
+          "LayoutDuration": 0.113845,
+          "RecalcStyleDuration": 0.120979,
+          "TaskDuration": 1.481506
+        },
+        "heapBytes": 7506352
+      },
+      {
+        "historyCount": 1000,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 1300.7000000476837,
+        "streamingMs": 2234.0999999046326,
+        "frameP95Ms": 50,
+        "frameMaxMs": 166.5999999999999,
+        "inputTimerP95Ms": 4.3999998569488525,
+        "longTasks": 2,
+        "longTaskTotalMs": 205,
+        "removedNodes": 59,
+        "domNodes": 35686,
+        "messages": 1002,
+        "cpuThrottle": 4,
+        "width": 390,
+        "metrics": {
+          "ScriptDuration": 0.092306,
+          "LayoutDuration": 0.226481,
+          "RecalcStyleDuration": 0.206404,
+          "TaskDuration": 3.2147119999999996
+        },
+        "heapBytes": 16576888
+      }
+    ],
+    "browser": "151.0.7922.34"
+  },
+  "performance-after-repeat": {
+    "platform": "Linux-7.0.14-12-pve-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cases": [
+      {
+        "shape": "mixed",
+        "historyCount": 0,
+        "answerBytes": 81920,
+        "chunks": 80,
+        "historyMountMs": 30.799999952316284,
+        "streamingMs": 2666.5,
+        "completionMs": null,
+        "frameP95Ms": 16.700000000000273,
+        "frameMaxMs": 16.800000000000182,
+        "inputTimerP95Ms": 0.5,
+        "longTasks": 0,
+        "longTaskTotalMs": 0,
+        "removedNodes": 115,
+        "domNodes": 18354,
+        "messages": 2,
+        "cpuThrottle": 1,
+        "width": 1440,
+        "metrics": {
+          "ScriptDuration": 0.041251,
+          "LayoutDuration": 0.054783,
+          "RecalcStyleDuration": 0.051612,
+          "TaskDuration": 0.72666
+        },
+        "heapBytes": 10844452
+      },
+      {
+        "shape": "mixed",
+        "historyCount": 100,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 51.5,
+        "streamingMs": 1316.4000000953674,
+        "completionMs": null,
+        "frameP95Ms": 16.700000000000045,
+        "frameMaxMs": 16.799999999999955,
+        "inputTimerP95Ms": 1.5999999046325684,
+        "longTasks": 0,
+        "longTaskTotalMs": 0,
+        "removedNodes": 59,
+        "domNodes": 11836,
+        "messages": 102,
+        "cpuThrottle": 1,
+        "width": 1440,
+        "metrics": {
+          "ScriptDuration": 0.019239,
+          "LayoutDuration": 0.032084,
+          "RecalcStyleDuration": 0.034256,
+          "TaskDuration": 0.424427
+        },
+        "heapBytes": 7093164
+      },
+      {
+        "shape": "mixed",
+        "historyCount": 1000,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 312,
+        "streamingMs": 1438.8000001907349,
+        "completionMs": null,
+        "frameP95Ms": 33.299999999999955,
+        "frameMaxMs": 49.90000000000009,
+        "inputTimerP95Ms": 14.799999952316284,
+        "longTasks": 0,
+        "longTaskTotalMs": 0,
+        "removedNodes": 59,
+        "domNodes": 35686,
+        "messages": 1002,
+        "cpuThrottle": 1,
+        "width": 1440,
+        "metrics": {
+          "ScriptDuration": 0.039504,
+          "LayoutDuration": 0.064998,
+          "RecalcStyleDuration": 0.077705,
+          "TaskDuration": 0.967286
+        },
+        "heapBytes": 12802088
+      },
+      {
+        "shape": "mixed",
+        "historyCount": 0,
+        "answerBytes": 81920,
+        "chunks": 80,
+        "historyMountMs": 30.600000143051147,
+        "streamingMs": 3226.4000000953674,
+        "completionMs": null,
+        "frameP95Ms": 33.399999999999864,
+        "frameMaxMs": 66.60000000000002,
+        "inputTimerP95Ms": 1.7000000476837158,
+        "longTasks": 1,
+        "longTaskTotalMs": 81,
+        "removedNodes": 115,
+        "domNodes": 18354,
+        "messages": 2,
+        "cpuThrottle": 4,
+        "width": 390,
+        "metrics": {
+          "ScriptDuration": 0.150202,
+          "LayoutDuration": 0.204048,
+          "RecalcStyleDuration": 0.192734,
+          "TaskDuration": 2.744408
+        },
+        "heapBytes": 8594680
+      },
+      {
+        "shape": "mixed",
+        "historyCount": 100,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 213.10000014305115,
+        "streamingMs": 1495.0999999046326,
+        "completionMs": null,
+        "frameP95Ms": 33.299999999999955,
+        "frameMaxMs": 50.000000000000114,
+        "inputTimerP95Ms": 5.5,
+        "longTasks": 0,
+        "longTaskTotalMs": 0,
+        "removedNodes": 59,
+        "domNodes": 11836,
+        "messages": 102,
+        "cpuThrottle": 4,
+        "width": 390,
+        "metrics": {
+          "ScriptDuration": 0.054104,
+          "LayoutDuration": 0.116966,
+          "RecalcStyleDuration": 0.122521,
+          "TaskDuration": 1.500233
+        },
+        "heapBytes": 7549892
+      },
+      {
+        "shape": "mixed",
+        "historyCount": 1000,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 1303,
+        "streamingMs": 2231.5999999046326,
+        "completionMs": null,
+        "frameP95Ms": 49.899999999999636,
+        "frameMaxMs": 183.30000000000018,
+        "inputTimerP95Ms": 4.400000095367432,
+        "longTasks": 2,
+        "longTaskTotalMs": 214,
+        "removedNodes": 59,
+        "domNodes": 35686,
+        "messages": 1002,
+        "cpuThrottle": 4,
+        "width": 390,
+        "metrics": {
+          "ScriptDuration": 0.086546,
+          "LayoutDuration": 0.227236,
+          "RecalcStyleDuration": 0.209167,
+          "TaskDuration": 3.2186600000000003
+        },
+        "heapBytes": 13650552
+      }
+    ],
+    "browser": "151.0.7922.34"
+  },
+  "stress-before": {
+    "platform": "Linux-7.0.14-12-pve-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cases": [
+      {
+        "shape": "code",
+        "historyCount": 0,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 28.100000143051147,
+        "streamingMs": 3239.4000000953674,
+        "completionMs": 28.299999952316284,
+        "frameP95Ms": 116.59999999999991,
+        "frameMaxMs": 133.4000000000001,
+        "inputTimerP95Ms": 0.6000001430511475,
+        "longTasks": 26,
+        "longTaskTotalMs": 2372,
+        "removedNodes": 44,
+        "domNodes": 14098,
+        "messages": 2,
+        "cpuThrottle": 1,
+        "width": 1440,
+        "metrics": {
+          "ScriptDuration": 0.014754,
+          "LayoutDuration": 0.249236,
+          "RecalcStyleDuration": 0.460574,
+          "TaskDuration": 2.957739
+        },
+        "heapBytes": 3981252
+      },
+      {
+        "shape": "paragraph",
+        "historyCount": 0,
+        "answerBytes": 81920,
+        "chunks": 80,
+        "historyMountMs": 29.5,
+        "streamingMs": 3166,
+        "completionMs": 33.59999990463257,
+        "frameP95Ms": 33.40000000000009,
+        "frameMaxMs": 33.40000000000009,
+        "inputTimerP95Ms": 0.40000009536743164,
+        "longTasks": 0,
+        "longTaskTotalMs": 0,
+        "removedNodes": 163,
+        "domNodes": 3946,
+        "messages": 2,
+        "cpuThrottle": 1,
+        "width": 1440,
+        "metrics": {
+          "ScriptDuration": 0.01391,
+          "LayoutDuration": 0.555391,
+          "RecalcStyleDuration": 0.253269,
+          "TaskDuration": 2.263505
+        },
+        "heapBytes": 14156284
+      },
+      {
+        "shape": "code",
+        "historyCount": 0,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 24.5,
+        "streamingMs": 11749.5,
+        "completionMs": 36.5,
+        "frameP95Ms": 466.60000000000036,
+        "frameMaxMs": 516.6999999999989,
+        "inputTimerP95Ms": 7,
+        "longTasks": 38,
+        "longTaskTotalMs": 11161,
+        "removedNodes": 44,
+        "domNodes": 14098,
+        "messages": 2,
+        "cpuThrottle": 4,
+        "width": 390,
+        "metrics": {
+          "ScriptDuration": 0.04367,
+          "LayoutDuration": 1.019807,
+          "RecalcStyleDuration": 1.916097,
+          "TaskDuration": 11.728155
+        },
+        "heapBytes": 5286324
+      },
+      {
+        "shape": "paragraph",
+        "historyCount": 0,
+        "answerBytes": 81920,
+        "chunks": 80,
+        "historyMountMs": 23.5,
+        "streamingMs": 9144.900000095367,
+        "completionMs": 21.5,
+        "frameP95Ms": 166.6999999999989,
+        "frameMaxMs": 183.39999999999964,
+        "inputTimerP95Ms": 1.3000001907348633,
+        "longTasks": 63,
+        "longTaskTotalMs": 7679,
+        "removedNodes": 163,
+        "domNodes": 3946,
+        "messages": 2,
+        "cpuThrottle": 4,
+        "width": 390,
+        "metrics": {
+          "ScriptDuration": 0.056166,
+          "LayoutDuration": 2.361527,
+          "RecalcStyleDuration": 1.042615,
+          "TaskDuration": 8.799721
+        },
+        "heapBytes": 6706660
+      }
+    ],
+    "browser": "151.0.7922.34"
+  },
+  "stress-after": {
+    "platform": "Linux-7.0.14-12-pve-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cases": [
+      {
+        "shape": "code",
+        "historyCount": 0,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 24.700000047683716,
+        "streamingMs": 1333.2999999523163,
+        "completionMs": 33.200000047683716,
+        "frameP95Ms": 16.700000000000045,
+        "frameMaxMs": 16.800000000000068,
+        "inputTimerP95Ms": 0.2999999523162842,
+        "longTasks": 0,
+        "longTaskTotalMs": 0,
+        "removedNodes": 44,
+        "domNodes": 156,
+        "messages": 2,
+        "cpuThrottle": 1,
+        "width": 1440,
+        "metrics": {
+          "ScriptDuration": 0.005198,
+          "LayoutDuration": 0.050336,
+          "RecalcStyleDuration": 0.006242,
+          "TaskDuration": 0.17932399999999998
+        },
+        "heapBytes": 4425844
+      },
+      {
+        "shape": "paragraph",
+        "historyCount": 0,
+        "answerBytes": 81920,
+        "chunks": 80,
+        "historyMountMs": 28.899999856948853,
+        "streamingMs": 2666.5,
+        "completionMs": 33.200000047683716,
+        "frameP95Ms": 16.700000000000273,
+        "frameMaxMs": 16.800000000000182,
+        "inputTimerP95Ms": 0.40000009536743164,
+        "longTasks": 0,
+        "longTaskTotalMs": 0,
+        "removedNodes": 2384,
+        "domNodes": 4081,
+        "messages": 2,
+        "cpuThrottle": 1,
+        "width": 1440,
+        "metrics": {
+          "ScriptDuration": 0.013971,
+          "LayoutDuration": 0.21073,
+          "RecalcStyleDuration": 0.025167,
+          "TaskDuration": 0.743267
+        },
+        "heapBytes": 8778064
+      },
+      {
+        "shape": "code",
+        "historyCount": 0,
+        "answerBytes": 40960,
+        "chunks": 40,
+        "historyMountMs": 24.200000047683716,
+        "streamingMs": 1335.2000000476837,
+        "completionMs": 30.5,
+        "frameP95Ms": 16.700000000000045,
+        "frameMaxMs": 16.800000000000068,
+        "inputTimerP95Ms": 0.9000000953674316,
+        "longTasks": 0,
+        "longTaskTotalMs": 0,
+        "removedNodes": 44,
+        "domNodes": 156,
+        "messages": 2,
+        "cpuThrottle": 4,
+        "width": 390,
+        "metrics": {
+          "ScriptDuration": 0.011798,
+          "LayoutDuration": 0.189833,
+          "RecalcStyleDuration": 0.019704,
+          "TaskDuration": 0.6018129999999999
+        },
+        "heapBytes": 4811084
+      },
+      {
+        "shape": "paragraph",
+        "historyCount": 0,
+        "answerBytes": 81920,
+        "chunks": 80,
+        "historyMountMs": 23.799999952316284,
+        "streamingMs": 3466.899999856949,
+        "completionMs": 49.5,
+        "frameP95Ms": 33.40000000000009,
+        "frameMaxMs": 50,
+        "inputTimerP95Ms": 1.2000000476837158,
+        "longTasks": 0,
+        "longTaskTotalMs": 0,
+        "removedNodes": 2384,
+        "domNodes": 4081,
+        "messages": 2,
+        "cpuThrottle": 4,
+        "width": 390,
+        "metrics": {
+          "ScriptDuration": 0.047267,
+          "LayoutDuration": 0.846743,
+          "RecalcStyleDuration": 0.092531,
+          "TaskDuration": 2.787338
+        },
+        "heapBytes": 7202540
+      }
+    ],
+    "browser": "151.0.7922.34"
+  },
+  "network-before": {
+    "latencyMs": 100,
+    "downloadBytesPerSecond": 750000,
+    "cpuThrottle": 4,
+    "loads": [
+      {
+        "cache": "cold",
+        "loginReadyMs": 1681.2357960734516,
+        "transferBytes": 514833,
+        "requests": 41
+      },
+      {
+        "cache": "warm",
+        "loginReadyMs": 374.7567059472203,
+        "transferBytes": 440,
+        "requests": 41
+      }
+    ],
+    "restoration": {
+      "eightRunsMs": 802.3999998569489,
+      "activeRunMs": 802.1999998092651,
+      "peakRequests": 1
+    }
+  },
+  "network-after": {
+    "latencyMs": 100,
+    "downloadBytesPerSecond": 750000,
+    "cpuThrottle": 4,
+    "loads": [
+      {
+        "cache": "cold",
+        "loginReadyMs": 1197.320322971791,
+        "transferBytes": 199915,
+        "requests": 40
+      },
+      {
+        "cache": "warm",
+        "loginReadyMs": 1061.1401938367635,
+        "transferBytes": 11840,
+        "requests": 40
+      }
+    ],
+    "restoration": {
+      "eightRunsMs": 203.5,
+      "activeRunMs": 100.5,
+      "peakRequests": 4
+    }
+  },
+  "admission": {
+    "slow_upstream_ms": 400,
+    "fast_requests": 8,
+    "before_ms": {
+      "default": 404.27766111679375,
+      "other": 403.21059897542
+    },
+    "after_ms": {
+      "default": 4.487226018682122,
+      "other": 4.397695884108543
+    }
+  },
+  "replay_soak": {
+    "channels": 16,
+    "cycles": 3,
+    "events_per_cycle": 32000,
+    "allocated_python_bytes": [
+      35786454,
+      35786874,
+      35787286
+    ],
+    "retained_replay_bytes": 33541568,
+    "allocated_after_release_bytes": 1252
+  }
+}

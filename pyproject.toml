@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.27,<2"]
+requires = ["hatchling>=1.32,<2"]
 build-backend = "hatchling.build"
 
 [project]
@@ -8,16 +8,16 @@ version = "0.3.2"
 description = "A considered web client for Hermes Agent"
 requires-python = ">=3.12"
 dependencies = [
-  "starlette>=0.47,<1",
+  "starlette>=1.6,<2",
   "httpx>=0.28,<1",
-  "uvicorn>=0.35,<1",
+  "uvicorn>=0.52.4,<1",
 ]
 
 [project.scripts]
 talaria = "talaria.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8.4,<10", "pytest-asyncio>=1,<2", "playwright>=1.55,<2", "ruff>=0.12,<1"]
+dev = ["pytest>=9.1,<10", "pytest-asyncio>=1.4,<2", "playwright>=1.62,<2", "ruff>=0.16.7,<1"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/talaria"]

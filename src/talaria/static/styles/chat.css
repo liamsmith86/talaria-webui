@@ -40,6 +40,11 @@
   display: block;
   scrollbar-width: thin;
 }
+@supports (field-sizing: content) {
+  .composer textarea {
+    field-sizing: content;
+  }
+}
 .composer textarea::placeholder {
   color: var(--faint);
 }
@@ -157,6 +162,8 @@
   margin: 0 0 29px;
   animation: arrive 0.2s ease;
   min-width: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
 }
 .message.user {
   display: flex;
@@ -221,10 +228,14 @@
   line-height: 1.85;
   overflow-wrap: anywhere;
 }
-.markdown > *:first-child {
+.markdown-block,
+.markdown-inline {
+  display: contents;
+}
+.markdown > .markdown-block:first-child > :first-child {
   margin-top: 0;
 }
-.markdown > *:last-child {
+.markdown > .markdown-block:last-child > :last-child {
   margin-bottom: 0;
 }
 .markdown p {

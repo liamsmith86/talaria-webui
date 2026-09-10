@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from starlette.applications import Starlette
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
@@ -73,6 +74,15 @@ class BrowserBoundary:
         return await self.app(scope, receive, secure_send)
 
 
+class Assets(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        # Filenames are stable across releases: revalidate with ETag instead of
+        # risking a mixture of cached modules from different app versions.
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 async def index(request):
     return FileResponse(STATIC / "index.html")
 
@@ -134,7 +144,10 @@ def create_app(
             Route("/api/runs/{run_id}/events", routes.events),
             Route("/api/runs/{run_id}", routes.run),
             Route("/api/runs/{run_id}/{action}", routes.control, methods=["POST"]),
-            Mount("/static", StaticFiles(directory=STATIC)),
+            Mount(
+                "/static",
+                GZipMiddleware(Assets(directory=STATIC), minimum_size=1024, compresslevel=6),
+            ),
         ],
     )
     app.state.settings, app.state.config_path = settings, config_path

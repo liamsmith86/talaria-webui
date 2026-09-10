@@ -81,7 +81,7 @@ export function Composer({
   }, [draftSuggestion]);
   useEffect(() => {
     const el = textarea.current;
-    if (!el) return;
+    if (!el || CSS.supports("field-sizing", "content")) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
   }, [draft]);

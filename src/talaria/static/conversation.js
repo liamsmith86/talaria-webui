@@ -179,7 +179,7 @@ function Message({
     ${reasoning &&
     html`<details class="reasoning">
       <summary>Thinking<${Icon} name="chevron" size=${14} /></summary>
-      <${Markdown} text=${reasoning} />
+      <${Markdown} text=${reasoning} deferHighlight=${!!record} />
     </details>`}
     ${tools.length > 0 &&
     html`<div class="tool-stack">
@@ -195,7 +195,11 @@ function Message({
           aria-label="Your message text"
         >${text}</div>`
       : html`<div class="message-text">
-          <${Markdown} text=${text} streaming=${streaming} />
+          <${Markdown}
+            text=${text}
+            streaming=${streaming}
+            deferHighlight=${!!record}
+          />
         </div>`)}
     ${streaming &&
     !text &&
@@ -455,6 +459,16 @@ export function Conversation({ app }) {
           ? lastUser?.record?.id === live.baseUserId
           : app.history.length <= live.baseHistoryLength) ||
         lastUser?.text !== live.userText);
+  // History objects stay stable during streaming. Retain their VNodes so each
+  // delta does not revisit every old message, tool card, and timestamp.
+  const history = useMemo(
+    () => !app.loading && items.map((m) => html`<${Message}
+      key=${m.id}
+      ...${m}
+      canChange=${canChange && typeof m.record?.id === "number"}
+    />`),
+    [items, canChange, app.loading],
+  );
   async function loadEarlier() {
     if (olderBusy) return;
     const el = scroll.current,
@@ -507,16 +521,7 @@ export function Conversation({ app }) {
             class="skeleton medium"
           /><span class="sr-only">Loading conversation</span>
         </div>`}
-        ${!app.loading &&
-        items.map(
-          (m) =>
-            html`<${Message}
-              key=${m.id}
-              ...${m}
-              canChange=${canChange &&
-              typeof m.record?.id === "number"}
-            />`,
-        )}
+        ${history}
         ${showUser &&
         html`<${Message}
           role="user"

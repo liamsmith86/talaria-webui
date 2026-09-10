@@ -7,6 +7,7 @@ Profile selection belongs to each browser tab, never to shared server state.
 import asyncio
 import re
 import secrets
+from contextlib import contextmanager
 from dataclasses import replace
 from urllib.parse import urlsplit, urlunsplit
 
@@ -18,6 +19,7 @@ from .hermes import APIError, Hermes, decode_json, object_result, valid_api_key
 
 PROFILE = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 MAX_PROFILES = 8
+MAX_ACTIVE_RUNS = 16
 
 
 def split_url(url: str) -> tuple[str, str]:
@@ -51,7 +53,8 @@ class Profiles:
         self.writes = set()
         self.default_label = ""
         self.error = ""
-        self.lock, self.run_lock = asyncio.Lock(), asyncio.Lock()
+        self.lock = asyncio.Lock()
+        self.pending_runs = 0
         if self.path.exists():
             try:
                 with self.path.open() as file:
@@ -188,6 +191,24 @@ class Profiles:
         for app in self.apps.values():
             await app.state.relay.close()
             await app.state.hermes.close()
+
+    @contextmanager
+    def reserve_run(self):
+        # These synchronous check/update operations are atomic on the server's
+        # event loop. Pending upstream admissions consume capacity too, without
+        # making unrelated requests wait for another profile's network I/O.
+        active = sum(
+            not channel.finished
+            for app in self.apps.values()
+            for channel in app.state.relay.channels.values()
+        )
+        if active + self.pending_runs >= MAX_ACTIVE_RUNS:
+            raise APIError("There are too many active conversations. Wait for one to finish.", 429)
+        self.pending_runs += 1
+        try:
+            yield
+        finally:
+            self.pending_runs -= 1
 
     def attach(self, state, run_id):
         # Switching profiles must not multiply the original replay memory budget.

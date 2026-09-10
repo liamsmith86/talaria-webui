@@ -282,16 +282,9 @@ async def start_run(request: Request):
     idem = text_field(data, "request_id", 128) or secrets.token_hex(16)
     identifier(idem)
     state = request.app.state
-    async with state.connection_lock, state.profiles.run_lock:
-        if (
-            sum(
-                not c.finished
-                for app in state.profiles.apps.values()
-                for c in app.state.relay.channels.values()
-            )
-            >= 16
-        ):
-            raise APIError("There are too many active conversations. Wait for one to finish.", 429)
+    # ProfileRouter keeps this connection in flight until the request completes;
+    # connection replacement/removal already refuses while that count is nonzero.
+    with state.profiles.reserve_run():
         options = {
             "json": payload,
             "headers": {"Idempotency-Key": idem, "X-Hermes-Session-Key": f"talaria:{sid}"},

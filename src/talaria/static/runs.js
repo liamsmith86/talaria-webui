@@ -29,7 +29,22 @@ let restoration;
 const terminal = new Set(["completed", "failed", "cancelled", "interrupted"]);
 const receiptKey = (sid, requestId) => `run.${sid}.${requestId}`;
 function publish(sid, live) {
-  update({ lives: { ...state.lives, [sid]: live } }, true);
+  const lives = { ...state.lives, [sid]: live };
+  if (live.persisted && terminal.has(live.status)) {
+    // Hermes already holds these transcripts. Keep a small presentation cache
+    // instead of retaining every streamed reply for the lifetime of the tab.
+    // Never evict active, uncertain, or unsaved-image recovery state.
+    const disposable = Object.entries(lives).filter(
+      ([id, item]) =>
+        id !== state.active &&
+        item.persisted &&
+        terminal.has(item.status) &&
+        !item.uncertain &&
+        !item.imageReceipt,
+    );
+    for (const [id] of disposable.slice(0, -16)) delete lives[id];
+  }
+  update({ lives }, true);
 }
 function remember() {
   const entries = Object.entries(state.lives)
@@ -518,10 +533,13 @@ async function recoverRuns() {
       )
       .slice(-16),
   );
-  for (const [sid, savedRecord] of Object.entries(recoveryRecords)) {
+  const records = Object.entries(recoveryRecords).sort(
+    ([a], [b]) => Number(b === state.active) - Number(a === state.active),
+  );
+  async function recover([sid, savedRecord]) {
     const record = { ...savedRecord };
     try {
-      if (Object.hasOwn(state.lives, sid)) continue;
+      if (Object.hasOwn(state.lives, sid)) return;
       if (record.imageReceipt) {
         const receipt =
           (await pendingStorage(receiptKey(sid, record.requestId)).catch(
@@ -534,7 +552,7 @@ async function recoverRuns() {
             imageBoundary: receipt.imageBoundary,
           });
         else if (!record.id) {
-          if (Object.hasOwn(state.lives, sid)) continue;
+          if (Object.hasOwn(state.lives, sid)) return;
           publish(sid, {
             ...record,
             text: "",
@@ -543,16 +561,16 @@ async function recoverRuns() {
             uncertain: true,
             error: receiptError,
           });
-          continue;
+          return;
         }
       }
-      if (Object.hasOwn(state.lives, sid)) continue;
+      if (Object.hasOwn(state.lives, sid)) return;
       if (!record.id && record.payload) {
         if (
           record.payload.session_id !== sid ||
           record.payload.request_id !== record.requestId
         )
-          continue;
+          return;
         const live = {
           ...record,
           text: "",
@@ -565,11 +583,11 @@ async function recoverRuns() {
           ? "The submission confirmation was lost. Retry safely to recover this response."
           : receiptError;
         publish(sid, live);
-        continue;
+        return;
       }
-      if (typeof record.id !== "string" || !record.id) continue;
+      if (typeof record.id !== "string" || !record.id) return;
       const status = await api(`/runs/${encodeURIComponent(record.id)}`);
-      if (Object.hasOwn(state.lives, sid)) continue;
+      if (Object.hasOwn(state.lives, sid)) return;
       if (!status || typeof status.status !== "string")
         throw new RequestError(
           "The response status is unavailable.",
@@ -615,6 +633,14 @@ async function recoverRuns() {
       delete recoveryRecords[sid];
     }
   }
+  // Prioritize the open conversation and keep a small number of independent
+  // checks in flight. One slow status request must not stall every restored response.
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(4, records.length) }, async () => {
+      while (cursor < records.length) await recover(records[cursor++]);
+    }),
+  );
   remember();
 }
 
