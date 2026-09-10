@@ -159,6 +159,7 @@ function Message({
   canChange = false,
   parts = null,
   responseStatus = null,
+  agentName = "Hermes",
 }) {
   const [copied, setCopied] = useState(false);
   const toolCards = useMemo(
@@ -209,12 +210,12 @@ function Message({
   }
   return html`<article
     class=${`message ${role}`}
-    aria-label=${role === "user" ? "Your message" : "Hermes response"}
+    aria-label=${role === "user" ? "Your message" : `${agentName} response`}
   >
     ${role !== "user" &&
     html`<div class="message-byline">
       <span class="agent-avatar"><${Icon} name="spark" size=${14} /></span
-      ><span>Hermes</span>${time && html`<time>${humanTime(time)}</time>`}
+      ><span>${agentName}</span>${time && html`<time>${humanTime(time)}</time>`}
     </div>`}
     ${role === "user"
       ? html`<${Images} images=${images} />${text &&
@@ -230,7 +231,7 @@ function Message({
     ${streaming &&
     !text &&
     html`<div class="thinking" role="status">
-      <span /><span /><span /><span class="sr-only">Hermes is thinking</span>
+      <span /><span /><span /><span class="sr-only">${agentName} is thinking</span>
     </div>`}
     ${!streaming &&
     (!!text ||
@@ -493,6 +494,7 @@ export function Conversation({ app }) {
   const [away, setAway] = useState(false);
   const [olderBusy, setOlderBusy] = useState(false);
   const live = app.lives[app.active];
+  const agentName = app.agent?.name?.trim() || "Hermes";
   const items = useMemo(
     () => historyItems(app.history, live),
     [app.history, live?.persisted, live?.userImages],
@@ -548,13 +550,14 @@ export function Conversation({ app }) {
           html`<${Message}
             key=${m.id}
             ...${m}
+            agentName=${agentName}
             canChange=${canChange && typeof m.record?.id === "number"}
             responseStatus=${live?.persisted && index === items.length - 1
               ? live.status
               : null}
           />`,
       ),
-    [items, canChange, app.loading, live?.persisted, live?.status],
+    [items, canChange, app.loading, live?.persisted, live?.status, agentName],
   );
   async function loadEarlier() {
     if (olderBusy) return;
@@ -631,6 +634,7 @@ export function Conversation({ app }) {
         (streaming || live.text || live.reasoning || live.tools.length) &&
         html`<${Message}
           role="assistant"
+          agentName=${agentName}
           text=${live.text}
           tools=${live.tools}
           streaming=${streaming}
