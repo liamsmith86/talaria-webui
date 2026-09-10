@@ -26,10 +26,6 @@ def test_agent_settings_and_extended_access(page, live_app, tmp_path):
     expect(page.get_by_role("heading", name="Juniper", exact=True)).to_be_visible()
     assert page.locator(".settings-panel").evaluate("el => el.scrollTop") == 0
     screenshot(page, "agent-settings")
-    page.get_by_role("tab", name="Tools & skills", exact=True).click()
-    page.get_by_label("Search tools and skills").fill("project")
-    expect(page.get_by_text("project-notes", exact=True)).to_be_visible()
-    expect(page.get_by_text("File tools", exact=True)).to_have_count(0)
     page.get_by_role("button", name="Close dialog").click()
     expect(page.get_by_text("Connected to Juniper", exact=True)).to_be_visible()
     page.reload()
@@ -97,8 +93,6 @@ def test_incomplete_discovery_keeps_settings_and_chat_usable(page, live_app):
     live_app[1].discovery_overrides.update(
         {
             "/health/detailed": ({}, 503),
-            "/v1/toolsets": ({"changed": []}, 200),
-            "/v1/skills": (None, 200),
             "/api/model/options": (
                 {
                     "model": {},
@@ -121,8 +115,6 @@ def test_incomplete_discovery_keeps_settings_and_chat_usable(page, live_app):
     page.get_by_role("button", name="Your space").click()
     expect(page.get_by_role("button", name="Refresh information")).to_be_enabled()
     expect(page.locator(".default-model-card")).to_contain_text("Not shared by Hermes")
-    page.get_by_role("tab", name="Tools & skills", exact=True).click()
-    expect(page.get_by_text("Toolset information is not available", exact=False)).to_be_visible()
     page.get_by_role("tab", name="Appearance", exact=True).click()
     page.get_by_role("button", name="Light", exact=True).click()
     page.get_by_role("button", name="Close dialog").click()

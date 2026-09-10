@@ -140,7 +140,7 @@ export function Connection({
   const content = html`
     <p class="dialog-intro">
       ${creating
-        ? "Use the profile’s name and API key from Hermes. Its conversations, tools, and memory stay with Hermes."
+        ? "Use the profile’s name and API key from Hermes."
         : "This connection belongs to the selected profile. Add another profile to connect elsewhere."}
     </p>
     <form
@@ -202,8 +202,7 @@ export function Connection({
           autocomplete="new-password"
       /></label>
       <p class="field-help">
-        Your key is stored on the Talaria server and never sent back to your
-        browser.
+        Your key is saved to ~/.config/talaria/config.json.
       </p>
       ${error && html`<div class="form-error" role="alert">${error}</div>`}
       ${tested &&

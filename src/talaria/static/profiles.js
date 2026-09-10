@@ -112,9 +112,6 @@ export function ProfileConnections({ app, onRefresh }) {
           <${Icon} name="plus" size=${14} /> Add profile
         </button>
       </div>
-      <p class="field-help">
-        Connect to profiles that already exist in Hermes.
-      </p>
       <div class="saved-profiles">
         ${app.profiles.map(
           (profile) =>

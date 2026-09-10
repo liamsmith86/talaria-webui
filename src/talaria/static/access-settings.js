@@ -28,8 +28,8 @@ export function ExtendedAccess({ onSaved }) {
       <span class="quiet-badge">Optional</span>
     </div>
     <p class="dialog-intro">
-      The Talaria plugin inherits your agent’s instructions and prefill, and adds
-      response details, context usage, and conversation editing.
+      The Talaria plugin extends your Hermes Agent API to return additional
+      information which Talaria uses to make your experience seamless.
     </p>
     <div class="access-status" role="status">
       <${Icon} name=${available ? "check" : "info"} size=${16} /><span
@@ -38,27 +38,12 @@ export function ExtendedAccess({ onSaved }) {
           : "Talaria plugin not detected"}</span
       >
     </div>
-    ${available && inherited && html`
-      <dl class="settings-facts">
-        ${[
-          ["Agent instructions", context.instructions],
-          ["Prefill messages", context.prefill],
-        ].map(([label, status]) => html`<div>
-          <dt>${label}</dt>
-          <dd>${status === "ready"
-            ? "Inherited"
-            : status === "not_configured" ? "Not configured" : "Unavailable"}</dd>
-        </div>`)}
-      </dl>
-      <p class="field-help">
-        Applied on each turn without adding messages to your saved conversation.
-      </p>
-      ${(context.instructions === "unavailable" || context.prefill === "unavailable") &&
+    ${available && inherited &&
+      (context.instructions === "unavailable" || context.prefill === "unavailable") &&
       html`<p class="field-help" role="status">
         Some profile context could not be loaded. Check its configuration in Hermes,
         then check again.
       </p>`}
-    `}
     ${available && !inherited && html`<p class="field-help">
       Update the Talaria plugin in Hermes to inherit agent instructions and prefill.
     </p>`}

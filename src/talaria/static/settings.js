@@ -16,8 +16,6 @@ import { ReadinessNotice } from "./readiness.js";
 const sections = [
   ["agent", "spark", "Your agent"],
   ["appearance", "sun", "Appearance"],
-  ["providers", "globe", "Providers"],
-  ["tools", "terminal", "Tools & skills"],
   ["connection", "link", "Connection"],
   ["installation", "monitor", "Talaria"],
 ];
@@ -170,10 +168,9 @@ function Installation() {
           </p>`}`;
 }
 
-function Overview({ app, navigate }) {
+function Overview({ app }) {
   const info = app.agentInfo,
     model = app.defaultModel;
-  const enabled = info?.toolsets.filter((item) => item.enabled).length;
   return html`<div class="agent-overview">
     <div class="agent-identity">
       <span class="agent-monogram" aria-hidden="true"
@@ -231,15 +228,6 @@ function Overview({ app, navigate }) {
         )}
       </div>
     </section>`}
-    <div class="overview-links">
-      <button onClick=${() => navigate("providers")}>
-        <strong>${app.providers.length}</strong><span>Configured providers</span
-        ><${Icon} name="chevron" size=${16} /></button
-      ><button onClick=${() => navigate("tools")}>
-        <strong>${info?.available.toolsets ? enabled : "—"}</strong
-        ><span>Enabled toolsets</span><${Icon} name="chevron" size=${16} />
-      </button>
-    </div>
   </div>`;
 }
 
@@ -287,113 +275,6 @@ function Appearance() {
             </button>`,
         )}
       </div>
-    </section>
-    <p class="field-help">Appearance is saved in this browser.</p>`;
-}
-
-function Providers({ app }) {
-  return html`<h3>Providers</h3>
-    <p class="dialog-intro">
-      Configured in Hermes. Choose a model from the conversation to use it for
-      that session.
-    </p>
-    <div class="provider-list">
-      ${app.providers.map(
-        (p) =>
-          html`<div class="provider-row">
-            <div>
-              <strong>${p.name}</strong
-              ><small>${p.modelCount} models available</small>
-              ${p.warning &&
-              html`<small class="provider-warning">${p.warning}</small>`}
-            </div>
-            ${p.current
-              ? html`<span class="default-badge">Default</span>`
-              : html`<span class="quiet-badge">Configured</span>`}
-          </div>`,
-      )}
-    </div>
-    ${!app.providers.length &&
-    html`<p class="field-help">
-      Hermes has not shared provider information.
-    </p>`}`;
-}
-
-function Tools({ info }) {
-  const [query, setQuery] = useState("");
-  const match = (item) =>
-    `${item.name} ${item.label || ""} ${item.description || ""} ${(item.tools || []).join(" ")}`
-      .toLowerCase()
-      .includes(query.toLowerCase());
-  const toolsets = (info?.toolsets || []).filter(match),
-    skills = (info?.skills || []).filter(match);
-  return html`<h3>Tools & skills</h3>
-    <p class="dialog-intro">
-      Available to Hermes through this API connection. Configuration stays in
-      Hermes.
-    </p>
-    <div class="search-field">
-      <${Icon} name="search" size=${17} /><input
-        aria-label="Search tools and skills"
-        placeholder="Find a tool or skill…"
-        value=${query}
-        onInput=${(e) => setQuery(e.target.value)}
-      />
-    </div>
-    <section class="settings-section">
-      <h4>Toolsets <span>${toolsets.length}</span></h4>
-      ${!info?.available.toolsets &&
-      html`<p class="field-help">
-        Toolset information is not available from this Hermes connection.
-      </p>`}
-      ${toolsets.map(
-        (item) =>
-          html`<details key=${item.name} class="inventory-item">
-            <summary>
-              <span
-                >${(item.label || readable(item.name)).replace(
-                  /^[^\p{L}\p{N}]+/u,
-                  "",
-                )}</span
-              ><small
-                >${item.enabled
-                  ? item.configured
-                    ? "Enabled"
-                    : "Needs configuration"
-                  : "Off"}</small
-              ><${Icon} name="chevron" size=${14} />
-            </summary>
-            <div class="inventory-detail">
-              <p>${item.description}</p>
-              <div class="tool-names">
-                ${item.tools.map((name) => html`<code>${name}</code>`)}
-              </div>
-            </div>
-          </details>`,
-      )}
-    </section>
-    <section class="settings-section">
-      <h4>Skills <span>${skills.length}</span></h4>
-      ${!info?.available.skills &&
-      html`<p class="field-help">
-        Skill information is not available from this Hermes connection.
-      </p>`}
-      ${skills.map(
-        (item) =>
-          html`<details key=${item.name} class="inventory-item">
-            <summary>
-              <span>${item.name}</span><${Icon} name="chevron" size=${14} />
-            </summary>
-            <div class="inventory-detail">
-              <p>${item.description || "No description provided."}</p>
-              ${item.category && html`<small>${item.category}</small>`}
-            </div>
-          </details>`,
-      )}
-      ${query &&
-      !skills.length &&
-      !toolsets.length &&
-      html`<p class="field-help">No matching tools or skills.</p>`}
     </section>`;
 }
 
@@ -460,10 +341,8 @@ export function Settings({ app, onClose, initialSection = "agent" }) {
     )}</nav>
     <div key=${section} class="settings-panel" id="settings-content" role="tabpanel" aria-labelledby=${`settings-tab-${section}`} tabindex="0">
       ${error && html`<p class="form-error" role="alert">${error}</p>`}
-      ${section === "agent" && html`<${Overview} app=${app} navigate=${setSection} />`}
+      ${section === "agent" && html`<${Overview} app=${app} />`}
       ${section === "appearance" && html`<${Appearance} />`}
-      ${section === "providers" && html`<${Providers} app=${app} />`}
-      ${section === "tools" && html`<${Tools} info=${app.agentInfo} />`}
       ${section === "installation" && html`<${Installation} key=${installationRefresh} />`}
       ${
         section === "connection" &&

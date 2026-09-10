@@ -79,11 +79,6 @@ export function modelInventory(data) {
       .map((p) => ({
         id: providerId(p),
         name: providerName(p),
-        current: configuredProvider
-          ? providerId(p) === configuredProvider
-          : p.is_current === true,
-        modelCount: models.filter((m) => m.provider === providerId(p)).length,
-        warning: text(p.warning),
       })),
   };
 }

@@ -68,9 +68,7 @@ function Login({ development }) {
       ${development && html`<small class="environment-badge">Dev</small>`}
     </div>
     <div class="login-card">
-      <span class="eyebrow">YOUR SPACE, AWAITING YOU</span>
       <h1>Welcome back.</h1>
-      <p>A little space for big ideas.</p>
       <form onSubmit=${submit}>
         <label class="field"
           >Password<input
@@ -94,7 +92,7 @@ function Login({ development }) {
         </button>
       </form>
     </div>
-    <p class="login-footer">A considered companion for Hermes Agent.</p>
+    <p class="login-footer">Hermes Agent web user interface</p>
   </main>`;
 }
 

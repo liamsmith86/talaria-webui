@@ -64,9 +64,6 @@ def test_context_status_is_private_and_degrades_independently(page, live_app):
     page.get_by_role("button", name="Your space").click()
     page.get_by_role("tab", name="Connection", exact=True).click()
     section = page.locator(".extended-access")
-    expect(section).to_contain_text("Agent instructions")
-    expect(section).to_contain_text("Inherited")
-    expect(section).to_contain_text("Unavailable")
     expect(section).to_contain_text("Some profile context could not be loaded")
     with signed_in(live_app[0]) as client:
         caps = client.get("/api/capabilities").json()
@@ -77,5 +74,4 @@ def test_context_status_is_private_and_degrades_independently(page, live_app):
         assert context == {"instructions": "unavailable", "prefill": "unavailable"}
     peer.extension["profile_context"] = {"instructions": "ready", "prefill": "not_configured"}
     page.get_by_role("button", name="Check again").click()
-    expect(section).to_contain_text("Not configured")
     expect(section).not_to_contain_text("Some profile context could not be loaded")

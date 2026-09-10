@@ -349,25 +349,6 @@ def test_sidebar_uses_calendar_days_at_midnight(page, live_app):
     ).to_have_text("Yesterday")
 
 
-def test_inventory_filter_does_not_transfer_expanded_state(page, live_app):
-    live_app[1].discovery_overrides["/v1/toolsets"] = (
-        {
-            "data": [
-                {"name": "files", "label": "File tools", "tools": ["read_file"], "enabled": True},
-                {"name": "browser", "label": "Browser tools", "tools": ["browse"], "enabled": True},
-            ]
-        },
-        200,
-    )
-    page.get_by_role("button", name="Your space").click()
-    page.get_by_role("tab", name="Tools & skills", exact=True).click()
-    page.locator(".inventory-item").filter(has_text="File tools").locator("summary").click()
-    page.get_by_label("Search tools and skills").fill("Browser tools")
-    browser = page.locator(".inventory-item").filter(has_text="Browser tools")
-    expect(browser).to_have_count(1)
-    expect(browser).not_to_have_attribute("open", "")
-
-
 def test_pending_pin_cannot_close_a_newly_opened_session_dialog(page, live_app):
     open_notes(page, live_app)
     page.get_by_role("button", name="Conversation options", exact=True).click()

@@ -91,8 +91,8 @@ def test_agent_information_filters_private_fields_and_tolerates_drift(live_app):
         info = response.json()
         assert info["version"] == "1.2.3" and "active_agents" not in info
         assert info["platforms"] == [{"name": "api_server", "state": "connected"}]
-        assert info["skills"][0]["name"] == "project-notes"
-        assert info["toolsets"][0]["tools"] == ["read_file", "write_file"]
+        assert "skills" not in info and "toolsets" not in info
+        assert not any(path in {"/v1/skills", "/v1/toolsets"} for _, path, _ in peer.calls)
         assert KEY not in response.text and "pid" not in response.text
         peer.discovery_overrides.update(
             {
@@ -100,14 +100,11 @@ def test_agent_information_filters_private_fields_and_tolerates_drift(live_app):
                     {"status": "ok", "version": ["changed"], "platforms": []},
                     200,
                 ),
-                "/v1/skills": ({"new_envelope": []}, 200),
-                "/v1/toolsets": ({"error": "Private failure"}, 503),
             }
         )
         info = client.get("/api/agent").json()
         assert info["version"] == "" and info["platforms"] == []
-        assert info["skills"] == [] and info["toolsets"] == []
-        assert info["available"] == {"health": True, "skills": False, "toolsets": False}
+        assert info["available"] == {"health": True}
         peer.discovery_overrides["/health/detailed"] = (None, 200)
         assert client.get("/api/agent").json()["available"]["health"] is False
         assert client.get("/api/sessions").status_code == 200

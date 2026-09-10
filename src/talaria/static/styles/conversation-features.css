@@ -201,10 +201,6 @@
   margin-top: 8px;
   overflow-wrap: anywhere;
 }
-.provider-warning {
-  line-height: 1.7;
-  max-width: 380px;
-}
 .readiness-notice {
   display: flex;
   align-items: flex-start;

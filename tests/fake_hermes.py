@@ -175,33 +175,6 @@ class FakeHermes:
                     "private_future_field": KEY,
                 }
             )
-        if path == "/v1/skills":
-            return JSONResponse(
-                {
-                    "data": [
-                        {
-                            "name": "project-notes",
-                            "description": "Read project notes",
-                            "secret": KEY,
-                        }
-                    ]
-                }
-            )
-        if path == "/v1/toolsets":
-            return JSONResponse(
-                {
-                    "data": [
-                        {
-                            "name": "files",
-                            "label": "File tools",
-                            "enabled": True,
-                            "configured": True,
-                            "tools": ["read_file", "write_file"],
-                            "secret": KEY,
-                        }
-                    ]
-                }
-            )
         if path == "/api/sessions":
             if request.method == "GET":
                 offset = int(request.query_params.get("offset", 0))

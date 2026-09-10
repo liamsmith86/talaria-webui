@@ -63,7 +63,7 @@ def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
     page.get_by_role("button", name="Your space").click()
     expect(page.get_by_role("dialog")).to_be_visible()
     audit("settings")
-    for section in ("Appearance", "Providers", "Tools & skills", "Connection", "Talaria"):
+    for section in ("Appearance", "Connection", "Talaria"):
         page.get_by_role("tab", name=section, exact=True).click()
         audit("settings-" + section)
         if section == "Connection":
