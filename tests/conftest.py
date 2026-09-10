@@ -12,6 +12,23 @@ from talaria.config import Settings
 from .fake_hermes import KEY, FakeHermes
 
 
+def pytest_addoption(parser):
+    parser.addoption("--fail-on-skip", action="store_true", help="Fail CI on missing test setup")
+
+
+def pytest_collection_modifyitems(items):
+    for item in items:
+        if "playwright_runtime" in item.fixturenames:
+            item.add_marker(pytest.mark.browser)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if session.config.getoption("--fail-on-skip"):
+        reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+        if reporter and reporter.stats.get("skipped"):
+            session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
 def serve(app):
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
@@ -75,5 +92,7 @@ def page(playwright_runtime, live_app):
     )
     state.dispose()
     yield page
+    # Let intercepted requests finish before closing their response context.
+    page.unroute_all(behavior="wait")
     context.close()
     browser.close()

@@ -206,7 +206,7 @@ def test_managed_launcher_never_injects_production_config_into_dev(deployment):
 
 
 @pytest.mark.skipif(not shutil.which("uv") or not shutil.which("git"), reason="Needs Git and uv")
-def test_real_git_wheel_install_update_failure_and_rollback(deployment):
+def test_real_git_wheel_install_update_failure_and_rollback(deployment, tmp_path):
     """Exercise the actual build/install/probe pipeline without touching a host service."""
     project = Path(__file__).resolve().parents[1]
     remote = Path(deployment.config["repository"])
@@ -250,6 +250,13 @@ def test_real_git_wheel_install_update_failure_and_rollback(deployment):
         ]
     )
     assert "pytest" not in packages and "playwright" not in packages
+    plugin_home = tmp_path / "exported-hermes"
+    run([root / "current/venv/bin/talaria", "hermes-plugin", "--home", plugin_home])
+    exported = plugin_home / "plugins/talaria"
+    bundled = project / "src/talaria/hermes_plugin"
+    for file in bundled.iterdir():
+        if file.suffix in {".py", ".yaml"}:
+            assert (exported / file.name).read_bytes() == file.read_bytes()
     module = remote / "src/talaria/app.py"
     good = module.read_text()
     module.write_text("raise RuntimeError('Broken staged release')\n")

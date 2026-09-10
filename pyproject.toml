@@ -28,6 +28,7 @@ exclude-newer = "7 days"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = ["browser: requires Playwright", "hermes: requires a native Hermes checkout"]
 
 [tool.ruff]
 line-length = 100

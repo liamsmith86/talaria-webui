@@ -86,3 +86,17 @@ Open **http://127.0.0.1:8766** and connect to Hermes. The container runs as a no
 - Change the web password with `~/.local/share/talaria/bin/talaria --set-password`, then restart Talaria.
 
 Managed installations support `update`, `status`, and `rollback` through `~/.local/share/talaria/bin/talaria`. Refresh the bundled plugin separately after updating Talaria, then restart the Hermes gateway.
+
+## Development and platform support
+
+The full CI matrix covers Python 3.12 and 3.14 on Linux and macOS (x86-64 and ARM64), plus Python 3.13 on Linux. Each platform exercises backend tests, fresh wheel installation, startup, plugin export, update, and rollback. Browser regressions and accessibility run in Chromium, Firefox, and WebKit. Native Hermes contracts use the revision pinned in [CI](.github/workflows/ci.yml).
+
+While private, routine CI runs Linux/Python 3.12 and 3.14, Chromium/accessibility, native Hermes contracts, and the amd64 container check. Releases and manual full runs exercise every platform. Public repositories automatically use the full matrix on GitHub-hosted runners.
+
+On Windows, use Ubuntu under WSL2 and follow the Linux installation instructions; keep the checkout in the Linux filesystem. CI tests this route. Native Windows installation is not supported. Docker Desktop can run the Linux image; connect to host services through `host.docker.internal` and publish the port with `-p 127.0.0.1:8766:8766` instead of `--network host`.
+
+Run `uv sync --locked`, then `uv run ruff check .` and `uv run pytest -m 'not browser and not hermes'`. Browser tests need `uv run playwright install --with-deps` and `TALARIA_AXE_PATH`; native contracts need `HERMES_SOURCE`. The workflow contains the pinned setup commands. CI fails on skipped tests.
+
+Dependencies use a seven-day cooldown and a committed lockfile. Docker's Python and uv images are pinned by digest; update these pins deliberately. The `Required checks` status gates merges.
+
+Push a `vX.Y.Z` tag matching `pyproject.toml` on a commit from `main` to publish `ghcr.io/liamsmith86/talaria-webui:vX.Y.Z` for `linux/amd64` and `linux/arm64`, after all checks pass. Packages stay private; authenticate with `docker login ghcr.io` before pulling. No release tag means no image publication.

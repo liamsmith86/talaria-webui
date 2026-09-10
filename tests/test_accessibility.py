@@ -128,7 +128,8 @@ def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
     page.get_by_role("button", name="Close dialog").click()
     page.get_by_label("Message Hermes").fill("Delegate this check")
     page.get_by_role("button", name="Send message", exact=True).click()
-    card = page.locator(".tool-card").filter(has_text="Subagent")
+    # Audit the saved card after the live response has handed off to history.
+    card = page.locator(".completed-children .tool-card").filter(has_text="Subagent")
     expect(card).to_contain_text("12.5s")
     expect(page.get_by_role("button", name="Stop response")).to_have_count(0)
     card.locator("summary").click()
