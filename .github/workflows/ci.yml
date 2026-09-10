@@ -97,7 +97,7 @@ jobs:
     if: needs.lint.outputs.full == 'true'
     name: Browser (${{ matrix.browser }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -114,6 +114,8 @@ jobs:
           version: '0.12.9'
           checksum: *uv-checksum
           python-version: '3.12'
+          # The Linux backend job saves this same dependency cache.
+          save-cache: false
       - run: uv sync --locked
       - run: uv run --locked playwright install --with-deps "$TALARIA_TEST_BROWSER"
       - name: Fetch and verify pinned accessibility engine
