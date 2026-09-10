@@ -156,9 +156,22 @@ async def capabilities(request: Request):
     from .extensions import discover
 
     state = request.app.state
-    caps = object_result(await state.hermes.request("GET", "/v1/capabilities"))
+    tasks = [
+        asyncio.create_task(state.hermes.request("GET", "/v1/capabilities")),
+        asyncio.create_task(discover(state.hermes)),
+    ]
+    try:
+        caps, extended = await asyncio.gather(*tasks)
+    finally:
+        # Keep both reads inside this request's connection lifetime, including
+        # when required discovery fails or the browser disconnects.
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    caps = object_result(caps)
     state.capabilities = caps
-    state.extensions = await discover(state.hermes)
+    state.extensions = extended
     return JSONResponse(
         {
             **caps,

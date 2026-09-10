@@ -135,6 +135,9 @@ async def download(request):
                     else:
                         write(markdown_message(message))
                     first = False
+                    # Formatting a large page must not monopolize the server
+                    # while other tabs are submitting messages or streaming.
+                    await asyncio.sleep(0)
                 offset = page["next_offset"]
                 if not page["has_more"]:
                     break

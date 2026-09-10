@@ -1,25 +1,31 @@
 import { html, useEffect, useRef, useState, Icon, IconButton } from "./lib.js";
 import { update } from "./store.js";
 
-function matches(root, query) {
+const searchable = ".message-text, .tool-content pre, .reasoning .markdown";
+
+function matches(root, query, cache) {
   if (!query || !root) return [];
   const ranges = [];
   const expression = new RegExp(
     query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
     "giu",
   );
-  for (const container of root.querySelectorAll(
-    ".message-text, .tool-content pre, .reasoning .markdown",
-  )) {
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-    const nodes = [];
-    let text = "",
-      node;
-    while ((node = walker.nextNode())) {
-      if (!node.textContent || node.parentElement.closest("button")) continue;
-      nodes.push({ node, start: text.length });
-      text += node.textContent;
+  for (const container of root.querySelectorAll(searchable)) {
+    let indexed = cache.get(container);
+    if (!indexed) {
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+      const nodes = [];
+      let text = "",
+        node;
+      while ((node = walker.nextNode())) {
+        if (!node.textContent || node.parentElement.closest("button")) continue;
+        nodes.push({ node, start: text.length });
+        text += node.textContent;
+      }
+      indexed = { nodes, text };
+      cache.set(container, indexed);
     }
+    const { nodes, text } = indexed;
     let firstIndex = 0,
       lastIndex = 0;
     for (const match of text.matchAll(expression)) {
@@ -53,9 +59,11 @@ function revealMatch(range, viewport) {
     const rect = range.getBoundingClientRect(),
       bounds = el.getBoundingClientRect();
     if (el.scrollHeight > el.clientHeight)
-      el.scrollTop += rect.top - bounds.top - el.clientTop - el.clientHeight / 3;
+      el.scrollTop +=
+        rect.top - bounds.top - el.clientTop - el.clientHeight / 3;
     if (el.scrollWidth > el.clientWidth)
-      el.scrollLeft += rect.left - bounds.left - el.clientLeft - el.clientWidth / 3;
+      el.scrollLeft +=
+        rect.left - bounds.left - el.clientLeft - el.clientWidth / 3;
     if (el === viewport) break;
   }
 }
@@ -67,31 +75,67 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
   const input = useRef();
   const searchedQuery = useRef("");
   const move = useRef(false);
-  const live = app.lives[app.active];
+  const search = useRef({ query: "", timer: 0, cache: new WeakMap() });
+  search.current.query = query;
+  function schedule() {
+    const pending = search.current;
+    if (pending.timer) return;
+    pending.timer = setTimeout(() => {
+      pending.timer = 0;
+      const found = matches(root.current, pending.query.trim(), pending.cache);
+      setRanges(found);
+      setIndex((i) =>
+        searchedQuery.current === pending.query
+          ? Math.min(i, Math.max(0, found.length - 1))
+          : 0,
+      );
+      searchedQuery.current = pending.query;
+    }, 120);
+  }
   useEffect(() => {
     input.current?.focus();
   }, []);
   useEffect(() => {
-    const timer = setTimeout(() => {
-      const found = matches(root.current, query.trim());
-      setRanges(found);
-      setIndex((i) =>
-        searchedQuery.current === query
-          ? Math.min(i, Math.max(0, found.length - 1))
-          : 0,
-      );
-      searchedQuery.current = query;
-    }, 120);
-    return () => clearTimeout(timer);
-  }, [
-    query,
-    app.history,
-    live?.text,
-    live?.reasoning,
-    live?.tools,
-    live?.persisted,
-    live?.userText,
-  ]);
+    // Index visible DOM, not network text: reveal pacing and deferred code
+    // highlighting can update text nodes independently of the store. Retain
+    // unchanged containers and invalidate only where content actually changed.
+    const cache = search.current.cache;
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        const target =
+          record.target.nodeType === Node.ELEMENT_NODE
+            ? record.target
+            : record.target.parentElement;
+        const container = target?.closest(searchable);
+        if (container) cache.delete(container);
+        else
+          for (const node of record.addedNodes) {
+            if (node.nodeType !== Node.ELEMENT_NODE) continue;
+            if (node.matches(searchable)) cache.delete(node);
+            for (const child of node.querySelectorAll(searchable))
+              cache.delete(child);
+          }
+      }
+      // Throttle DOM updates instead of repeatedly postponing the scan until
+      // a stream pauses. Search results stay current during continuous output.
+      if (search.current.query.trim()) schedule();
+    });
+    observer.observe(root.current, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    return () => {
+      observer.disconnect();
+      clearTimeout(search.current.timer);
+      search.current.timer = 0;
+    };
+  }, [root]);
+  useEffect(() => {
+    clearTimeout(search.current.timer);
+    search.current.timer = 0;
+    schedule();
+  }, [query]);
   useEffect(() => {
     if (globalThis.CSS?.highlights && globalThis.Highlight) {
       CSS.highlights.set("talaria-find", new Highlight(...ranges));

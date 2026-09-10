@@ -45,17 +45,22 @@ def valid_api_key(value):
 async def event_lines(response):
     pending = bytearray()
     size = 0
+    searched = 0
     async for chunk in response.aiter_bytes():
         pending.extend(chunk)
-        while (end := pending.find(b"\n")) >= 0:
+        while (end := pending.find(b"\n", searched)) >= 0:
             raw = pending[:end].rstrip(b"\r")
             del pending[: end + 1]
+            searched = 0
             size += len(raw)
             if size > MAX_EVENT:
                 raise APIError("A Hermes event exceeded the display limit.")
             if not raw:
                 size = 0
             yield raw.decode("utf-8")
+        # A fragmented JSON line can be megabytes long. The bytes already
+        # checked contain no newline; only scan the newly received suffix.
+        searched = len(pending)
         if size + len(pending) > MAX_EVENT:
             raise APIError("A Hermes event exceeded the display limit.")
 

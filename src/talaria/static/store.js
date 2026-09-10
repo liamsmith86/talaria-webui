@@ -148,8 +148,11 @@ export async function connect(configured = true) {
       connecting: false,
       agent: caps.talaria_agent || state.agent,
     });
-    if (caps.features?.session_resources) await refreshSessions();
-    else update({ sessions: [], hasMore: false, history: [] });
+    // The sidebar, current transcript, catalog, and readiness are independent.
+    // A slow conversation listing must not postpone showing the last reply.
+    const sessions = caps.features?.session_resources
+      ? refreshSessions()
+      : Promise.resolve(update({ sessions: [], hasMore: false, history: [] }));
     if (caps.features?.model_options) {
       refreshModels().catch(() =>
         update({ models: [], providers: [], defaultModel: null }),
@@ -157,8 +160,12 @@ export async function connect(configured = true) {
     } else update({ models: [], providers: [], defaultModel: null });
     refreshReadiness();
     const last = readStorage("last-session");
-    if (last && !state.active && caps.features?.session_resources)
-      await openSession(last);
+    await Promise.all([
+      sessions,
+      last && !state.active && caps.features?.session_resources
+        ? openSession(last)
+        : undefined,
+    ]);
   } catch (error) {
     update({ connecting: false, connected: false });
     fail(error);
