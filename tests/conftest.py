@@ -92,5 +92,7 @@ def page(playwright_runtime, live_app):
     )
     state.dispose()
     yield page
+    # Let intercepted requests finish before closing their response context.
+    page.unroute_all(behavior="wait")
     context.close()
     browser.close()
