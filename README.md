@@ -89,14 +89,14 @@ Managed installations support `update`, `status`, and `rollback` through `~/.loc
 
 ## Development and platform support
 
-The full CI matrix covers Python 3.12 and 3.14 on Linux and macOS (x86-64 and ARM64), plus Python 3.13 on Linux. Each platform exercises backend tests, fresh wheel installation, startup, plugin export, update, and rollback. Browser regressions and accessibility run in Chromium, Firefox, and WebKit. Native Hermes contracts use the revision pinned in [CI](.github/workflows/ci.yml).
+Private PRs run lint only. There is no duplicate CI run after merging. Other checks stay disabled by default while private, including release validation; use **Actions → CI → Run workflow → full** to run them explicitly. Public PRs and releases automatically enable the full suite; documentation-only PRs still run just lint.
 
-While private, routine CI runs Linux/Python 3.12 and 3.14, Chromium/accessibility, native Hermes contracts, and the amd64 container check. Releases and manual full runs exercise every platform. Public repositories automatically use the full matrix on GitHub-hosted runners.
+The full suite tests Linux x86-64/Python 3.12, Linux ARM64/Python 3.14, one macOS 26 ARM64/Python 3.14 job, WSL2, both Docker architectures, and native Hermes contracts. Browser and accessibility tests use Chromium, Firefox, and WebKit with two workers per engine and isolated browser contexts.
 
 On Windows, use Ubuntu under WSL2 and follow the Linux installation instructions; keep the checkout in the Linux filesystem. CI tests this route. Native Windows installation is not supported. Docker Desktop can run the Linux image; connect to host services through `host.docker.internal` and publish the port with `-p 127.0.0.1:8766:8766` instead of `--network host`.
 
-Run `uv sync --locked`, then `uv run ruff check .` and `uv run pytest -m 'not browser and not hermes'`. Browser tests need `uv run playwright install --with-deps` and `TALARIA_AXE_PATH`; native contracts need `HERMES_SOURCE`. The workflow contains the pinned setup commands. CI fails on skipped tests.
+Run `uv sync --locked`, then `uv run --only-group lint ruff check .` and `uv run pytest -m 'not browser and not hermes'`. Browser tests need `uv run playwright install --with-deps` and `TALARIA_AXE_PATH`; native contracts need `HERMES_SOURCE`. Run browser tests with `uv run pytest -n 2 -m browser`; the workflow contains the pinned setup commands. CI fails on skipped tests.
 
 Dependencies use a seven-day cooldown and a committed lockfile. Docker's Python and uv images are pinned by digest; update these pins deliberately. The `Required checks` status gates merges.
 
-Push a `vX.Y.Z` tag matching `pyproject.toml` on a commit from `main` to publish `ghcr.io/liamsmith86/talaria-webui:vX.Y.Z` for `linux/amd64` and `linux/arm64`, after all checks pass. Packages stay private; authenticate with `docker login ghcr.io` before pulling. No release tag means no image publication.
+Push a `vX.Y.Z` tag matching `pyproject.toml` on a commit from `main` to publish `ghcr.io/liamsmith86/talaria-webui:vX.Y.Z` for `linux/amd64` and `linux/arm64`, after the configured checks pass. Packages stay private; authenticate with `docker login ghcr.io` before pulling. No release tag means no image publication.
