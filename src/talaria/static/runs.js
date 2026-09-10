@@ -22,6 +22,7 @@ import {
   withoutImagePlaceholders,
 } from "./attachments.js";
 import { plainContent } from "./content.js";
+import { responseParts, appendText, finishText } from "./response-parts.js";
 
 const sources = new Map();
 let recoveryRecords = {};
@@ -56,6 +57,7 @@ function remember() {
         id: r.id,
         requestId: r.requestId,
         userText: r.userText,
+        baseUserId: r.baseUserId,
         imageReceipt: !!r.imageReceipt,
         ...(!r.id
           ? {
@@ -120,10 +122,23 @@ export function applyEvent(live, event) {
   if (
     (type === "message.delta" || type === "assistant.delta") &&
     typeof event.delta === "string"
-  )
+  ) {
     next.text = (next.text || "") + event.delta;
-  if (type === "reasoning.available" && typeof event.text === "string")
+    next.parts = appendText(responseParts(live), event.delta);
+  }
+  if (type === "reasoning.available" && typeof event.text === "string") {
     next.reasoning = event.text;
+    const parts = responseParts(live);
+    // Hermes can report reasoning after the call's text deltas. Place it
+    // before that prose without splitting its still-growing Markdown block.
+    const tail = parts.at(-1)?.kind === "text" ? parts.slice(-1) : [];
+    const prefix = tail.length ? parts.slice(0, -1) : parts;
+    next.parts = [
+      ...(prefix.at(-1)?.kind === "reasoning" ? prefix.slice(0, -1) : prefix),
+      { kind: "reasoning", text: event.text },
+      ...tail,
+    ];
+  }
   if (type === "tool.started" || type === "tool.start") {
     next.tools = [...(live.tools || [])];
     const tool = {
@@ -136,8 +151,13 @@ export function applyEvent(live, event) {
     const index = next.tools.findIndex(
       (t) => t.kind !== "agent" && t.id === tool.id,
     );
-    if (index < 0) next.tools.push(tool);
-    else next.tools[index] = { ...next.tools[index], ...tool };
+    if (index < 0) {
+      next.tools.push(tool);
+      next.parts = [
+        ...responseParts(live),
+        { kind: "tool", id: tool.id, agent: false },
+      ];
+    } else next.tools[index] = { ...next.tools[index], ...tool };
   }
   if (type === "tool.completed" || type === "tool.complete") {
     next.tools = [...(live.tools || [])];
@@ -193,7 +213,13 @@ export function applyEvent(live, event) {
       if (event[field] !== undefined && event[field] !== null)
         tool[field] = event[field];
     if (index >= 0) next.tools[index] = { ...next.tools[index], ...tool };
-    else next.tools.push(tool);
+    else {
+      next.tools.push(tool);
+      next.parts = [
+        ...responseParts(live),
+        { kind: "tool", id: tool.id, agent: true },
+      ];
+    }
   }
   if (type === "approval.request") {
     next.approval = event;
@@ -201,8 +227,21 @@ export function applyEvent(live, event) {
   }
   if (type?.startsWith("run.") && terminal.has(type.slice(4))) {
     next.status = type.slice(4);
-    if (typeof event.output === "string" && event.output)
-      next.text = event.output;
+    if (typeof event.output === "string" && event.output) {
+      next.parts = finishText(live, event.output);
+      next.text = next.parts
+        .filter((part) => part.kind === "text")
+        .map((part) => part.text)
+        .join("\n\n");
+    }
+    next.tools = (live.tools || []).map((tool) =>
+      tool.status === "running"
+        ? {
+            ...tool,
+            status: next.status === "completed" ? "not_reported" : next.status,
+          }
+        : tool,
+    );
     next.usage = event.usage;
     next.error = event.error;
     next.approval = null;
@@ -440,18 +479,36 @@ export function subscribe(sid) {
   };
 }
 
-function responseSaved(history, live) {
+export function responseSaved(history, live) {
   const lastUser = history.findLastIndex((message) => message.role === "user");
+  const user = history[lastUser];
+  if (
+    !user ||
+    withoutImagePlaceholders(plainContent(user.content)) !== live.userText
+  )
+    return false;
+  // Repeated prompts are different turns. A failed save must never adopt the
+  // previous response just because the user sent identical text again.
+  if (live.baseUserId !== undefined && user.id === live.baseUserId)
+    return false;
   const final = history.findLast(
     (message, index) =>
-      index > lastUser && message.role === "assistant" && message.content,
+      index > lastUser &&
+      message.role === "assistant" &&
+      message.display_kind !== "hidden" &&
+      (message.content ||
+        message.tool_calls?.length ||
+        message.reasoning ||
+        message.reasoning_content),
   );
   const content = plainContent(final?.content);
+  const tail = responseParts(live).findLast((part) => part.kind === "text")?.text;
   return !!(
-    content &&
-    withoutImagePlaceholders(plainContent(history[lastUser]?.content)) ===
-      live.userText &&
-    ((live.text && content.trim() === live.text.trim()) ||
+    final &&
+    ((live.baseUserId !== undefined && terminal.has(live.status)) ||
+      ["cancelled", "interrupted"].includes(live.status) ||
+      (live.text && content.trim() === live.text.trim()) ||
+      (tail && content.trim() === tail.trim()) ||
       (live.needsHistory && live.status === "completed"))
   );
 }
@@ -460,9 +517,15 @@ async function settle(sid, live) {
   const history = await refreshHistory(
     sid,
     () => state.lives[sid]?.id === live.id,
-    (history) => responseSaved(history, live)
-      ? { lives: { ...state.lives, [sid]: { ...state.lives[sid], persisted: true } } }
-      : {},
+    (history) =>
+      responseSaved(history, live)
+        ? {
+            lives: {
+              ...state.lives,
+              [sid]: { ...state.lives[sid], persisted: true },
+            },
+          }
+        : {},
   );
   const imageMessage = currentImageMessage(history, live);
   let imageSaved = !live.imageReceipt;

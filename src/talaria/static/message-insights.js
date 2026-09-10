@@ -12,7 +12,8 @@ function useDetails(path, enabled, initial = null) {
     if (enabled)
       api(path)
         .then((data) => {
-          if (current) set({ data, busy: false, error: "" });
+          if (current)
+            set({ data: { ...initial, ...data }, busy: false, error: "" });
         })
         .catch((error) => {
           if (current)
@@ -33,9 +34,14 @@ export function ResponseDetails({ session, message, enabled, onClose }) {
       timestamp: message.timestamp,
       finish_reason: message.finish_reason,
       has_reasoning: !!(message.reasoning || message.reasoning_content),
+      status:
+        message.responseStatus === "cancelled"
+          ? "interrupted"
+          : message.responseStatus,
     },
   );
   const facts = [
+    ...(data?.status === "interrupted" ? [["Status", "Interrupted"]] : []),
     ["Model", data?.model || "Not reported"],
     ["Provider", data?.provider || "Not reported"],
     [
@@ -86,9 +92,11 @@ export function ResponseDetails({ session, message, enabled, onClose }) {
       </div>`
     }
     <p class="field-help usage-note">${
-      data?.model
-        ? "Recorded by Hermes for this response. Cached input and reasoning tokens may be included in the input and output totals."
-        : "Hermes did not record model or reasoning settings for this response. Details become available for new responses with the Talaria plugin enabled."
+      data?.status === "interrupted"
+        ? "This response was interrupted. Available details are from its last model call; values Hermes did not report remain unknown."
+        : data?.model
+          ? "Recorded by Hermes for this response. Cached input and reasoning tokens may be included in the input and output totals."
+          : "Hermes did not record model or reasoning settings for this response. Details become available for new responses with the Talaria plugin enabled."
     }</p>
   </${Dialog}>`;
 }

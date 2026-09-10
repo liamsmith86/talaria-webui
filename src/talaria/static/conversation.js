@@ -27,6 +27,7 @@ import {
 } from "./attachments.js";
 import { Images } from "./images.js";
 import { ConversationFind } from "./conversation-find.js";
+import { responseParts } from "./response-parts.js";
 export { plainContent } from "./content.js";
 
 function toolText(value, input = false) {
@@ -85,7 +86,7 @@ function ToolCard({ tool }) {
         >${tool.status === "running"
           ? html`<span class="spinner" />`
           : html`<${Icon}
-              name=${failed ? "alert" : "check"}
+              name=${failed ? "alert" : tool.status === "not_reported" ? "info" : "check"}
               size=${15}
             />`}<span class="sr-only"
           >${typeof tool.status === "string"
@@ -156,12 +157,47 @@ function Message({
   images = [],
   record = null,
   canChange = false,
+  parts = null,
+  responseStatus = null,
 }) {
   const [copied, setCopied] = useState(false);
   const toolCards = useMemo(
-    () => tools.map((tool) => html`<${ToolCard} key=${tool.id} tool=${tool} />`),
+    () =>
+      new Map(
+        tools.map((tool) => [
+          `${tool.kind === "agent"}:${tool.id}`,
+          html`<${ToolCard}
+            key=${`${tool.kind === "agent"}:${tool.id}`}
+            tool=${tool}
+          />`,
+        ]),
+      ),
     [tools],
   );
+  function renderPart(part, index, all) {
+    if (part.kind === "reasoning")
+      return html`<details class="reasoning" key=${index}>
+        <summary>Thinking<${Icon} name="chevron" size=${14} /></summary>
+        <${Markdown} text=${part.text} deferHighlight=${!!record} />
+      </details>`;
+    if (part.kind === "tool")
+      return html`<div class="tool-stack" key=${index}>
+        ${toolCards.get(`${!!part.agent}:${part.id}`)}
+      </div>`;
+    if (part.kind === "images")
+      return html`<${Images} key=${index} images=${part.images} />`;
+    return (
+      part.text &&
+      html`<div class="message-text" key=${index}>
+        <${Markdown}
+          text=${part.text}
+          streaming=${streaming && index === all.length - 1}
+          smooth=${true}
+          deferHighlight=${!!record}
+        />
+      </div>`
+    );
+  }
   async function copy() {
     try {
       await navigator.clipboard.writeText(text);
@@ -180,39 +216,28 @@ function Message({
       <span class="agent-avatar"><${Icon} name="spark" size=${14} /></span
       ><span>Hermes</span>${time && html`<time>${humanTime(time)}</time>`}
     </div>`}
-    ${reasoning &&
-    html`<details class="reasoning">
-      <summary>Thinking<${Icon} name="chevron" size=${14} /></summary>
-      <${Markdown} text=${reasoning} deferHighlight=${!!record} />
-    </details>`}
-    ${tools.length > 0 &&
-    html`<div class="tool-stack">
-      ${toolCards}
-    </div>`}
-    <${Images} images=${images} />
-    ${text &&
-    (role === "user"
-      ? html`<div
-          class="user-content message-text"
-          tabindex="0"
-          role="region"
-          aria-label="Your message text"
-        >${text}</div>`
-      : html`<div class="message-text">
-          <${Markdown}
-            text=${text}
-            streaming=${streaming}
-            smooth=${true}
-            deferHighlight=${!!record}
-          />
-        </div>`)}
+    ${role === "user"
+      ? html`<${Images} images=${images} />${text &&
+          html`<div
+            class="user-content message-text"
+            tabindex="0"
+            role="region"
+            aria-label="Your message text"
+          >
+            ${text}
+          </div>`}`
+      : (parts || responseParts({ text, reasoning, tools })).map(renderPart)}
     ${streaming &&
     !text &&
     html`<div class="thinking" role="status">
       <span /><span /><span /><span class="sr-only">Hermes is thinking</span>
     </div>`}
     ${!streaming &&
-    (!!text || images.length > 0) &&
+    (!!text ||
+      images.length > 0 ||
+      tools.length > 0 ||
+      reasoning ||
+      parts?.length) &&
     html`<div class="message-actions">
       ${role !== "user" &&
       record?.id &&
@@ -221,7 +246,15 @@ function Message({
         label="Response details"
         onClick=${() =>
           update({
-            modal: { type: "response", session: state.active, message: record },
+            modal: {
+              type: "response",
+              session: state.active,
+              message: {
+                ...record,
+                responseStatus,
+                reasoning_content: reasoning || record.reasoning_content,
+              },
+            },
           })}
       />`}
       <${IconButton}
@@ -390,7 +423,7 @@ function historyItems(history, live) {
           typeof t.function?.arguments === "string"
             ? t.function.arguments
             : JSON.stringify(t.function?.arguments || {}),
-        status: "completed",
+        status: "not_reported",
         currentTurn: position > lastUser,
       }));
       for (const tool of tools) calls.set(tool.id, tool);
@@ -414,14 +447,43 @@ function historyItems(history, live) {
       });
     }
   }
-  return items
-    .map((m) => ({
-      ...m,
-      tools: m.tools.flatMap((tool) =>
-        tool.children?.length ? tool.children : [tool],
-      ),
-    }))
-    .filter((m) => m.text || m.reasoning || m.tools.length || m.images.length);
+  const visible = items.map((m) => ({
+    ...m,
+    tools: m.tools.flatMap((tool) =>
+      tool.children?.length ? tool.children : [tool],
+    ),
+  }));
+  const turns = [];
+  // Hermes stores model calls and tool results as separate rows. Present one
+  // assistant turn with ordered parts, retaining the final row's native ID for
+  // details and rewind actions. Never change the underlying transcript.
+  for (const item of visible) {
+    if (item.role === "user") {
+      turns.push(item);
+      continue;
+    }
+    const parts = [
+      ...(item.reasoning ? [{ kind: "reasoning", text: item.reasoning }] : []),
+      ...(item.text ? [{ kind: "text", text: item.text }] : []),
+      ...(item.images.length ? [{ kind: "images", images: item.images }] : []),
+      ...item.tools.map((tool) => ({
+        kind: "tool",
+        id: tool.id,
+        agent: tool.kind === "agent",
+      })),
+    ];
+    const previous = turns.at(-1);
+    if (previous?.role === "assistant") {
+      previous.parts.push(...parts);
+      previous.tools.push(...item.tools);
+      previous.text = [previous.text, item.text].filter(Boolean).join("\n\n");
+      previous.reasoning = [previous.reasoning, item.reasoning]
+        .filter(Boolean)
+        .join("\n\n");
+      previous.record = item.record;
+    } else turns.push({ ...item, tools: [...item.tools], parts });
+  }
+  return turns.filter((item) => item.role === "user" || item.parts.length);
 }
 
 export function Conversation({ app }) {
@@ -452,7 +514,8 @@ export function Conversation({ app }) {
     const content = scroll.current?.querySelector(".conversation-content");
     if (!content) return;
     const observer = new ResizeObserver(() => {
-      if (sticky.current) bottom.current?.scrollIntoView({ behavior: "instant" });
+      if (sticky.current)
+        bottom.current?.scrollIntoView({ behavior: "instant" });
     });
     observer.observe(content);
     return () => observer.disconnect();
@@ -478,12 +541,20 @@ export function Conversation({ app }) {
   // History objects stay stable during streaming. Retain their VNodes so each
   // delta does not revisit every old message, tool card, and timestamp.
   const history = useMemo(
-    () => !app.loading && items.map((m) => html`<${Message}
-      key=${m.id}
-      ...${m}
-      canChange=${canChange && typeof m.record?.id === "number"}
-    />`),
-    [items, canChange, app.loading],
+    () =>
+      !app.loading &&
+      items.map(
+        (m, index) =>
+          html`<${Message}
+            key=${m.id}
+            ...${m}
+            canChange=${canChange && typeof m.record?.id === "number"}
+            responseStatus=${live?.persisted && index === items.length - 1
+              ? live.status
+              : null}
+          />`,
+      ),
+    [items, canChange, app.loading, live?.persisted, live?.status],
   );
   async function loadEarlier() {
     if (olderBusy) return;
@@ -557,12 +628,14 @@ export function Conversation({ app }) {
         </div>`}
         ${live &&
         !live.persisted &&
+        (streaming || live.text || live.reasoning || live.tools.length) &&
         html`<${Message}
           role="assistant"
           text=${live.text}
           tools=${live.tools}
           streaming=${streaming}
           reasoning=${live.reasoning}
+          parts=${live.parts}
         />`}
         ${live?.approval &&
         html`<${Approval}

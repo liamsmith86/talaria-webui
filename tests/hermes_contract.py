@@ -112,6 +112,28 @@ observed = observations.read("contract", saved_reply)
 assert observed["model"] == "actual-model" and observed["reasoning"] == "high"
 assert "never-save" not in json.dumps(observed)
 
+# An interrupted final request may have no post hook. Keep its known settings,
+# never the usage of the earlier tool round, and attach only to a new saved row.
+interrupt_start = time.time() + 10
+observations.before(task_id="contract", turn_id="interrupted", api_request_id="tool",
+                    request={}, started_at=interrupt_start, model="tool-model", provider="test")
+observations.after(task_id="contract", turn_id="interrupted", api_request_id="tool",
+                   usage={"prompt_tokens": 900, "output_tokens": 100}, api_duration=2)
+observations.before(task_id="contract", turn_id="interrupted", api_request_id="waiting",
+                    request={"reasoning_effort": "high"}, started_at=interrupt_start + 3,
+                    model="interrupted-model", provider="test")
+interrupted_reply = db.append_message("contract", "assistant", "Operation interrupted.",
+                                      timestamp=interrupt_start + 4)
+observations.end(task_id="contract", turn_id="interrupted", session_id="contract", interrupted=True)
+partial = observations.read("contract", interrupted_reply)
+assert partial["status"] == "interrupted" and partial["model"] == "interrupted-model"
+assert partial["reasoning"] == "high" and "usage" not in partial
+assert "duration_seconds" not in partial and "api_request_id" not in partial
+observations.before(task_id="contract", turn_id="unsaved", request={},
+                    started_at=interrupt_start + 5, model="unsaved-model")
+observations.end(task_id="contract", turn_id="unsaved", session_id="contract", interrupted=True)
+assert observations.read("contract", interrupted_reply) == partial
+
 
 # The native inventory intentionally omits levels, while its transport still clamps
 # to them. Use that same cached catalog; do not maintain our own model rules.
