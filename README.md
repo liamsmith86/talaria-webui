@@ -2,11 +2,11 @@
 
 A lightweight web-based interface for using Hermes Agent.
 
-Talaria is a responsive, password-protected interface for chatting with your existing Hermes Agent. It stays a thin interface layer: agent configuration, tools, memory, instructions, prefills, and sessions remain managed by Hermes.
+Talaria WebUI is a lightweight, performant, and secure application for chatting with your Hermes Agent. The core development principle is that Talaria should remain a thin interface layer over your existing Hermes Agent, and as such all agentic system management including settings, prefills, and sessions are handled by your Hermes Agent software and are not subject to a third party reinterpretation.
 
-Talaria connects through Hermes Agent’s [API server](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server). On first sign-in, enter your Hermes address, profile, and API key.
+Talaria WebUI uses Hermes Agent's [API server](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server) feature to interface wtih your agent and upon installation you will be prompted to enter an API key for connectivity.
 
-The optional Talaria plugin extends the Hermes API with context usage, response details, and conversation editing. It reuses Hermes’s existing functionality; standard chat works without it.
+Optionally you can install the Talaria Hermes Agent plugin, a lightweight extension for your Hermes Agent app which extends the information returned by the API. This allows Talaria WebUI to deliver a more polished experience; for example, the Hermes Agent API does not yet return context information with session data. This plugin allows us to continue offloading as much functionality to Hermes Agent's existing code without reinventing the wheel ourselves.
 
 ## Installation
 
