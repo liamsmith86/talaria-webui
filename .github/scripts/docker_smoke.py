@@ -29,22 +29,20 @@ try:
         f"type=volume,source={volume},target=/data",
         sys.argv[1],
     )
-    port = json.loads(docker("inspect", name))[0]["NetworkSettings"]["Ports"]["8766/tcp"][0][
-        "HostPort"
-    ]
-    base = f"http://127.0.0.1:{port}"
-
     def ready():
+        # Docker may assign a different ephemeral host port after a restart.
+        ports = json.loads(docker("inspect", name))[0]["NetworkSettings"]["Ports"]
+        base = f"http://127.0.0.1:{ports['8766/tcp'][0]['HostPort']}"
         for _ in range(60):
             try:
                 with opener.open(base + "/health", timeout=2) as response:
                     assert json.load(response)["status"] == "ok"
-                return
+                return base
             except OSError:
                 time.sleep(0.5)
         raise AssertionError("Container did not become healthy")
 
-    ready()
+    base = ready()
     for asset in ("/", "/static/app.js", "/static/styles/chat.css", "/static/vendor/manifest.json"):
         with opener.open(base + asset, timeout=3) as response:
             assert response.status == 200 and response.read(), asset
@@ -57,7 +55,8 @@ try:
             """
 import importlib.metadata as m, json, os
 assert os.getuid() != 0
-print(json.dumps({d.metadata['Name'].lower().replace('_', '-'): d.version for d in m.distributions()}))
+versions = {d.metadata['Name'].lower().replace('_', '-'): d.version for d in m.distributions()}
+print(json.dumps(versions))
 """,
         )
     )

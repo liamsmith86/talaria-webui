@@ -27,7 +27,7 @@ jobs:
           version: '0.11.17'
           python-version: '3.12'
       - run: uv sync --locked
-      - run: uv run --locked ruff check .
+      - run: uv run --locked ruff check . .github/scripts
 
   platforms:
     name: Platform (${{ matrix.os }}, Python ${{ matrix.python }})
