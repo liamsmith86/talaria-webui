@@ -198,6 +198,7 @@ function Message({
           <${Markdown}
             text=${text}
             streaming=${streaming}
+            smooth=${true}
             deferHighlight=${!!record}
           />
         </div>`)}
@@ -441,6 +442,17 @@ export function Conversation({ app }) {
   useEffect(() => {
     if (sticky.current) bottom.current?.scrollIntoView({ behavior: "instant" });
   }, [app.history, live?.text, live?.tools.length, live?.approval]);
+  useEffect(() => {
+    // Revealed text can grow between network updates. Follow its actual size,
+    // including code highlighting, while respecting a reader scrolling up.
+    const content = scroll.current?.querySelector(".conversation-content");
+    if (!content) return;
+    const observer = new ResizeObserver(() => {
+      if (sticky.current) bottom.current?.scrollIntoView({ behavior: "instant" });
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [app.active]);
   const lastUser = items.findLast((m) => m.role === "user");
   const canChange =
     !!app.caps.talaria_extensions?.rewind &&
