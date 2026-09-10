@@ -158,6 +158,10 @@ function Message({
   canChange = false,
 }) {
   const [copied, setCopied] = useState(false);
+  const toolCards = useMemo(
+    () => tools.map((tool) => html`<${ToolCard} key=${tool.id} tool=${tool} />`),
+    [tools],
+  );
   async function copy() {
     try {
       await navigator.clipboard.writeText(text);
@@ -183,7 +187,7 @@ function Message({
     </details>`}
     ${tools.length > 0 &&
     html`<div class="tool-stack">
-      ${tools.map((tool) => html`<${ToolCard} key=${tool.id} tool=${tool} />`)}
+      ${toolCards}
     </div>`}
     <${Images} images=${images} />
     ${text &&

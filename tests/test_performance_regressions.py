@@ -132,3 +132,122 @@ def test_completed_response_cache_is_bounded_without_losing_recovery_state(page)
           .every(id=>Object.hasOwn(state.lives,id))};
     }""")
     assert result == {"cached": 16, "bytes": 800_000, "protected": True}
+
+
+def test_text_deltas_reuse_sidebar_rows_and_tool_cards(page):
+    result = page.evaluate("""async () => {
+      const {state,update}=await import('/static/store.js');
+      const {applyEvent}=await import('/static/runs.js');
+      let titles=0,tools=0;
+      const sessions=Array.from({length:300},(_,i)=>({id:'stable-'+i,source:'api_server',
+        get title(){titles++;return 'Stable '+i;}}));
+      const cards=Array.from({length:30},(_,i)=>({id:'tool-'+i,status:'running',
+        get name(){tools++;return 'terminal';},preview:'A command'}));
+      update({active:'stable-0',history:[],loading:false,sessionDetails:null,caps:{features:{}},
+        sessions,lives:{'stable-0':{id:'preview',status:'running',text:'Hello',tools:cards}}});
+      await new Promise(resolve=>setTimeout(resolve,200));
+      titles=tools=0;
+      for(let i=0;i<20;i++) {
+        const live=applyEvent(state.lives['stable-0'],{event:'message.delta',delta:' more'});
+        update({lives:{'stable-0':live}});
+        await new Promise(resolve=>setTimeout(resolve,0));
+      }
+      const reads={titles,tools};
+      const live=applyEvent(state.lives['stable-0'],
+        {event:'tool.completed',tool_call_id:'tool-0',duration:1});
+      update({lives:{'stable-0':{...live,status:'completed'}}});
+      return reads;
+    }""")
+    assert result["titles"] < 100
+    assert result["tools"] == 0
+    expect(page.locator(".tool-card").first).not_to_have_class("tool-card working")
+    expect(page.locator(".session-dot.live")).to_have_count(0)
+    page.get_by_label("Search conversations").fill("Stable 12")
+    expect(page.locator(".session-row")).to_have_count(11)
+
+
+def test_find_reindexes_only_changed_dom_and_keeps_highlights_attached(page):
+    page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      update({active:'indexed',loading:false,caps:{features:{}},sessions:[],lives:{},
+        history:Array.from({length:100},(_,i)=>({id:i+1,role:'assistant',
+          content:'Saved **needle** in reply '+i}))});
+    }""")
+    page.get_by_role("button", name="Find in conversation", exact=True).click()
+    page.get_by_label("Find text in conversation").fill("needle")
+    expect(page.locator(".find-count")).to_have_text("1 of 100")
+    page.evaluate("""() => {
+      const original=document.createTreeWalker.bind(document);
+      window.findScans=0;
+      document.createTreeWalker=(...args)=>{window.findScans++;return original(...args)};
+      // Mimic deferred highlighting or a reveal changing nodes without a store update.
+      const first=document.querySelector('.message-text p');
+      const code=document.createElement('code');code.textContent='another needle';
+      first.replaceChildren(document.createTextNode('needle and '),code);
+    }""")
+    expect(page.locator(".find-count")).to_have_text("1 of 101")
+    assert page.evaluate("findScans") == 1
+    assert page.evaluate("""() => [...CSS.highlights.get('talaria-find')].every(range=>
+      range.startContainer.isConnected && range.toString()==='needle')""")
+    page.get_by_label("Find text in conversation").fill("another")
+    expect(page.locator(".find-count")).to_have_text("1 of 1")
+    assert page.evaluate("findScans") == 1
+
+
+def test_find_updates_before_a_continuous_stream_stops(page):
+    page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      update({active:'continuous',loading:false,caps:{features:{}},sessions:[],history:[],
+        lives:{continuous:{id:'preview',status:'running',text:'Beginning',tools:[]}}});
+    }""")
+    page.get_by_role("button", name="Find in conversation", exact=True).click()
+    page.get_by_label("Find text in conversation").fill("needle")
+    expect(page.locator(".find-count")).to_have_text("No matches")
+    result = page.evaluate("""async () => {
+      const {state,update}=await import('/static/store.js');
+      let during=false;
+      for(let i=0;i<20;i++) {
+        const live=state.lives.continuous;
+        update({lives:{continuous:{...live,text:live.text+' needle'}}});
+        await new Promise(resolve=>setTimeout(resolve,35));
+        if(i<15 && /of [1-9]/.test(document.querySelector('.find-count').textContent))
+          during=true;
+      }
+      return during;
+    }""")
+    assert result
+    expect(page.locator(".find-count")).to_have_text("1 of 20")
+
+
+def test_startup_history_and_catalog_do_not_wait_for_sidebar_listing(page):
+    page.evaluate("""async () => {
+      const {connect,update}=await import('/static/store.js');
+      const {writeStorage}=await import('/static/lib.js');
+      const original=window.fetch;
+      const check=window.startupCheck={calls:[],released:false};
+      window.fetch=async (url,options)=>{
+        const path=new URL(url,location.href).pathname;
+        check.calls.push(path);
+        const result=value=>Promise.resolve(new Response(JSON.stringify(value)));
+        if(path==='/api/capabilities')return result({features:{
+          session_resources:true,model_options:true}});
+        if(path==='/api/sessions') {
+          await new Promise(resolve=>check.release=resolve);
+          check.released=true;return result({data:[]});
+        }
+        if(path==='/api/sessions/startup/messages')return result({data:[{
+          id:1,role:'assistant',content:'History arrived before the sidebar.'}]});
+        if(path==='/api/sessions/startup')return result({id:'startup',title:'Startup'});
+        if(path==='/api/models')return result({providers:[]});
+        if(path==='/api/readiness')return result({status:'ok',issues:[]});
+        return original(url,options);
+      };
+      writeStorage('last-session','startup');update({active:null});
+      check.done=connect().finally(()=>{window.fetch=original});
+    }""")
+    try:
+        expect(page.get_by_text("History arrived before the sidebar.", exact=True)).to_be_visible()
+        assert page.evaluate("""!startupCheck.released &&
+          ['/api/models','/api/readiness'].every(path=>startupCheck.calls.includes(path))""")
+    finally:
+        page.evaluate("async()=>{startupCheck.release?.();await startupCheck.done}")

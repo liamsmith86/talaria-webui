@@ -36,6 +36,82 @@ async def backend(tmp_path):
     await app.state.profiles.close()
 
 
+@pytest.mark.parametrize("fail", [False, True])
+async def test_capability_reads_overlap_and_do_not_outlive_the_request(backend, fail):
+    client, app, _ = backend
+    required, optional, release, cancelled = (asyncio.Event() for _ in range(4))
+
+    async def request(method, path, **kwargs):
+        if path == "/v1/capabilities":
+            required.set()
+            await release.wait()
+            if fail:
+                raise APIError("Required discovery failed")
+            return {"features": {"session_resources": True}}
+        optional.set()
+        try:
+            await (asyncio.Event() if fail else release).wait()
+            return {"version": 1, "context_usage": True}
+        finally:
+            cancelled.set()
+
+    app.state.hermes.request = request
+    task = asyncio.create_task(client.get("/api/capabilities"))
+    try:
+        await asyncio.wait_for(asyncio.gather(required.wait(), optional.wait()), 1)
+        assert not task.done()
+        release.set()
+        response = await asyncio.wait_for(task, 1)
+        assert response.status_code == (502 if fail else 200)
+        assert cancelled.is_set()
+        if not fail:
+            assert response.json()["talaria_extensions"]["context_usage"] is True
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_export_yields_between_messages_and_closes_on_cancellation(backend, monkeypatch):
+    client, _, peer = backend
+    sid = "cooperative-export"
+    peer.sessions[sid] = {"id": sid, "title": "Export"}
+    peer.messages[sid] = [
+        {"id": i + 1, "role": "assistant", "content": "Text" * 1000} for i in range(100)
+    ]
+    original = transcripts.markdown_message
+    original_spool = transcripts.SpooledTemporaryFile
+    spools = []
+    started = asyncio.Event()
+    written = 0
+
+    def format_message(message):
+        nonlocal written
+        written += 1
+        started.set()
+        return original(message)
+
+    def new_spool(*args, **kwargs):
+        spool = original_spool(*args, **kwargs)
+        spools.append(spool)
+        return spool
+
+    monkeypatch.setattr(transcripts, "markdown_message", format_message)
+    monkeypatch.setattr(transcripts, "SpooledTemporaryFile", new_spool)
+    task = asyncio.create_task(client.get(f"/api/sessions/{sid}/export"))
+    try:
+        await asyncio.wait_for(started.wait(), 1)
+        # Even an immediately available upstream page cannot monopolize the
+        # event loop until every message has been serialized.
+        assert written < 100
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert spools and all(spool.closed for spool in spools)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
 @pytest.mark.parametrize(
     "raw",
     [

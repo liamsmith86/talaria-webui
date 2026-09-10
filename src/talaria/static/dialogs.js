@@ -3,6 +3,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useMemo,
   Icon,
   IconButton,
   writeStorage,
@@ -303,31 +304,35 @@ export function ModelPicker({
   const [limit, setLimit] = useState(80);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const filtered = models
-    .filter((m) =>
-      `${m.label} ${m.providerLabel} ${m.id}`
-        .toLowerCase()
-        .includes(query.toLowerCase()),
-    )
-    .sort(
-      (a, b) =>
-        Number(b.available !== false) - Number(a.available !== false) ||
-        Number(!!b.featured) - Number(!!a.featured),
-    );
+  const filtered = useMemo(() => {
+    const search = query.toLowerCase();
+    return models
+      .filter((m) =>
+        `${m.label} ${m.providerLabel} ${m.id}`.toLowerCase().includes(search),
+      )
+      .sort(
+        (a, b) =>
+          Number(b.available !== false) - Number(a.available !== false) ||
+          Number(!!b.featured) - Number(!!a.featured),
+      );
+  }, [models, query]);
   function select(model) {
     onSelect(model);
     onClose();
   }
-  const warnings = [
-    ...new Map(
-      models
-        .filter((m) => m.warning)
-        .map((m) => [
-          m.provider,
-          { name: m.providerLabel, warning: m.warning },
-        ]),
-    ).values(),
-  ];
+  const warnings = useMemo(
+    () => [
+      ...new Map(
+        models
+          .filter((m) => m.warning)
+          .map((m) => [
+            m.provider,
+            { name: m.providerLabel, warning: m.warning },
+          ]),
+      ).values(),
+    ],
+    [models],
+  );
   return html`<${Dialog} title="Choose a model" className="model-dialog" onClose=${onClose}>
     <p class="dialog-intro">Your model selection will only apply to this session.</p>
     <div class="model-search"><div class="search-field"><${Icon} name="search" size=${18}/><input aria-label="Search models" placeholder="Find a model…" value=${query} onInput=${(

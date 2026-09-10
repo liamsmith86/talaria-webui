@@ -62,7 +62,67 @@ export function Sidebar({ app }) {
       )
       .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true));
   }, [app.sessions, query]);
-  let lastGroup = "";
+  const liveKey = Object.keys(app.lives)
+    .filter((id) => running(id, app.lives))
+    .sort()
+    .join("\n");
+  const day = new Date().toDateString();
+  // Text deltas do not change the sidebar. Retain row VNodes until the list,
+  // selection, date grouping, or running indicators actually change.
+  const rows = useMemo(() => {
+    let lastGroup = "";
+    return sessions.map((session) => {
+      const group = session.pinned ? "Pinned" : query ? "" : groupName(session);
+      const heading = group && group !== lastGroup;
+      lastGroup = group;
+      return html`<div key=${session.id}>
+          ${heading && html`<div class="session-group">${group}</div>`}
+          <div
+            class=${`session-row ${app.active === session.id ? "active" : ""}`}
+          >
+            <button
+              class="session-select"
+              onClick=${() => openSession(session.id)}
+              aria-current=${app.active === session.id ? "page" : undefined}
+              aria-label=${session.title || "Untitled conversation"}
+              aria-description=${
+                sourceLabel(session.source)
+                  ? `Source: ${sourceLabel(session.source)}`
+                  : undefined
+              }
+            >
+              ${
+                session.pinned
+                  ? html`<${Icon}
+                    name="pin"
+                    size=${13}
+                    class=${`pin-icon ${running(session.id, app.lives) ? "live" : ""}`}
+                  />`
+                  : html`<span
+                    class=${`session-dot ${running(session.id, app.lives) ? "live" : ""}`}
+                  ></span>`
+              }<span class="session-caption"
+                >${session.title || "Untitled conversation"}</span
+              >${
+                sourceLabel(session.source) &&
+                html`<small class="source-badge" aria-hidden="true"
+                >${sourceLabel(session.source)}</small
+              >`
+              }
+            </button>
+            <button
+              class="session-more"
+              title="Conversation options"
+              aria-label=${`Options for ${session.title || "conversation"}`}
+              onClick=${() =>
+                update({ modal: { type: "session-menu", session } })}
+            >
+              <${Icon} name="more" size=${18} />
+            </button>
+          </div>
+        </div>`;
+    });
+  }, [sessions, query, app.active, liveKey, day]);
   return html`<aside
     ref=${drawer}
     class=${`sidebar ${app.sidebar ? "open" : ""}`}
@@ -91,9 +151,10 @@ export function Sidebar({ app }) {
         onClick=${newConversation}
         aria-label="Talaria home"
       >
-        <${Mark} size=${30} /><span>Talaria</span> ${app.environment ===
-          "development" &&
-        html`<small class="environment-badge">Dev</small>`}</button
+        <${Mark} size=${30} /><span>Talaria</span> ${
+          app.environment === "development" &&
+          html`<small class="environment-badge">Dev</small>`
+        }</button
       ><${IconButton}
         name="sidebar"
         label="Close sidebar"
@@ -115,63 +176,20 @@ export function Sidebar({ app }) {
       /><kbd>⌘ K</kbd>
     </div>
     <nav class="session-list" aria-label="Conversation history">
-      ${sessions.map((session) => {
-        const group = session.pinned
-          ? "Pinned"
-          : query
-            ? ""
-            : groupName(session);
-        const heading = group && group !== lastGroup;
-        lastGroup = group;
-        return html`<div key=${session.id}>
-          ${heading && html`<div class="session-group">${group}</div>`}
-          <div
-            class=${`session-row ${app.active === session.id ? "active" : ""}`}
-          >
-            <button
-              class="session-select"
-              onClick=${() => openSession(session.id)}
-              aria-current=${app.active === session.id ? "page" : undefined}
-              aria-label=${session.title || "Untitled conversation"}
-              aria-description=${sourceLabel(session.source)
-                ? `Source: ${sourceLabel(session.source)}`
-                : undefined}
-            >
-              ${session.pinned
-                ? html`<${Icon}
-                    name="pin"
-                    size=${13}
-                    class=${`pin-icon ${running(session.id) ? "live" : ""}`}
-                  />`
-                : html`<span
-                    class=${`session-dot ${running(session.id) ? "live" : ""}`}
-                  ></span>`}<span class="session-caption"
-                >${session.title || "Untitled conversation"}</span
-              >${sourceLabel(session.source) &&
-              html`<small class="source-badge" aria-hidden="true"
-                >${sourceLabel(session.source)}</small
-              >`}
-            </button>
-            <button
-              class="session-more"
-              title="Conversation options"
-              aria-label=${`Options for ${session.title || "conversation"}`}
-              onClick=${() =>
-                update({ modal: { type: "session-menu", session } })}
-            >
-              <${Icon} name="more" size=${18} />
-            </button>
-          </div>
-        </div>`;
-      })}
-      ${!sessions.length &&
-      html`<div class="sidebar-empty">
-        ${query
-          ? "No conversations found."
-          : "A fresh start. Your conversations will find a home here."}
-      </div>`}
-      ${app.hasMore &&
-      html`<button
+      ${rows}
+      ${
+        !sessions.length &&
+        html`<div class="sidebar-empty">
+        ${
+          query
+            ? "No conversations found."
+            : "A fresh start. Your conversations will find a home here."
+        }
+      </div>`
+      }
+      ${
+        app.hasMore &&
+        html`<button
         class="load-more"
         disabled=${moreBusy}
         onClick=${async () => {
@@ -186,7 +204,8 @@ export function Sidebar({ app }) {
         }}
       >
         ${moreBusy ? "Loading…" : "Load more conversations"}
-      </button>`}
+      </button>`
+      }
     </nav>
     <div class="sidebar-footer">
       <button
