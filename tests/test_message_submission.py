@@ -6,6 +6,27 @@ from playwright.sync_api import expect
 from .test_conversation_features import seed
 
 
+def test_saved_reply_replaces_the_stream_without_a_duplicate_frame(page):
+    page.evaluate("""async () => {
+        const {options} = await import('/static/vendor/preact.js');
+        options.debounceRendering = callback => queueMicrotask(callback);
+        window.maxAssistantBubbles = 0;
+        window.replyObserver = new MutationObserver(() => {
+            window.maxAssistantBubbles = Math.max(window.maxAssistantBubbles,
+                document.querySelectorAll('.message.assistant').length);
+        });
+        window.replyObserver.observe(document.body,
+            {childList:true, subtree:true});
+    }""")
+    page.get_by_label("Message Hermes").fill("One reply, including during the history handoff")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    state = page.evaluate_handle("async () => (await import('/static/store.js')).state")
+    page.wait_for_function("state => state.lives[state.active]?.persisted === true", arg=state)
+    state.dispose()
+    expect(page.locator(".message.assistant")).to_have_count(1)
+    assert page.evaluate("window.maxAssistantBubbles") == 1
+
+
 def test_tool_only_messages_do_not_render_a_zero_reply(page, live_app):
     sid = seed(live_app[1], "tool-only")
     live_app[1].messages[sid] = [

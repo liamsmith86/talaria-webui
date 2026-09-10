@@ -142,13 +142,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           wsl --install --distribution Ubuntu-24.04 --web-download --no-launch
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          wsl --distribution Ubuntu-24.04 --user root -- bash -c 'uname -r | grep -i microsoft-standard-WSL2'
+          wsl --distribution Ubuntu-24.04 --user root --exec bash -c 'uname -r | grep -i microsoft-standard-WSL2'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test from the Linux filesystem
         shell: pwsh
         run: |
-          $source = (wsl --distribution Ubuntu-24.04 --user root -- wslpath -u "$env:GITHUB_WORKSPACE").Trim()
-          wsl --distribution Ubuntu-24.04 --user root -- bash "$source/.github/scripts/wsl.sh" "$source"
+          $source = (wsl --distribution Ubuntu-24.04 --user root --exec wslpath -u "$env:GITHUB_WORKSPACE").Trim()
+          wsl --distribution Ubuntu-24.04 --user root --exec bash "$source/.github/scripts/wsl.sh" "$source"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   docker:

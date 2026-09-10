@@ -440,10 +440,29 @@ export function subscribe(sid) {
   };
 }
 
+function responseSaved(history, live) {
+  const lastUser = history.findLastIndex((message) => message.role === "user");
+  const final = history.findLast(
+    (message, index) =>
+      index > lastUser && message.role === "assistant" && message.content,
+  );
+  const content = plainContent(final?.content);
+  return !!(
+    content &&
+    withoutImagePlaceholders(plainContent(history[lastUser]?.content)) ===
+      live.userText &&
+    ((live.text && content.trim() === live.text.trim()) ||
+      (live.needsHistory && live.status === "completed"))
+  );
+}
+
 async function settle(sid, live) {
   const history = await refreshHistory(
     sid,
     () => state.lives[sid]?.id === live.id,
+    (history) => responseSaved(history, live)
+      ? { lives: { ...state.lives, [sid]: { ...state.lives[sid], persisted: true } } }
+      : {},
   );
   const imageMessage = currentImageMessage(history, live);
   let imageSaved = !live.imageReceipt;
@@ -482,19 +501,7 @@ async function settle(sid, live) {
       ? { userImages: [], userPersisted: true, payload: undefined }
       : {}),
   });
-  const lastUser = history.findLastIndex((message) => message.role === "user");
-  const final = history.findLast(
-    (message, index) =>
-      index > lastUser && message.role === "assistant" && message.content,
-  );
-  const content = plainContent(final?.content);
-  if (
-    content &&
-    withoutImagePlaceholders(plainContent(history[lastUser]?.content)) ===
-      live.userText &&
-    ((live.text && content.trim() === live.text.trim()) ||
-      (live.needsHistory && live.status === "completed"))
-  ) {
+  if (responseSaved(history, live)) {
     publish(sid, {
       ...state.lives[sid],
       persisted: true,

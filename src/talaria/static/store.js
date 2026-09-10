@@ -341,7 +341,7 @@ export async function openSession(id, parent = null) {
     if (opening === controller) opening = null;
   }
 }
-export async function refreshHistory(id, commit = true) {
+export async function refreshHistory(id, commit = true, additionalState = null) {
   const generation = navigation;
   const request =
     commit && state.active === id ? ++historyRequest : historyRequest;
@@ -363,6 +363,8 @@ export async function refreshHistory(id, commit = true) {
       loading: false,
       historyHasMore: !!result.has_more,
       historyOffset: result.next_offset ?? (result.data || []).length,
+      // Retire a saved live reply in the same snapshot as its history appears.
+      ...additionalState?.(history),
     });
   }
   return history;
