@@ -42,8 +42,10 @@ export function Composer({
   const key = `draft.${app.active || "new"}`;
   const currentKey = useRef(key);
   const currentDraft = useRef(draft);
+  const currentImages = useRef(images);
   currentKey.current = key;
   currentDraft.current = draft;
+  currentImages.current = images;
   useEffect(() => {
     setDraft(readStorage(key));
     setImages([]);
@@ -85,25 +87,32 @@ export function Composer({
   }, [draft]);
   async function send(e) {
     e?.preventDefault();
+    const text = currentDraft.current.trim();
+    const attachments = currentImages.current;
     if (
       submission.current ||
       operation.current ||
       attaching ||
       loadingImages ||
       live?.uncertain ||
-      (!draft.trim() && !images.length)
+      (!text && !attachments.length)
     )
       return;
-    const text = draft.trim();
     const generation = navigationVersion();
     submission.current = true;
     setSending(true);
     try {
-      const sid = await sendMessage(text, model, { images, reasoning });
+      const sid = await sendMessage(text, model, {
+        images: attachments,
+        reasoning,
+      });
       if (
         generation === navigationVersion() &&
         (currentKey.current === key || currentKey.current === `draft.${sid}`)
       ) {
+        // Consume the draft before unlocking, even if the DOM has not repainted.
+        currentDraft.current = "";
+        currentImages.current = [];
         setDraft("");
         setImages([]);
         textarea.current?.focus();

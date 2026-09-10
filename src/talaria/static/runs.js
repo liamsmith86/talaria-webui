@@ -278,11 +278,16 @@ export async function sendMessage(
       imageBoundary,
     });
   }
+  const previousUser = state.history.findLast(
+    (message) => message.role === "user",
+  );
   const live = {
     id: null,
     requestId,
     userText: text,
     baseHistoryLength: state.history.length,
+    // A full history page can retain its length after this message is saved.
+    baseUserId: previousUser ? previousUser.id : null,
     userImages: images,
     imageBoundary,
     imageReceipt: images.length > 0,

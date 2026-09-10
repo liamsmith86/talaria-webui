@@ -203,7 +203,7 @@ function Message({
       <span /><span /><span /><span class="sr-only">Hermes is thinking</span>
     </div>`}
     ${!streaming &&
-    (text || images.length) &&
+    (!!text || images.length > 0) &&
     html`<div class="message-actions">
       ${role !== "user" &&
       record?.id &&
@@ -451,7 +451,9 @@ export function Conversation({ app }) {
     !live.userPersisted &&
     (live.userImages?.length
       ? !items.some((message) => message.isCurrentImage)
-      : app.history.length <= live.baseHistoryLength ||
+      : (live.baseUserId !== undefined
+          ? lastUser?.record?.id === live.baseUserId
+          : app.history.length <= live.baseHistoryLength) ||
         lastUser?.text !== live.userText);
   async function loadEarlier() {
     if (olderBusy) return;
