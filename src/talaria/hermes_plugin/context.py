@@ -10,6 +10,8 @@ from pathlib import Path
 
 from .files import read_text
 from .request_log import scoped_run
+from .runtime import inherit_defaults, inherit_options, session_runtime
+from .surface import apply_surface
 
 log = logging.getLogger(__name__)
 MAX_INSTRUCTIONS = 64 * 1024
@@ -90,19 +92,37 @@ class ProfileRunAdapter:
     """A per-admission view of the native adapter; its shared runtime stays untouched.
 
     Hermes owns admission, leases, history, events, cancellation and persistence.
-    Only creation of this run's agent adds its native ephemeral context fields.
+    This run's agent inherits profile defaults and optional presentation callbacks.
     """
 
-    def __init__(self, adapter, context):
+    def __init__(self, adapter, context, use_default_model=False, live_interactions=False):
         self._adapter, self._context = adapter, context
+        self._use_default_model = use_default_model
+        self._live_interactions = live_interactions
 
     def __getattr__(self, name):
         return getattr(self._adapter, name)
 
+    def _make_run_event_callback(self, run_id, loop):
+        from .live import LiveRun, supported
+
+        original = self._adapter._make_run_event_callback(run_id, loop)
+        if not self._live_interactions or not supported(self._adapter):
+            return original
+        self._live = LiveRun(self._adapter, run_id, loop)
+        return self._live.progress(original)
+
     def _create_agent(self, **kwargs):
+        if not self._use_default_model:
+            session_runtime(self._adapter, kwargs)
+        inherit_options(kwargs)
         if not kwargs.get("ephemeral_system_prompt"):
             kwargs["ephemeral_system_prompt"] = self._context.instructions or None
         agent = self._adapter._create_agent(**kwargs)
+        inherit_defaults(agent)
+        apply_surface(agent)
+        if "_live" in self.__dict__:
+            self._live.bind(agent)
         # Prefer native support if a later Hermes version starts loading these itself.
         if hasattr(agent, "prefill_messages") and not agent.prefill_messages:
             agent.prefill_messages = deepcopy(self._context.prefill)
@@ -137,8 +157,11 @@ async def start_run(adapter, request):
 
     async def dispatch(native, request):
         context = await asyncio.to_thread(load_context)
+        data = await request.json()
+        use_default = isinstance(data, dict) and data.get("use_default_model") is True
+        live = isinstance(data, dict) and data.get("live_interactions") is True
         return await api_server_runs._handle_runs(
-            ProfileRunAdapter(native, context), request, _api_server=api_server
+            ProfileRunAdapter(native, context, use_default, live), request, _api_server=api_server
         )
 
     # Admission runs on the real adapter: its pending/drain counters remain shared

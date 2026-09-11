@@ -286,6 +286,10 @@ async def start_run(request: Request):
     if not prompt and not images:
         raise APIError("Write a message first.", 400)
     payload = {"session_id": sid, "input": prompt}
+    if data.get("live_interactions") is True:
+        payload["live_interactions"] = True
+    if data.get("use_default_model") is True:
+        payload["use_default_model"] = True
     if images:
         content = ([{"type": "text", "text": prompt}] if prompt else []) + images
         payload["input"] = [{"role": "user", "content": content}]
@@ -326,6 +330,21 @@ async def run(request: Request):
 async def control(request: Request):
     rid, action = identifier(request.path_params["run_id"]), request.path_params["action"]
     data = await body(request)
+    if action == "clarification":
+        from .extensions import PREFIX
+
+        if "answer" not in data:
+            raise APIError("Provide an answer or explicitly skip the question.", 400)
+        return JSONResponse(
+            await request.app.state.hermes.request(
+                "POST",
+                f"{PREFIX}/runs/{rid}/clarification",
+                json={
+                    "request_id": identifier(text_field(data, "request_id", 256)),
+                    "answer": text_field(data, "answer", 16000),
+                },
+            )
+        )
     if action == "stop":
         payload = {}
     elif action == "steer":

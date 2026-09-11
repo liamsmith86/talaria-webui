@@ -525,6 +525,32 @@ async def test_malformed_stream_events_recover_through_run_status(event):
         await relay.close()
 
 
+async def test_polling_recovers_and_clears_native_clarification():
+    question = {"request_id": "pending-question", "question": "Which environment?"}
+
+    class Upstream:
+        def __init__(self):
+            self.statuses = iter(
+                [
+                    {"status": "waiting_for_input", "clarification": question},
+                    {"status": "running", "clarification": None},
+                    {"status": "completed"},
+                ]
+            )
+
+        async def request(self, *args, **kwargs):
+            return next(self.statuses)
+
+    channel = Channel("pending")
+    await asyncio.wait_for(Relay(Upstream()).poll(channel), 6)
+    events = [json.loads(event) for _, event in channel.events]
+    assert events == [
+        {**question, "event": "talaria.clarification.request"},
+        {"event": "talaria.clarification.resolved", "request_id": "pending-question"},
+        {"event": "run.completed", "status": "completed"},
+    ]
+
+
 async def test_new_stream_reconciles_when_its_initial_events_have_expired():
     channel = Channel("example")
     for _ in range(1501):

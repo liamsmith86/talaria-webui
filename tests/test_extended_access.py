@@ -1,3 +1,4 @@
+import ast
 import json
 import os
 import subprocess
@@ -199,7 +200,12 @@ def test_legacy_path_migration_and_plugin_export(tmp_path):
     plugin = tmp_path / "hermes/plugins/talaria"
     assert (plugin / "plugin.yaml").is_file()
     assert not (plugin / "__pycache__").exists()
-    assert all("talaria." not in file.read_text() for file in plugin.glob("*.py"))
+    for file in plugin.glob("*.py"):
+        for node in ast.walk(ast.parse(file.read_text())):
+            if isinstance(node, ast.Import):
+                assert all(alias.name.split(".")[0] != "talaria" for alias in node.names)
+            if isinstance(node, ast.ImportFrom) and not node.level:
+                assert (node.module or "").split(".")[0] != "talaria"
 
 
 def test_observation_store_is_bounded_and_profile_scoped(tmp_path):

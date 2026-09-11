@@ -89,6 +89,7 @@ async def discover(client):
                         "context_usage",
                         "model_details",
                         "context_runs",
+                        "live_interactions",
                         "rewind",
                     )
                 },

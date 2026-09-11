@@ -120,11 +120,32 @@ export function applyEvent(live, event) {
   const type = event.event || event.type;
   if (typeof type !== "string") return live;
   const next = { ...live };
+  if (type === "talaria.reasoning.delta" && typeof event.delta === "string") {
+    const parts = responseParts(live);
+    const tail = parts.at(-1);
+    next.parts = tail?.kind === "reasoning" && tail.id === event.block_id
+      ? [...parts.slice(0, -1), { ...tail, text: tail.text + event.delta }]
+      : [...parts, { kind: "reasoning", id: event.block_id, text: event.delta }];
+    next.reasoning = (live.reasoning || "") + event.delta;
+    next.statusText = "";
+  }
+  if (type === "talaria.status" && typeof event.text === "string")
+    next.statusText = event.text;
+  if (type === "talaria.clarification.request" && typeof event.request_id === "string") {
+    next.clarification = event;
+    next.status = "waiting_for_input";
+    next.statusText = "";
+  }
+  if (type === "talaria.clarification.resolved" && live.clarification?.request_id === event.request_id) {
+    next.clarification = null;
+    next.status = "running";
+  }
   if (
     (type === "message.delta" || type === "assistant.delta") &&
     typeof event.delta === "string"
   ) {
     next.text = (next.text || "") + event.delta;
+    next.statusText = "";
     next.parts = appendText(responseParts(live), event.delta);
   }
   if (type === "reasoning.available" && typeof event.text === "string") {
@@ -141,6 +162,7 @@ export function applyEvent(live, event) {
     ];
   }
   if (type === "tool.started" || type === "tool.start") {
+    next.statusText = "";
     next.tools = [...(live.tools || [])];
     const tool = {
       id: event.tool_call_id || `tool-${next.tools.length}`,
@@ -248,6 +270,8 @@ export function applyEvent(live, event) {
     next.usage = event.usage;
     next.error = event.error;
     next.approval = null;
+    next.clarification = null;
+    next.statusText = "";
     next.reconnecting = false;
     next.pendingSteer = event.pending_steer;
     next.needsHistory =
@@ -263,6 +287,7 @@ export async function sendMessage(
   { images = [], reasoning = "auto" } = {},
 ) {
   let sid = state.active;
+  const existingSession = !!sid;
   const generation = navigationVersion();
   if (state.loading)
     throw new Error("Wait for this session to load before sending.");
@@ -286,6 +311,10 @@ export async function sendMessage(
     const live = state.lives[sid];
     if (!live.id)
       throw new Error("Wait for the current message to finish sending.");
+    if (live.clarification) {
+      await answerClarification(sid, live.clarification.request_id, text);
+      return sid;
+    }
     await api(`/runs/${encodeURIComponent(live.id)}/steer`, {
       method: "POST",
       body: { input: text },
@@ -323,11 +352,15 @@ export async function sendMessage(
     refreshSessions().catch(fail);
   }
   const requestId = crypto.randomUUID();
+  const requestedModel = model?.inherited ? null : model;
   const payload = {
     input: text,
     session_id: sid,
+    live_interactions: true,
     request_id: requestId,
-    ...(model ? { model: model.id, provider: model.provider } : {}),
+    ...(requestedModel ? { model: requestedModel.id, provider: requestedModel.provider } : {}),
+    ...(existingSession && !model && Object.hasOwn(state.modelChoices, sid) && state.modelChoices[sid] === null
+      ? { use_default_model: true } : {}),
     ...(reasoning !== "auto" ? { reasoning } : {}),
     ...(images.length ? { images: images.map(({ url }) => ({ url })) } : {}),
   };
@@ -689,6 +722,7 @@ async function recoverRuns() {
         tools: [],
         status: status.status,
         approval: terminal.has(status.status) ? null : status.approval,
+        clarification: terminal.has(status.status) ? null : status.clarification,
         error: status.error,
         usage: status.usage,
         pendingSteer: status.pending_steer,
@@ -755,4 +789,23 @@ export async function approve(sid, choice) {
     state.lives[sid].approval === live.approval
   )
     publish(sid, { ...state.lives[sid], approval: null, status: "running" });
+}
+
+const answering = new Set();
+export async function answerClarification(sid, requestId, answer) {
+  const live = state.lives[sid];
+  if (!live?.id || live.clarification?.request_id !== requestId || !running(sid))
+    throw new Error("This question is no longer waiting for an answer.");
+  if (answering.has(requestId)) return;
+  answering.add(requestId);
+  try {
+    await api(`/runs/${encodeURIComponent(live.id)}/clarification`, {
+      method: "POST",
+      body: { request_id: requestId, answer },
+    });
+    if (state.lives[sid]?.id === live.id && state.lives[sid]?.clarification?.request_id === requestId)
+      publish(sid, { ...state.lives[sid], clarification: null, status: "running" });
+  } finally {
+    answering.delete(requestId);
+  }
 }

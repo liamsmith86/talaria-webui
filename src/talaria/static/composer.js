@@ -317,7 +317,7 @@ export function Composer({
         aria-controls=${commands.expanded ? "command-picker" : undefined}
         aria-activedescendant=${commands.expanded ? commands.option : undefined}
         placeholder=${active
-          ? "Guide Hermes while it works…"
+          ? live.clarification ? "Answer your agent’s question…" : "Guide Hermes while it works…"
           : "Message Hermes"}
         value=${draft}
         rows="1"
@@ -377,7 +377,7 @@ export function Composer({
           type="button"
           aria-label="Choose model"
           title=${displayedModel
-            ? `${displayedModel.providerLabel} · ${displayedModel.id}${!model ? " · Default" : ""}`
+            ? `${displayedModel.providerLabel ? displayedModel.providerLabel + " · " : ""}${displayedModel.id}${!model ? " · Default" : ""}`
             : "Use the default model configured in Hermes"}
           onClick=${onModel}
           disabled=${active || !app.connected}
@@ -411,7 +411,7 @@ export function Composer({
             ? "Stopping"
             : live.approval
               ? "Awaiting approval"
-              : "Working"}</span
+              : live.clarification ? "Your input" : "Working"}</span
         >`}
         ${active && !draft.trim()
           ? html`<button
@@ -429,8 +429,8 @@ export function Composer({
           : html`<button
               class="send-button"
               type="submit"
-              aria-label=${active ? "Send guidance" : "Send message"}
-              title=${active ? "Send guidance" : "Send message"}
+              aria-label=${active ? live.clarification ? "Send answer" : "Send guidance" : "Send message"}
+              title=${active ? live.clarification ? "Send answer" : "Send guidance" : "Send message"}
               disabled=${(!draft.trim() && !images.length) ||
               sending ||
               commands.busy ||
@@ -442,7 +442,7 @@ export function Composer({
               !supports("run_submission") ||
               !supports("session_resources") ||
               live?.uncertain ||
-              (active && !supports("run_steer"))}
+              (active && !live.clarification && !supports("run_steer"))}
             >
               <${Icon} name="arrow" size=${19} />
             </button>`}

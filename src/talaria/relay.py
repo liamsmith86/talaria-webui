@@ -104,6 +104,23 @@ class Relay:
                     and status != last
                 ):
                     await channel.publish({**approval, "event": "approval.request"})
+                clarification = status.get("clarification")
+                if (
+                    state == "waiting_for_input"
+                    and isinstance(clarification, dict)
+                    and clarification
+                    and status != last
+                ):
+                    await channel.publish(
+                        {**clarification, "event": "talaria.clarification.request"}
+                    )
+                elif last and last.get("clarification") and not clarification:
+                    await channel.publish(
+                        {
+                            "event": "talaria.clarification.resolved",
+                            "request_id": last["clarification"].get("request_id"),
+                        }
+                    )
                 last = status
             except APIError as exc:
                 if exc.status in {401, 403, 404}:

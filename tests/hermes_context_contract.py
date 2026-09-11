@@ -126,6 +126,7 @@ async def main():
     seen = []
     agents = []
     tool_round = [False]
+    planned_replies = []
     manager = get_plugin_manager()
     manager.discover_and_load()
     register(PluginContext(PluginManifest(name="talaria"), manager))
@@ -164,6 +165,8 @@ async def main():
                 },
                 finish_reason="tool_calls",
             )
+        if planned_replies:
+            response["choices"][0].update(planned_replies.pop(0))
         if payload.get("stream"):
             response["object"] = "chat.completion.chunk"
             response["choices"][0]["delta"] = response["choices"][0].pop("message")
@@ -185,6 +188,8 @@ async def main():
         app = web.Application(middlewares=[adapter._make_profile_prefix_middleware()])
         app.router.add_post("/v1/runs", adapter._handle_runs)
         app.router.add_get("/v1/runs/{run_id}/events", adapter._handle_run_events)
+        app.router.add_get("/v1/runs/{run_id}", adapter._handle_get_run)
+        app.router.add_post("/v1/runs/{run_id}/stop", adapter._handle_stop_run)
         wire(app, adapter)
 
         class ContractAgent(AIAgent):
@@ -193,6 +198,11 @@ async def main():
                     skip_memory=True, skip_background_review=True, skip_context_files=True
                 )
                 super().__init__(**kwargs)
+                if planned_replies:
+                    from tools.clarify_tool import CLARIFY_SCHEMA
+
+                    self.tools = [{"type": "function", "function": CLARIFY_SCHEMA}]
+                    self.valid_tool_names = {"clarify"}
                 if tool_round[0]:
                     self.tools = [
                         {
@@ -208,6 +218,16 @@ async def main():
                 agents.append(self)
 
         with (
+            patch.object(
+                adapter,
+                "_resolve_provider_runtime",
+                return_value={
+                    "provider": provider_name,
+                    "base_url": str(server.make_url("/v1")),
+                    "api_key": "fixture-only",
+                    "api_mode": "chat_completions",
+                },
+            ),
             patch(
                 "gateway.run._resolve_runtime_agent_kwargs",
                 return_value={
@@ -241,6 +261,7 @@ async def main():
                         json={
                             "session_id": "context-test",
                             "input": text,
+                            "live_interactions": True,
                             **extras,
                         },
                         headers={**headers, "Idempotency-Key": key},
@@ -272,7 +293,9 @@ async def main():
                         }
                         trace = {
                             "events": [
-                                {k: v for k, v in event.items() if k in fields} for event in frames
+                                {k: v for k, v in event.items() if k in fields}
+                                for event in frames
+                                if event.get("event") != "talaria.status"
                             ],
                             "messages": [
                                 {k: row[k] for k in ("role", "content")}
@@ -397,6 +420,12 @@ async def main():
                 configure(debug_requests=False)
                 await run("Logging disabled", "debug-off")
                 assert len(log_path.read_text().splitlines()) == len(captured)
+                from hermes_parity_contract import verify_parity
+
+                await verify_parity(run, db, seen, agents, configure, model_name, provider_name)
+                from hermes_live_contract import verify_live
+
+                await verify_live(client, adapter, db, planned_replies, seen)
                 from hermes_commands_contract import verify_commands
 
                 # Session-persisted models resolve provider credentials separately from

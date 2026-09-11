@@ -143,6 +143,7 @@ def wire(app, adapter, **kwargs):
         app.router.add_get(f"{prefix}/{{action:commands}}/{{command_id}}", dispatch_request)
         app.router.add_get(f"{prefix}/{{action:models}}", dispatch_request)
         app.router.add_post(f"{prefix}/{{action:runs}}", dispatch_request)
+        app.router.add_post(f"{prefix}/runs/{{run_id}}/{{action:clarification}}", dispatch_request)
         app.router.add_get(
             f"{prefix}/sessions/{{session_id}}/{{action:context|response}}", dispatch_request
         )
@@ -203,6 +204,7 @@ async def capabilities(adapter, db):
     from .commands import available
     from .context import load_context, supports_context_runs
     from .identity import inspect_home
+    from .live import supported as live_supported
 
     identity = await asyncio.to_thread(inspect_home, str(get_hermes_home()))
     context_runs = supports_context_runs(adapter)
@@ -217,6 +219,7 @@ async def capabilities(adapter, db):
             "context_usage": True,
             "model_details": True,
             "context_runs": context_runs,
+            "live_interactions": context_runs and live_supported(adapter),
             "profile_context": context.public() if context else {},
             "rewind": supports_rewind(db),
             "agent": {"name": identity.name},
@@ -314,6 +317,10 @@ async def dispatch_action(request, adapter, commands=None):
     from aiohttp import web
 
     action = request.match_info.get("action", "capabilities")
+    if action == "clarification":
+        from .live import answer
+
+        return await answer(request, adapter)
     if action == "runs":
         from .context import start_run, supports_context_runs
 
