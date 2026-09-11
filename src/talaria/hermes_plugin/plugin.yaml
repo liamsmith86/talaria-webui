@@ -1,5 +1,5 @@
 name: talaria
-version: "1.3.2"
+version: "1.4.0"
 description: Profile instructions, ephemeral prefill, response details, and native session controls for Talaria.
 provides_hooks:
   - pre_api_request

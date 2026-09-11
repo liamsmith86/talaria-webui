@@ -1,6 +1,7 @@
 import {
   html,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useMemo,
@@ -52,7 +53,7 @@ function toolText(value, input = false) {
   }
 }
 
-function ToolCard({ tool }) {
+function ToolCard({ tool, matched = false }) {
   const [open, setOpen] = useState(false);
   const isAgent = tool.kind === "agent";
   const failed = [
@@ -75,7 +76,8 @@ function ToolCard({ tool }) {
         ? "file"
         : "terminal";
   return html`<details
-    class=${`tool-card ${tool.status === "running" ? "working" : ""}`}
+    class=${`tool-card ${tool.status === "running" ? "working" : ""} ${matched ? "search-tool-match" : ""}`}
+    data-search-target=${matched ? "true" : undefined}
     onToggle=${(event) => setOpen(event.currentTarget.open)}
   >
     <summary>
@@ -161,6 +163,9 @@ function Message({
   parts = null,
   responseStatus = null,
   agentName = "Hermes",
+  matched = false,
+  matchId = null,
+  detailsEnabled = true,
 }) {
   const [copied, setCopied] = useState(false);
   const toolCards = useMemo(
@@ -171,10 +176,11 @@ function Message({
           html`<${ToolCard}
             key=${`${tool.kind === "agent"}:${tool.id}`}
             tool=${tool}
+            matched=${matchId && tool.messageIds?.some((id) => String(id) === String(matchId))}
           />`,
         ]),
       ),
-    [tools],
+    [tools, matchId],
   );
   function renderPart(part, index, all) {
     if (part.kind === "reasoning")
@@ -191,7 +197,8 @@ function Message({
       return html`<${Images} key=${index} images=${part.images} />`;
     return (
       part.text &&
-      html`<div class="message-text" key=${index}>
+      html`<div class="message-text" key=${index}
+        data-search-target=${matchId && String(part.messageId) === String(matchId) ? "true" : undefined}>
         <${Markdown}
           text=${part.text}
           streaming=${streaming && index === all.length - 1}
@@ -211,7 +218,7 @@ function Message({
     }
   }
   return html`<article
-    class=${`message ${role}`}
+    class=${`message ${role} ${matched ? "search-match" : ""}`}
     tabindex=${role === "assistant" ? -1 : undefined}
     aria-label=${role === "user" ? "Your message" : `${agentName} response`}
   >
@@ -244,7 +251,7 @@ function Message({
       parts?.length) &&
     html`<div class="message-actions">
       ${role !== "user" &&
-      record?.id &&
+      detailsEnabled && record?.id &&
       html`<${IconButton}
         name="info"
         label="Response details"
@@ -358,7 +365,14 @@ ${request.command ||
   </section>`;
 }
 
-function historyItems(history, live) {
+function orphanTool(message) {
+  const tool = { id: message.tool_call_id || message.id, name: message.tool_name || "Tool",
+    status: "finished", messageIds: [message.id] };
+  return { record: message, id: message.id, role: "assistant", text: "", images: [],
+    tools: [tool], time: message.timestamp, reasoning: "" };
+}
+
+function historyItems(history, live, excerpt = false) {
   const currentImage = currentImageMessage(history, live);
   const items = [];
   const calls = new Map();
@@ -381,10 +395,16 @@ function historyItems(history, live) {
     if (!message || typeof message !== "object") continue;
     if (message.display_kind === "hidden") continue;
     if (message.role === "tool") {
-      const call = calls.get(message.tool_call_id);
+      let call = calls.get(message.tool_call_id);
+      if (!call && excerpt) {
+        const item = orphanTool(message);
+        items.push(item);
+        call = item.tools[0];
+      }
       if (call) {
         const output = plainContent(message.content);
         call.output = output;
+        call.messageIds.push(message.id);
         const known = position > settledStart && position <= settledEnd ? outcomes.get(call.id) : null;
         call.status = known?.status || "finished";
         if (known?.duration !== undefined) call.duration = known.duration;
@@ -440,6 +460,7 @@ function historyItems(history, live) {
             : JSON.stringify(t.function?.arguments || {}),
         status: "not_reported",
         currentTurn: position > lastUser,
+        messageIds: [message.id],
       }));
       for (const tool of tools) calls.set(tool.id, tool);
       items.push({
@@ -464,8 +485,9 @@ function historyItems(history, live) {
   }
   const visible = items.map((m) => ({
     ...m,
+    messageIds: [m.record.id, ...m.tools.flatMap((tool) => tool.messageIds)],
     tools: m.tools.flatMap((tool) =>
-      tool.children?.length ? tool.children : [tool],
+      !excerpt && tool.children?.length ? tool.children : [tool],
     ),
   }));
   const turns = [];
@@ -479,7 +501,7 @@ function historyItems(history, live) {
     }
     const parts = [
       ...(item.reasoning ? [{ kind: "reasoning", text: item.reasoning }] : []),
-      ...(item.text ? [{ kind: "text", text: item.text }] : []),
+      ...(item.text ? [{ kind: "text", text: item.text, messageId: item.record.id }] : []),
       ...(item.images.length ? [{ kind: "images", images: item.images }] : []),
       ...item.tools.map((tool) => ({
         kind: "tool",
@@ -489,6 +511,7 @@ function historyItems(history, live) {
     ];
     const previous = turns.at(-1);
     if (previous?.role === "assistant") {
+      previous.messageIds.push(...item.messageIds);
       previous.parts.push(...parts);
       previous.tools.push(...item.tools);
       previous.text = [previous.text, item.text].filter(Boolean).join("\n\n");
@@ -514,20 +537,27 @@ export function Conversation({ app, command, onDismissCommand }) {
   }, []);
   const [away, setAway] = useState(false);
   const [olderBusy, setOlderBusy] = useState(false);
-  const live = app.lives[app.active];
+  const live = app.searchWindow ? null : app.lives[app.active];
   const agentName = app.agent?.name?.trim() || "Hermes";
   const items = useMemo(
-    () => historyItems(app.history, live),
+    () => historyItems(app.history, live, !!app.searchWindow),
     // Snapshot live metadata when saved history/image reconciliation changes, not on text deltas.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [app.history, live?.persisted, live?.userImages],
+    [app.history, live?.persisted, live?.userImages, app.searchWindow],
   );
-  const streaming = running(app.active, app.lives);
+  const streaming = !app.searchWindow && running(app.active, app.lives);
   useEffect(() => {
-    sticky.current = true;
+    sticky.current = !app.searchWindow;
     setAway(false);
-    follow();
-  }, [app.active, follow]);
+    if (sticky.current) follow();
+  }, [app.active, app.searchWindow, follow]);
+  useLayoutEffect(() => {
+    if (!app.searchWindow || app.loading) return;
+    const tools = scroll.current?.querySelectorAll("[data-search-target]") || [];
+    for (const target of tools) if (target.tagName === "DETAILS") target.open = true;
+    const target = tools[0] || scroll.current?.querySelector(".search-match");
+    target?.scrollIntoView({ block: "center", behavior: "instant" });
+  }, [app.searchWindow, app.loading, app.history]);
   useEffect(() => {
     if (sticky.current) follow();
   }, [app.history, live?.text, live?.tools.length, live?.approval, live?.clarification, follow]);
@@ -551,7 +581,7 @@ export function Conversation({ app, command, onDismissCommand }) {
     !!app.caps.talaria_extensions?.rewind &&
     (app.sessionDetails || app.sessions.find((s) => s.id === app.active))
       ?.source === "api_server" &&
-    !app.readOnlyParent &&
+    !app.readOnlyParent && !app.searchWindow &&
     !running(app.active, app.lives) &&
     !live?.uncertain;
   const showUser =
@@ -575,11 +605,14 @@ export function Conversation({ app, command, onDismissCommand }) {
             key=${m.id}
             ...${m}
             agentName=${agentName}
+            matched=${app.searchWindow && m.messageIds.some((id) => String(id) === String(app.searchWindow))}
+            matchId=${app.searchWindow}
+            detailsEnabled=${!app.searchWindow}
             canChange=${canChange && typeof m.record?.id === "number"}
             responseStatus=${m === savedTurn && !live.outcomeUnknown ? live.status : null}
           />`,
       ),
-    [items, canChange, app.loading, savedTurn, live?.status, live?.outcomeUnknown, agentName],
+    [items, canChange, app.loading, savedTurn, live?.status, live?.outcomeUnknown, agentName, app.searchWindow],
   );
   async function loadEarlier() {
     if (olderBusy) return;

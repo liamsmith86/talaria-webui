@@ -205,7 +205,7 @@ async def main():
         class ContractAgent(AIAgent):
             def __init__(self, **kwargs):
                 kwargs.update(
-                    skip_memory=True, skip_background_review=True, skip_context_files=True
+                    skip_memory=False, skip_background_review=True, skip_context_files=True
                 )
                 super().__init__(**kwargs)
                 if planned_replies:
@@ -433,6 +433,9 @@ async def main():
                 from hermes_parity_contract import verify_parity
 
                 await verify_parity(run, db, seen, agents, configure, model_name, provider_name)
+                from hermes_memory_contract import verify_memory
+
+                await verify_memory(run, db, seen, configure, home)
                 from hermes_live_contract import verify_live
 
                 await verify_live(client, adapter, db, planned_replies, seen)

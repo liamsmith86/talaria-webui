@@ -238,10 +238,14 @@ restart the host's Hermes automatically.
 ## Features
 
 - Streaming chat, tool activity, approvals, and guidance during responses.
-- Conversation search, pinning, branching, and transcript downloads.
+- Session search, pinning, branching, and transcript downloads.
 - Per-session model and reasoning choices; image and text attachments.
 - Multiple Hermes profiles, mobile layouts, and light/dark themes.
-- Optional plugin: context usage, response details, turn editing, and correct branch identity on affected Hermes versions.
+- Optional plugin: context usage, response details, turn editing, full-history search, and recent API run status.
+
+Search (plugin 1.4.0+) uses Hermes’s index and opens the matching message in a
+read-only window. Choose **View latest messages** to continue the session.
+Activity reflects known API runs; other channels and expired runs may have no status.
 
 ## Configuration
 

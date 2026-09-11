@@ -11,6 +11,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 
+from .fake_session_views import respond as session_view
+
 KEY = "test-hermes-key-do-not-use"
 
 
@@ -78,6 +80,9 @@ class FakeHermes:
                         **self.extension,
                     }
                 )
+            view = session_view(self, request)
+            if view is not None:
+                return view
             sid, action = path.split("/")[4:6]
             if sid not in self.sessions:
                 return JSONResponse({"error": "Not found"}, 404)

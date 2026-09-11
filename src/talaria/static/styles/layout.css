@@ -340,3 +340,33 @@ kbd {
   color: var(--faint);
   margin-left: 8px;
 }
+
+.history-search-hit {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  margin: 3px 0;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.history-search-hit:hover,
+.history-search-hit:focus-visible {
+  background: var(--surface-hover);
+}
+.history-search-hit strong,
+.history-search-hit span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 12px;
+}
+.history-search-hit mark { background: var(--accent-soft); color: inherit; }
+.history-search-hit small { color: var(--muted); font-size: 10px; }
+.history-search .sidebar-empty:empty { display: none; }
+.session-activity { display: inline-flex; flex: none; color: var(--muted); }
+.session-activity.needs-input { color: var(--accent); }
+.tool-card.search-tool-match { border-color: var(--accent); }
+.message.search-match { outline: 2px solid var(--accent); outline-offset: 6px; border-radius: 8px; }

@@ -17,7 +17,8 @@ import {
   refreshSessions,
   fail,
 } from "./store.js";
-import { running } from "./runs.js";
+import { SessionSearch } from "./session-search.js";
+import { activityLabel, useSessionActivity } from "./session-activity.js";
 import { sourceLabel } from "./content.js";
 import { readinessLabel } from "./readiness.js";
 import { ProfileSwitch } from "./profiles.js";
@@ -64,17 +65,21 @@ export function Sidebar({ app }) {
       )
       .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true));
   }, [app.sessions, query]);
-  const liveKey = Object.keys(app.lives)
-    .filter((id) => running(id, app.lives))
-    .sort()
-    .join("\n");
+  const activity = useSessionActivity(app.connected && app.caps.talaria_extensions?.session_activity &&
+    (mobile ? app.sidebar : !app.sidebarCollapsed));
+  const liveKey = JSON.stringify([...new Set([...Object.keys(activity), ...Object.keys(app.lives)])]
+    .sort().map((id) => [id, activityLabel(
+      Object.hasOwn(app.lives, id) ? app.lives[id] : null,
+      Object.hasOwn(activity, id) ? activity[id] : null)]));
   const day = new Date().toDateString();
   // Text deltas do not change the sidebar. Retain row VNodes until the list,
   // selection, date grouping, or running indicators actually change.
   const rows = useMemo(() => {
-    const runningIds = new Set(liveKey.split("\n"));
+    const labels = new Map(JSON.parse(liveKey));
     let lastGroup = "";
     return sessions.map((session) => {
+      const label = labels.get(session.id);
+      const working = label === "Running";
       const group = session.pinned ? "Pinned" : query ? "" : groupName(session, day);
       const heading = group && group !== lastGroup;
       lastGroup = group;
@@ -94,9 +99,7 @@ export function Sidebar({ app }) {
               aria-current=${app.active === session.id ? "page" : undefined}
               aria-label=${session.title || "Untitled session"}
               aria-description=${
-                sourceLabel(session.source)
-                  ? `Source: ${sourceLabel(session.source)}`
-                  : undefined
+                [sourceLabel(session.source), label].filter(Boolean).join(" · ") || undefined
               }
             >
               ${
@@ -104,14 +107,16 @@ export function Sidebar({ app }) {
                   ? html`<${Icon}
                     name="pin"
                     size=${13}
-                    class=${`pin-icon ${runningIds.has(session.id) ? "live" : ""}`}
+                    class=${`pin-icon ${working ? "live" : ""}`}
                   />`
                   : html`<span
-                    class=${`session-dot ${runningIds.has(session.id) ? "live" : ""}`}
+                    class=${`session-dot ${working ? "live" : ""}`}
                   ></span>`
               }<span class="session-caption"
                 >${session.title || "Untitled session"}</span
-              >${
+              >${label && html`<span class=${`session-activity ${label === "Needs input" ? "needs-input" : ""}`}
+                title=${label} aria-label=${label}><${Icon} size=${13}
+                  name=${label === "Finished" ? "check" : label === "Running" ? "context" : "alert"} /></span>`}${
                 sourceLabel(session.source) &&
                 html`<small class="source-badge" aria-hidden="true"
                 >${sourceLabel(session.source)}</small
@@ -186,13 +191,16 @@ export function Sidebar({ app }) {
         aria-label="Search sessions"
         placeholder="Search sessions"
         value=${query}
+        maxlength="200"
         onInput=${(e) => setQuery(e.target.value)}
       /><kbd>⌘ K</kbd>
     </div>
     <nav class="session-list" aria-label="Session history">
       ${rows}
+      ${query.trim() && app.caps.talaria_extensions?.history_search &&
+        html`<${SessionSearch} key=${query.trim()} query=${query.trim()} />`}
       ${
-        !sessions.length &&
+        !sessions.length && !(query.trim() && app.caps.talaria_extensions?.history_search) &&
         html`<div class="sidebar-empty">
         ${
           query
@@ -202,7 +210,7 @@ export function Sidebar({ app }) {
       </div>`
       }
       ${
-        app.hasMore &&
+        app.hasMore && !query.trim() &&
         html`<button
         class="load-more"
         disabled=${moreBusy}

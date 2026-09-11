@@ -274,9 +274,12 @@ function App() {
         its API.
       </div>`}
       ${app.active || command
-        ? html`<${Conversation} key=${app.active} app=${app} command=${command} onDismissCommand=${commandActivity.dismiss} />`
+        ? html`<${Conversation} key=${app.active} app=${app} command=${app.searchWindow ? null : command} onDismissCommand=${commandActivity.dismiss} />`
         : html`<${Welcome} onSuggestion=${setSuggestion} />`}
-      ${app.readOnlyParent
+      ${app.searchWindow
+        ? html`<div class="child-return"><span>Search result · surrounding messages</span>
+            <button class="text-button" onClick=${() => openSession(app.active)}>View latest messages</button></div>`
+        : app.readOnlyParent
         ? html`<div class="child-return">
             <span>Viewing a child session</span
             ><button
@@ -319,7 +322,7 @@ function App() {
     ${app.modal?.type === "session-menu" &&
     html`<${ConversationMenu}
       session=${app.modal.session}
-      readOnly=${!!app.readOnlyParent && app.modal.session.id === app.active}
+      readOnly=${(!!app.readOnlyParent || !!app.searchWindow) && app.modal.session.id === app.active}
       onClose=${close}
     />`}
     ${app.modal?.type === "details" &&

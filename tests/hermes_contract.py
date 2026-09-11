@@ -13,7 +13,9 @@ from agent.context_compressor import _SUMMARY_END_MARKER, HISTORICAL_TASK_HEADIN
 from hermes_cli import inventory
 from hermes_cli import models_reasoning_caps as native_caps
 from hermes_cli.plugins_discovery import scan_directory
+from hermes_delegation_contract import verify_delegation
 from hermes_state import SessionDB
+from hermes_views_contract import verify_views
 from providers import get_provider_profile
 
 from talaria.hermes_plugin.bridge import rewind, rewind_preview, wire
@@ -22,6 +24,8 @@ from talaria.hermes_plugin.observations import Observations
 
 home = Path(sys.argv[1])
 assert home.is_dir() and str(home).startswith("/tmp/")
+verify_views(home)
+asyncio.run(verify_delegation(home))
 db = SessionDB(home / "state.db")
 db.create_session("contract", "api_server")
 first = db.append_message("contract", "user", "Keep this")
