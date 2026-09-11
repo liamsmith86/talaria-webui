@@ -375,6 +375,7 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
         settings = load(config)
         assert settings.public_url == "https://example.com/telaria"
         assert "Update manually:" in result.stdout
+        assert "Uninstall:" in result.stdout
         assert not (root / ".setup-pending.json").exists()
         if attempt == 0:
             assert "Hermes: not configured" in result.stdout

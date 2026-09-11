@@ -523,9 +523,10 @@ def setup_lock(root, stack):
         raise ValueError("Another setup is running for this installation.") from exc
 
 
-def print_update_command(root):
+def print_management_commands(root):
     prefix = "sudo -n " if os.geteuid() == 0 and os.environ.get("SUDO_UID", "0") != "0" else ""
     print(f"Update manually: {prefix}{shlex.quote(str(root / 'bin/talaria'))} update")
+    print(f"Uninstall: {prefix}{shlex.quote(str(root / 'bin/talaria'))} uninstall")
 
 
 def update_existing(root, args, stack):
@@ -546,7 +547,7 @@ def update_existing(root, args, stack):
     print(f"Existing installation: {root}. Updating Talaria; saved setup is retained.")
     deployment.update(expect=args.expect)
     print(f"Config: {config['config']}")
-    print_update_command(root)
+    print_management_commands(root)
     if args.plugin:
         print(
             "The Hermes plugin is separate: refresh it with talaria hermes-plugin "
@@ -782,7 +783,7 @@ def _setup(args, prompts, stack):
         print(f"Service: {existing_service} ({metadata.get('scope', 'user')})")
     else:
         print(f"Start: {shlex.quote(str(root / 'bin/talaria'))}")
-    print_update_command(root)
+    print_management_commands(root)
     if args.restart_hermes and (
         not connection.startswith("connected")
         or (args.plugin and "extended access available" not in connection)
