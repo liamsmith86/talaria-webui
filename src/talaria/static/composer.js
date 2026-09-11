@@ -24,6 +24,7 @@ export function Composer({
   onModel,
   onReasoning,
   draftSuggestion,
+  commandActivity,
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -54,7 +55,7 @@ export function Composer({
     writeStorage(key, value);
     textarea.current?.focus();
   }
-  const commands = useCommands(app, draft, chooseCommand, { onModel, onReasoning, active });
+  const commands = useCommands(app, draft, chooseCommand, { onModel, onReasoning, active }, commandActivity);
   useEffect(() => {
     setDraft(readStorage(key));
     setImages([]);

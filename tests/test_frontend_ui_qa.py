@@ -281,7 +281,8 @@ def test_completed_tool_previews_are_not_reparsed_during_stream_updates(page, li
             }
         ],
     )
-    expect(page.locator(".tool-card summary")).to_contain_text("A stable historical command")
+    expect(page.locator(".tool-card .tool-label")).to_have_text("terminal")
+    expect(page.locator(".tool-content pre")).to_have_text("A stable historical command")
     result = page.evaluate(
         """async sid => {
             const {state, update} = await import('/static/store.js');

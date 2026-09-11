@@ -25,6 +25,7 @@ import {
 } from "./store.js";
 import { Sidebar } from "./sidebar.js";
 import { Conversation } from "./conversation.js";
+import { useCommandActivity } from "./command-activity.js";
 import { Composer } from "./composer.js";
 import {
   Connection,
@@ -121,6 +122,8 @@ function Welcome({ onSuggestion }) {
 
 function App() {
   const app = useStore();
+  const commandActivity = useCommandActivity(app);
+  const command = commandActivity.current?.session === (app.active || "") ? commandActivity.current : null;
   const mobile = useMediaQuery("(max-width: 700px)");
   const model = sessionModel(app);
   const [modelOpen, setModelOpen] = useState(false);
@@ -196,7 +199,7 @@ function App() {
       onClick=${() => update({ sidebar: false })}
     />`}
     <main
-      class=${`main-panel ${!app.active ? "is-new" : ""}`}
+      class=${`main-panel ${!app.active && !command ? "is-new" : ""}`}
       inert=${mobile && app.sidebar}
     >
       <header class="topbar">
@@ -267,8 +270,8 @@ function App() {
         Update Hermes to a version that supports sessions and chat through
         its API.
       </div>`}
-      ${app.active
-        ? html`<${Conversation} key=${app.active} app=${app} />`
+      ${app.active || command
+        ? html`<${Conversation} key=${app.active} app=${app} command=${command} onDismissCommand=${commandActivity.dismiss} />`
         : html`<${Welcome} onSuggestion=${setSuggestion} />`}
       ${app.readOnlyParent
         ? html`<div class="child-return">
@@ -287,6 +290,7 @@ function App() {
               onModel=${() => setModelOpen(true)}
               onReasoning=${() => setReasoningOpen(true)}
               draftSuggestion=${suggestion}
+              commandActivity=${commandActivity}
             />
             <p class="composer-hint">
               ${running(app.active)
