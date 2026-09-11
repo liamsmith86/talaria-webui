@@ -3,6 +3,8 @@
 import json
 import os
 import plistlib
+import pty
+import select
 import shutil
 import socket
 import subprocess
@@ -16,6 +18,64 @@ from talaria.auth import verify_password
 from talaria.config import load
 from talaria.deployment import DeploymentError, run
 from talaria.setup_services import preflight, service_plan, unit_quote
+
+
+@pytest.mark.parametrize("piped_stdin", [False, True])
+def test_interactive_setup_uses_controlling_terminal(piped_stdin):
+    """Exercise real prompts and password echo with shell and curl-style stdin."""
+    script = """
+import fcntl
+import sys
+import termios
+fcntl.ioctl(1, termios.TIOCSCTTY, 0)
+sys.path.insert(0, sys.argv[1])
+from talaria import setup as wizard
+def check(args, prompts):
+    assert prompts.ask('Service', 'auto', ('auto', 'none')) == 'none'
+    assert wizard.getpass.getpass('Password: ', stream=prompts.terminal) == 'test-private-password'
+    assert prompts.yes('Continue?', True)
+    print('Interactive setup passed', flush=True)
+wizard.setup = check
+wizard.main([])
+"""
+    terminal, slave = pty.openpty()
+    try:
+        child = subprocess.Popen(
+            [sys.executable, "-c", script, str(Path(wizard.__file__).resolve().parents[1])],
+            stdin=subprocess.PIPE if piped_stdin else slave,
+            stdout=slave,
+            stderr=slave,
+            start_new_session=True,
+        )
+    finally:
+        os.close(slave)
+    if child.stdin is not None:
+        child.stdin.close()
+    transcript = b""
+    try:
+        for prompt, answer in [
+            (b'Service [auto]: ', b'none\n'),
+            (b'Password: ', b'test-private-password\n'),
+            (b'Continue? (yes/no) [yes]: ', b'\n'),
+            (b'Interactive setup passed', None),
+        ]:
+            while prompt not in transcript:
+                assert select.select([terminal], [], [], 10)[0], transcript.decode()
+                try:
+                    chunk = os.read(terminal, 4096)
+                except OSError:
+                    pytest.fail(f'Terminal closed before prompt: {transcript.decode()}')
+                assert chunk, transcript.decode()
+                transcript += chunk
+            if answer is not None:
+                os.write(terminal, answer)
+        assert child.wait(timeout=10) == 0
+        assert b'test-private-password' not in transcript
+    finally:
+        os.close(terminal)
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=10)
 
 
 @pytest.fixture
