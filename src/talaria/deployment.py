@@ -317,6 +317,9 @@ class Deployment:
             locations = [str(Path.home() / ".local/bin"), "/usr/local/bin"]
             if sys.platform == "darwin":
                 locations.append("/opt/homebrew/bin")
+            if os.geteuid() == 0 and (caller := os.environ.get("SUDO_UID")):
+                with suppress(KeyError, ValueError):
+                    locations.append(str(Path(pwd.getpwuid(int(caller)).pw_dir) / ".local/bin"))
             uv = shutil.which("uv", path=os.pathsep.join(locations))
         if not uv:
             raise DeploymentError("Install uv to build updates: https://docs.astral.sh/uv/")

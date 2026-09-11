@@ -1,9 +1,11 @@
 """Deployment failures must leave a usable release and private config intact."""
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -206,7 +208,10 @@ def test_managed_launcher_never_injects_production_config_into_dev(deployment):
 
 
 @pytest.mark.skipif(not shutil.which("uv") or not shutil.which("git"), reason="Needs Git and uv")
-def test_real_git_wheel_install_update_failure_and_rollback(deployment, tmp_path, monkeypatch):
+@pytest.mark.parametrize("sudo", [False, True])
+def test_real_git_wheel_install_update_failure_and_rollback(
+    deployment, tmp_path, monkeypatch, sudo,
+):
     """Exercise the actual build/install/probe pipeline without touching a host service."""
     # A fresh install puts uv here but does not edit the user's shell startup files.
     home = tmp_path / "home"
@@ -214,6 +219,14 @@ def test_real_git_wheel_install_update_failure_and_rollback(deployment, tmp_path
     user_bin.mkdir(parents=True)
     (user_bin / "uv").symlink_to(shutil.which("uv"))
     monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.delenv("SUDO_UID", raising=False)
+    if sudo:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "root")
+        monkeypatch.setattr(os, "geteuid", lambda: 0)
+        monkeypatch.setenv("SUDO_UID", "12345")
+        monkeypatch.setattr(
+            "talaria.deployment.pwd.getpwuid", lambda uid: SimpleNamespace(pw_dir=str(home))
+        )
     which = shutil.which
     monkeypatch.setattr(
         shutil, "which",
