@@ -15,7 +15,7 @@ from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import auth, extensions, installation, metadata, routes, transcripts, updates
+from . import auth, extensions, installation, metadata, routes, session_views, transcripts, updates
 from .config import Settings
 from .hermes import APIError, Hermes, valid_api_key
 from .profiles import ProfileRouter, Profiles
@@ -159,6 +159,9 @@ def create_app(
             Route("/api/commands/{command_id}", extensions.commands),
             Route("/api/agent", metadata.details),
             Route("/api/readiness", metadata.readiness),
+            Route("/api/search", session_views.view),
+            Route("/api/activity", session_views.view),
+            Route("/api/sessions/{session_id}/around", session_views.view),
             Route("/api/sessions", routes.sessions, methods=["GET", "POST"]),
             Route("/api/sessions/{session_id}/messages", routes.messages),
             Route("/api/sessions/{session_id}/context", extensions.session_extension),

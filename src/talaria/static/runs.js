@@ -30,6 +30,14 @@ let recoveryRecords = {};
 let restoration;
 const terminal = new Set(["completed", "failed", "cancelled", "interrupted"]);
 const receiptKey = (sid, requestId) => `run.${sid}.${requestId}`;
+function retainedSize(live) {
+  // Conservative UTF-16 payload estimate; shared strings may be counted twice.
+  // Only inspect settled candidates, never the active stream on each delta.
+  const values = [live.text, live.reasoning, live.userText, live.pendingSteer,
+    ...(live.parts || []).map((part) => part.text),
+    ...(live.tools || []).flatMap((tool) => [tool.preview, tool.output])];
+  return values.reduce((size, value) => size + (typeof value === "string" ? value.length * 2 : 0), 0);
+}
 function publish(sid, live) {
   const lives = { ...state.lives, [sid]: live };
   if (live.persisted && terminal.has(live.status)) {
@@ -44,7 +52,12 @@ function publish(sid, live) {
         !item.uncertain &&
         !item.imageReceipt,
     );
-    for (const [id] of disposable.slice(0, -16)) delete lives[id];
+    let budget = 8 * 1024 * 1024, count = 0;
+    for (const [id, item] of disposable.reverse()) {
+      const size = retainedSize(item);
+      if (++count > 16 || size > budget) delete lives[id];
+      else budget -= size;
+    }
   }
   update({ lives }, true);
 }

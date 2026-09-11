@@ -1,7 +1,7 @@
 import { useEffect, useState, readStorage, writeStorage } from "./lib.js";
 import { api, setCSRF } from "./api.js";
 import { migratePendingImages, withCachedImages } from "./attachments.js";
-import { selectedSession, rememberSession } from "./session-navigation.js";
+import { selectedSession, selectedMessage, rememberSession } from "./session-navigation.js";
 import { historyWindow } from "./history-page.js";
 import {
   modelInventory,
@@ -30,6 +30,7 @@ export const state = {
   historyOffset: 0,
   sessionDetails: null,
   readOnlyParent: null,
+  searchWindow: null,
   findOpen: false,
   loading: false,
   lives: {},
@@ -179,7 +180,7 @@ export async function connect(configured = true) {
     await Promise.all([
       sessions,
       last && !state.active && caps.features?.session_resources
-        ? openSession(last, null, true)
+        ? openSession(last, null, true, selectedMessage())
         : undefined,
     ]);
   } catch (error) {
@@ -355,7 +356,7 @@ async function migrateCanonical(id, canonical, parent, current) {
     writeStorage("child-view", JSON.stringify({ id: canonical, parent }));
   return true;
 }
-export async function openSession(id, parent = null, replace = false) {
+export async function openSession(id, parent = null, replace = false, messageId = null) {
   try {
     const saved = JSON.parse(readStorage("child-view", "null"));
     if (!parent && saved?.id === id) parent = saved.parent;
@@ -378,11 +379,13 @@ export async function openSession(id, parent = null, replace = false) {
     historyHasMore: false,
     historyOffset: 0,
     readOnlyParent: parent,
+    searchWindow: messageId,
     findOpen: false,
   });
-  rememberSession(id, replace);
+  rememberSession(id, replace, messageId);
   try {
-    const result = await api(`/sessions/${encodeURIComponent(id)}/messages`, {
+    const path = messageId ? `around?message_id=${encodeURIComponent(messageId)}` : "messages";
+    const result = await api(`/sessions/${encodeURIComponent(id)}/${path}`, {
       signal: controller.signal,
     });
     const history = await withCachedImages(
@@ -418,11 +421,11 @@ export async function refreshHistory(id, commit = true, additionalState = null, 
   // A focus refresh must not invalidate an older page the reader just requested.
   if (id === state.active && olderPending?.generation === navigation)
     await olderPending.promise;
-  const previous = id === state.active && generation === navigation ? state.history : [];
+  const previous = id === state.active && generation === navigation && !state.searchWindow ? state.history : [];
   const request =
     commit && state.active === id ? ++historyRequest : historyRequest;
   const result = await historyWindow(id, previous, signal);
-  const canCommit = () => commit && !signal?.aborted && state.active === id &&
+  const canCommit = () => commit && !signal?.aborted && !state.searchWindow && state.active === id &&
     generation === navigation && request >= historyCommitted &&
     (typeof commit !== "function" || commit());
   const history = await withCachedImages(
@@ -508,6 +511,7 @@ export function newConversation(replace = false) {
     draftReasoning: "auto",
     sessionDetails: null,
     readOnlyParent: null,
+    searchWindow: null,
     findOpen: false,
   });
   rememberSession(null, replace === true);

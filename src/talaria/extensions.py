@@ -91,6 +91,8 @@ async def discover(client):
                         "context_runs",
                         "live_interactions",
                         "rewind",
+                        "history_search",
+                        "session_activity",
                     )
                 },
             }

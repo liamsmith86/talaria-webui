@@ -1,6 +1,7 @@
 import gzip
 
 import httpx
+import pytest
 from playwright.sync_api import expect
 
 from .test_app import signed_in
@@ -108,18 +109,22 @@ def test_historical_code_highlights_on_approach_and_find_still_reaches_it(page):
     expect(first.locator("code")).to_be_in_viewport()
 
 
-def test_completed_response_cache_is_bounded_without_losing_recovery_state(page):
-    page.evaluate("""async () => {
+@pytest.mark.parametrize("payload_size", [50000, 1000000])
+def test_completed_response_cache_is_bounded_without_losing_recovery_state(page, payload_size):
+    page.evaluate(
+        """async (payloadSize) => {
       const {update}=await import('/static/store.js');
       const lives={};
       for(let i=0;i<100;i++) lives['cached-'+i]={id:'old-'+i,status:'completed',
-        persisted:true,text:'x'.repeat(50000),tools:[]};
+        persisted:true,text:'x'.repeat(payloadSize),tools:[]};
       lives.working={id:'working',status:'running',text:'',tools:[]};
       lives.uncertain={id:'uncertain',status:'interrupted',uncertain:true,text:'',tools:[]};
       lives.images={id:'images',status:'completed',persisted:true,imageReceipt:true,text:'',tools:[]};
       lives.unpersisted={id:'unpersisted',status:'completed',text:'Unsaved reply',tools:[]};
       update({lives});
-    }""")
+    }""",
+        payload_size,
+    )
     page.get_by_label("Message Hermes").fill("Trim only disposable presentation state")
     page.get_by_role("button", name="Send message", exact=True).click()
     state = page.evaluate_handle("async () => (await import('/static/store.js')).state")
@@ -132,7 +137,8 @@ def test_completed_response_cache_is_bounded_without_losing_recovery_state(page)
         protected:['working','uncertain','images','unpersisted',state.active]
           .every(id=>Object.hasOwn(state.lives,id))};
     }""")
-    assert result == {"cached": 16, "bytes": 800_000, "protected": True}
+    count = min(16, (8 * 1024 * 1024) // (payload_size * 2))
+    assert result == {"cached": count, "bytes": count * payload_size, "protected": True}
 
 
 def test_text_deltas_reuse_sidebar_rows_and_tool_cards(page):
@@ -243,7 +249,8 @@ def test_startup_history_and_catalog_do_not_wait_for_sidebar_listing(page):
         if(path==='/api/readiness')return result({status:'ok',issues:[]});
         return original(url,options);
       };
-      writeStorage('last-session','startup');update({active:null});
+      writeStorage('last-session','startup');
+      history.replaceState(null,'','?session=startup');update({active:null});
       check.done=connect().finally(()=>{window.fetch=original});
     }""")
     try:

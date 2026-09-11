@@ -141,11 +141,11 @@ def wire(app, adapter, **kwargs):
         app.router.add_get(f"{prefix}/{{action:commands}}", dispatch_request)
         app.router.add_post(f"{prefix}/{{action:commands}}", dispatch_request)
         app.router.add_get(f"{prefix}/{{action:commands}}/{{command_id}}", dispatch_request)
-        app.router.add_get(f"{prefix}/{{action:models}}", dispatch_request)
+        app.router.add_get(f"{prefix}/{{action:models|search|activity}}", dispatch_request)
         app.router.add_post(f"{prefix}/{{action:runs}}", dispatch_request)
         app.router.add_post(f"{prefix}/runs/{{run_id}}/{{action:clarification}}", dispatch_request)
         app.router.add_get(
-            f"{prefix}/sessions/{{session_id}}/{{action:context|response}}", dispatch_request
+            f"{prefix}/sessions/{{session_id}}/{{action:context|response|around}}", dispatch_request
         )
         app.router.add_post(
             f"{prefix}/sessions/{{session_id}}/{{action:rewind|fork}}", dispatch_request
@@ -201,10 +201,12 @@ async def capabilities(adapter, db):
     from aiohttp import web
     from hermes_constants import get_hermes_home
 
+    from .activity import supported as activity_supported
     from .commands import available
     from .context import load_context, supports_context_runs
     from .identity import inspect_home
     from .live import supported as live_supported
+    from .search import supported as search_supported
 
     identity = await asyncio.to_thread(inspect_home, str(get_hermes_home()))
     context_runs = supports_context_runs(adapter)
@@ -222,6 +224,8 @@ async def capabilities(adapter, db):
             "live_interactions": context_runs and live_supported(adapter),
             "profile_context": context.public() if context else {},
             "rewind": supports_rewind(db),
+            "history_search": search_supported(db, adapter),
+            "session_activity": activity_supported(adapter),
             "agent": {"name": identity.name},
         }
     )
@@ -302,13 +306,27 @@ async def dispatch_action(request, adapter, commands=None):
         return web.json_response(
             await asyncio.to_thread(model_options, request.query.get("refresh") == "1")
         )
+    if action == "activity":
+        from .activity import dispatch as activity_dispatch
+
+        return await activity_dispatch(request, adapter)
     db = await adapter._ensure_session_db_async()
     if db is None:
         return web.json_response({"error": "Hermes session storage is unavailable."}, status=503)
+    if action in {"search", "around"}:
+        from .search import dispatch as search_dispatch
+
+        return await search_dispatch(request, adapter, db)
     if action == "commands" and commands is not None:
         return await commands.dispatch(request, adapter, db)
     if action == "capabilities":
         return await capabilities(adapter, db)
+    return await dispatch_session(request, adapter, db, action)
+
+
+async def dispatch_session(request, adapter, db, action):
+    from aiohttp import web
+
     sid = request.match_info["session_id"]
     session = await asyncio.to_thread(db.get_session, sid)
     if session is None:

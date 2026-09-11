@@ -350,3 +350,26 @@ def test_add_profile_form_reuses_connection_validation(page, research):
     expect(
         page.get_by_text("This Hermes profile is already saved. Select it from the profile menu.")
     ).to_be_visible()
+
+
+def test_search_links_and_new_tabs_keep_the_selected_profile(page, live_app, research):
+    profile_id, second = research
+    sid = "same-native-id"
+    for peer, title in ((live_app[1], "Root only"), (second, "Research only")):
+        peer.extension = {"history_search": True}
+        peer.sessions[sid] = {"id": sid, "title": title, "source": "api_server"}
+        peer.messages[sid] = [{"id": 1, "role": "user", "content": f"Needle in {title}"}]
+    page.goto(f"{live_app[0]}/?profile={profile_id}&session=")
+    page.get_by_label("Search sessions").fill("Needle")
+    hit = page.locator(".history-search-hit")
+    expect(hit).to_have_count(1)
+    expect(hit).to_contain_text("Research only")
+    assert f"profile={profile_id}" in hit.get_attribute("href")
+    other = page.context.new_page()
+    try:
+        other.goto(live_app[0] + hit.get_attribute("href"))
+        expect(other.locator(".search-match")).to_contain_text("Needle in Research only")
+        assert f"profile={profile_id}" in other.url
+        assert "Root only" not in other.locator("main").inner_text()
+    finally:
+        other.close()

@@ -2,7 +2,7 @@ import {
   state, openSession, newConversation, refreshSessions, refreshHistory,
   refreshSessionDetails, navigationVersion, navigationSignal, fail, update,
 } from "./store.js";
-import { selectedSession } from "./session-navigation.js";
+import { selectedSession, selectedMessage } from "./session-navigation.js";
 import { running } from "./runs.js";
 
 export function observePage() {
@@ -23,7 +23,7 @@ export function observePage() {
     const tasks = [refreshSessions(false, controller.signal)];
     // A local stream already owns its live-to-saved transition. Revalidation
     // catches up idle/external sessions without disturbing that transition.
-    if (id && !running(id)) {
+    if (id && !state.searchWindow && !running(id)) {
       tasks.push(refreshHistory(id, current, null, controller.signal));
       tasks.push(refreshSessionDetails(id, controller.signal));
     }
@@ -58,7 +58,7 @@ export function observePage() {
     pending?.abort();
     if (!state.auth || !state.connected) return;
     const id = selectedSession();
-    if (id) openSession(id, null, true);
+    if (id) openSession(id, null, true, selectedMessage());
     else newConversation(true);
   }
   const restored = (event) => { if (event.persisted) schedule(); };
