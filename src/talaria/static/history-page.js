@@ -31,6 +31,7 @@ async function readWindow(id, previous, signal) {
     page = await api(endpoint(id, offset, limit), { signal });
     if (page.session_id && page.session_id !== id) {
       // Never combine rows from opposite sides of native compaction.
+      if (offset) page = await api(endpoint(page.session_id, 0, 100), { signal });
       return { ...page, data: page.data || [], canonical: page.session_id };
     }
     const incoming = page.data || [];

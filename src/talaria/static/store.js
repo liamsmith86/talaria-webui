@@ -318,6 +318,28 @@ function advanceNavigation() {
   navigationController.abort();
   navigationController = new AbortController();
 }
+async function migrateCanonical(id, canonical, parent, current) {
+  if (id === canonical) return true;
+  await migratePendingImages(`draft.${id}`, `draft.${canonical}`);
+  if (!current()) return false;
+  // Compaction can rotate the transcript ID. Carry unsent text with it,
+  // retaining both drafts if another tab already wrote to the continuation.
+  const from = `draft.${id}`, to = `draft.${canonical}`;
+  const draft = readStorage(from), existing = readStorage(to);
+  if (draft) {
+    const combined = existing && existing !== draft ? `${existing}\n\n${draft}` : draft;
+    writeStorage(to, combined);
+    if (readStorage(to) === combined) writeStorage(from, "");
+  }
+  if (id in state.modelChoices)
+    chooseModel(state.modelChoices[id], canonical);
+  if (id in state.reasoningChoices)
+    chooseReasoning(state.reasoningChoices[id], canonical);
+  rememberSession(canonical, true);
+  if (parent)
+    writeStorage("child-view", JSON.stringify({ id: canonical, parent }));
+  return true;
+}
 export async function openSession(id, parent = null, replace = false) {
   try {
     const saved = JSON.parse(readStorage("child-view", "null"));
@@ -354,26 +376,9 @@ export async function openSession(id, parent = null, replace = false) {
     );
     if (generation === navigation && request >= historyCommitted) {
       const canonical = result.session_id || id;
-      if (canonical !== id) {
-        await migratePendingImages(`draft.${id}`, `draft.${canonical}`);
-        if (generation !== navigation || request < historyCommitted) return;
-        // Compaction can rotate the transcript ID. Carry unsent text with it,
-        // retaining both drafts if another tab already wrote to the continuation.
-        const from = `draft.${id}`, to = `draft.${canonical}`;
-        const draft = readStorage(from), existing = readStorage(to);
-        if (draft) {
-          const combined = existing && existing !== draft ? `${existing}\n\n${draft}` : draft;
-          writeStorage(to, combined);
-          if (readStorage(to) === combined) writeStorage(from, "");
-        }
-        if (id in state.modelChoices)
-          chooseModel(state.modelChoices[id], canonical);
-        if (id in state.reasoningChoices)
-          chooseReasoning(state.reasoningChoices[id], canonical);
-        rememberSession(canonical, true);
-        if (parent)
-          writeStorage("child-view", JSON.stringify({ id: canonical, parent }));
-      }
+      if (!await migrateCanonical(id, canonical, parent,
+        () => generation === navigation && request >= historyCommitted)) return;
+      if (generation !== navigation || request < historyCommitted) return;
       historyCommitted = request;
       update({
         active: canonical,
@@ -405,17 +410,16 @@ export async function refreshHistory(id, commit = true, additionalState = null, 
   const canCommit = () => commit && !signal?.aborted && state.active === id &&
     generation === navigation && request >= historyCommitted &&
     (typeof commit !== "function" || commit());
-  if (result.canonical && canCommit()) {
-    await openSession(id, state.readOnlyParent, true);
-    return state.history;
-  }
   const history = await withCachedImages(
     result.session_id || id,
     result.data || [],
   );
   if (canCommit()) {
+    const canonical = result.canonical || id;
+    if (!await migrateCanonical(id, canonical, state.readOnlyParent, canCommit) || !canCommit()) return history;
     historyCommitted = request;
     update({
+      ...(canonical !== id ? { active: canonical, sessionDetails: null } : {}),
       history,
       loading: false,
       historyHasMore: !!result.has_more,
@@ -423,6 +427,7 @@ export async function refreshHistory(id, commit = true, additionalState = null, 
       // Retire a saved live reply in the same snapshot as its history appears.
       ...additionalState?.(history),
     });
+    if (canonical !== id) refreshSessionDetails(canonical).catch(() => {});
   }
   return history;
 }

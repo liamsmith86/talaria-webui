@@ -129,7 +129,18 @@ def test_refresh_compaction_uses_canonical_session_and_carries_draft(page, live_
     page.get_by_label("Message Hermes").fill("Draft survives external compaction")
     canonical = seed(live_app[1], "after-compaction", count=3)
     live_app[1].sessions[canonical]["parent_session_id"] = sid
+    requests = []
+    page.on("request", lambda request: requests.append(request.url))
+    page.evaluate("""async () => {
+        const s = await import('/static/store.js');
+        window.loadingTransitions = [];
+        window.stopTrackingHistory = s.beforeHistoryUpdate(() =>
+            window.loadingTransitions.push(s.state.loading));
+    }""")
     refresh(page, sid)
+    assert page.evaluate("window.loadingTransitions") == [False]
+    page.evaluate("window.stopTrackingHistory()")
+    assert len([url for url in requests if "/messages" in url]) == 1
     wait_for_store(page, "s => s.active === 'after-compaction'")
     assert "session=after-compaction" in page.url
     expect(page.get_by_label("Message Hermes")).to_have_value("Draft survives external compaction")
