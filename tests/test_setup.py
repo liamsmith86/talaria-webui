@@ -316,6 +316,43 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
 @pytest.mark.skipif(
     not os.getenv("HERMES_SOURCE"), reason="Set HERMES_SOURCE for native setup checks"
 )
+@pytest.mark.parametrize("setup_request", [{}, {"enable": True}])
+def test_native_hermes_external_api_key_is_detected_and_reused(tmp_path, setup_request):
+    source = Path(os.environ["HERMES_SOURCE"])
+    (tmp_path / ".env").write_text("BWS_ACCESS_TOKEN=test-bootstrap\nAPI_SERVER_ENABLED=true\n")
+    (tmp_path / "config.yaml").write_text(
+        "secrets:\n  bitwarden:\n    enabled: true\n    project_id: test-project\n"
+        "    access_token_env: BWS_ACCESS_TOKEN\n"
+    )
+    original_config = (tmp_path / "config.yaml").read_bytes()
+    script = """
+import runpy, sys
+from pathlib import Path
+import agent.secret_sources.bitwarden as bitwarden
+bitwarden.find_bws = lambda **kwargs: Path('/fake/bws')
+bitwarden.fetch_bitwarden_secrets = lambda **kwargs: (
+    {'API_SERVER_KEY': 'external-test-api-key'}, []
+)
+runpy.run_path(sys.argv[1], run_name='__main__')
+"""
+    result = subprocess.run(
+        [str(source / "venv/bin/python"), "-c", script,
+         str(Path(wizard.__file__).with_name("setup_hermes.py"))],
+        input=json.dumps(setup_request), text=True, capture_output=True, check=True,
+        cwd=tmp_path,
+        env={"PATH": os.environ["PATH"], "HOME": str(tmp_path), "HERMES_HOME": str(tmp_path)},
+        timeout=45,
+    )
+    data = json.loads(result.stdout.rsplit("TALARIA_SETUP_RESULT=", 1)[1])
+    assert data["enabled"] and data["key"] == "external-test-api-key"
+    assert "API_SERVER_KEY=" not in (tmp_path / ".env").read_text()
+    assert (tmp_path / "config.yaml").read_bytes() == original_config
+
+
+@pytest.mark.hermes
+@pytest.mark.skipif(
+    not os.getenv("HERMES_SOURCE"), reason="Set HERMES_SOURCE for native setup checks"
+)
 def test_native_hermes_key_reuse_plugin_and_config_preservation(tmp_path):
     source = Path(os.environ["HERMES_SOURCE"])
     python = source / "venv/bin/python"
