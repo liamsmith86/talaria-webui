@@ -127,11 +127,19 @@ def wire(app, adapter, **kwargs):
         log.warning("Talaria routes unavailable: incompatible Hermes API adapter")
         return
 
+    from .commands import CommandJobs
+
+    commands = CommandJobs()
+    app.on_cleanup.append(commands.close)
+
     async def dispatch_request(request):
-        return await dispatch(request, adapter)
+        return await dispatch(request, adapter, commands)
 
     for prefix in (PREFIX, f"/p/{{profile}}{PREFIX}"):
         app.router.add_get(f"{prefix}/capabilities", dispatch_request)
+        app.router.add_get(f"{prefix}/{{action:commands}}", dispatch_request)
+        app.router.add_post(f"{prefix}/{{action:commands}}", dispatch_request)
+        app.router.add_get(f"{prefix}/{{action:commands}}/{{command_id}}", dispatch_request)
         app.router.add_get(f"{prefix}/{{action:models}}", dispatch_request)
         app.router.add_post(f"{prefix}/{{action:runs}}", dispatch_request)
         app.router.add_get(
@@ -152,7 +160,7 @@ def register(ctx):
     ctx.register_hook("on_session_end", observations.end)
 
 
-async def dispatch(request, adapter):
+async def dispatch(request, adapter, commands=None):
     from aiohttp import web
 
     auth_error = adapter._check_auth(request)
@@ -164,7 +172,7 @@ async def dispatch(request, adapter):
             {"error": "Talaria plugin is not enabled for this profile."}, status=404
         )
     try:
-        return await dispatch_action(request, adapter)
+        return await dispatch_action(request, adapter, commands)
     except (ValueError, TypeError):
         return web.json_response(
             {"error": "This message cannot be changed safely. Refresh the session and try again."},
@@ -190,6 +198,7 @@ async def capabilities(adapter, db):
     from aiohttp import web
     from hermes_constants import get_hermes_home
 
+    from .commands import available
     from .context import load_context, supports_context_runs
     from .identity import inspect_home
 
@@ -201,6 +210,7 @@ async def capabilities(adapter, db):
             "version": 1,
             "revision": LOADED_REVISION,
             "plugin_version": PLUGIN_VERSION,
+            "commands": available(adapter),
             "response_details": True,
             "context_usage": True,
             "model_details": True,
@@ -298,7 +308,7 @@ async def session_details(request, db, sid, action):
     )
 
 
-async def dispatch_action(request, adapter):
+async def dispatch_action(request, adapter, commands=None):
     from aiohttp import web
 
     action = request.match_info.get("action", "capabilities")
@@ -317,6 +327,8 @@ async def dispatch_action(request, adapter):
     db = await adapter._ensure_session_db_async()
     if db is None:
         return web.json_response({"error": "Hermes session storage is unavailable."}, status=503)
+    if action == "commands" and commands is not None:
+        return await commands.dispatch(request, adapter, db)
     if action == "capabilities":
         return await capabilities(adapter, db)
     sid = request.match_info["session_id"]

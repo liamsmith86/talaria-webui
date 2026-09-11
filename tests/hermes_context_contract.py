@@ -305,6 +305,21 @@ async def main():
                 assert "EXPLICIT_INSTRUCTION" in json.dumps(seen[-1])
                 assert "UPDATED_PROFILE_INSTRUCTION" not in json.dumps(seen[-1])
                 assert adapter.active_agent_work_count() == 0
+                from hermes_commands_contract import verify_commands
+
+                # Session-persisted models resolve provider credentials separately from
+                # the global defaults. Keep that credential lookup on the simulator too.
+                with patch.object(
+                    adapter,
+                    "_resolve_provider_runtime",
+                    return_value={
+                        "provider": provider_name,
+                        "base_url": str(server.make_url("/v1")),
+                        "api_key": "fixture-only",
+                        "api_mode": "chat_completions",
+                    },
+                ):
+                    await verify_commands(client, db, model_name)
         await adapter.disconnect()
         db.close()
     print("Native ephemeral context, clean persistence, resumed turns, replay and admission passed")

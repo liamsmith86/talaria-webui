@@ -124,6 +124,13 @@ Run the Hermes commands in the same profile (use `hermes --profile NAME` for a
 named profile). A multiplexed gateway also needs the plugin in its primary profile.
 The plugin uses the same API key as Hermes; it does not require a separate key.
 
+Type `/` in chat to browse Hermes commands (plugin 1.2.0+). `/compress` and
+`/compact` use Hermes's native compressor; `here 2`, a focus topic, and
+`--preview` are supported. Results stay outside chat history. Session/model
+commands open the existing WebUI controls; terminal and messaging commands
+without an API equivalent are marked unavailable.
+
+
 ### Local plugin updates
 
 To link an already installed, enabled **bundled local** plugin to a managed Talaria installation,

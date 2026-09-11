@@ -84,6 +84,7 @@ async def discover(client):
                 **{
                     key: result.get(key) is True
                     for key in (
+                        "commands",
                         "response_details",
                         "context_usage",
                         "model_details",
@@ -133,3 +134,24 @@ async def session_extension(request: Request):
         request.method, f"{PREFIX}/sessions/{sid}/{action}", **payload
     )
     return JSONResponse(project_details(action, result))
+
+
+async def commands(request: Request):
+    from .routes import body, text_field
+
+    path = f"{PREFIX}/commands"
+    if command_id := request.path_params.get("command_id"):
+        path += f"/{identifier(command_id)}"
+    options = {}
+    if request.method == "POST":
+        data = await body(request, 12000)
+        options["json"] = {
+            key: text_field(data, key, limit)
+            for key, limit in (
+                ("command", 80),
+                ("args", 2000),
+                ("session_id", 256),
+                ("request_id", 128),
+            )
+        }
+    return JSONResponse(await request.app.state.hermes.request(request.method, path, **options))

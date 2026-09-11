@@ -142,6 +142,8 @@ def create_app(
             Route("/api/connection/test", routes.connection, methods=["POST"]),
             Route("/api/capabilities", routes.capabilities),
             Route("/api/models", routes.model_options),
+            Route("/api/commands", extensions.commands, methods=["GET", "POST"]),
+            Route("/api/commands/{command_id}", extensions.commands),
             Route("/api/agent", metadata.details),
             Route("/api/readiness", metadata.readiness),
             Route("/api/sessions", routes.sessions, methods=["GET", "POST"]),
