@@ -7,6 +7,64 @@ from .conftest import wait_for_store
 from .test_conversation_features import IMAGE, seed
 
 
+def test_send_acknowledgement_does_not_erase_new_draft_after_navigation(page, live_app):
+    sid = seed(live_app[1], "pending-send", count=2)
+    child = seed(live_app[1], "read-only-child", count=2)
+    page.evaluate("async sid => (await import('/static/store.js')).openSession(sid)", sid)
+    admissions = []
+    page.route("**/api/runs", lambda route: admissions.append(route))
+    composer = page.get_by_label("Message Hermes")
+    composer.fill("Original submitted message")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    try:
+        wait_for_store(page, "s => s.lives['pending-send']?.status === 'starting'")
+        page.evaluate(
+            "async ids => (await import('/static/store.js')).openSession(ids.child, {id:ids.sid})",
+            {"child": child, "sid": sid},
+        )
+        expect(page.locator(".composer")).to_have_count(0)
+        page.get_by_role("button", name="Back to parent session").click()
+        expect(composer).to_have_value("Original submitted message")
+        composer.fill("New draft while the original message is being accepted")
+    finally:
+        for route in admissions:
+            route.continue_()
+        page.unroute("**/api/runs")
+    wait_for_store(page, "s => s.lives['pending-send']?.status === 'completed'")
+    expect(composer).to_have_value("New draft while the original message is being accepted")
+    page.reload()
+    expect(composer).to_have_value("New draft while the original message is being accepted")
+
+
+def test_approval_answered_elsewhere_clears_only_matching_prompt(page, live_app):
+    sid = seed(live_app[1], "approval-sync", count=2)
+    page.evaluate("async sid => (await import('/static/store.js')).openSession(sid)", sid)
+    page.evaluate(
+        """async sid => {
+      const {update} = await import('/static/store.js');
+      const {applyEvent} = await import('/static/runs.js');
+      const live = {id:'test-run',status:'running',tools:[],text:'',userText:'Request',parts:[]};
+      update({lives:{[sid]:applyEvent(live, {event:'approval.request',
+        request_id:'second',command:'echo harmless',choices:['once','deny']})}});
+    }""",
+        sid,
+    )
+    card = page.get_by_role("region", name="Approval required")
+    expect(card).to_be_visible()
+    for request_id, remaining in [("first", True), ("second", False)]:
+        page.evaluate(
+            """async ({sid,request_id}) => {
+          const {state,update} = await import('/static/store.js');
+          const {applyEvent} = await import('/static/runs.js');
+          update({lives:{[sid]:applyEvent(state.lives[sid],
+            {event:'approval.responded',request_id,resolved:1})}});
+        }""",
+            {"sid": sid, "request_id": request_id},
+        )
+        expect(card).to_have_count(1 if remaining else 0)
+    wait_for_store(page, "s => s.lives['approval-sync'].status === 'running'")
+
+
 def test_repeated_default_branches_use_distinct_hermes_names(page, live_app):
     peer = live_app[1]
     peer.extension = {"session_fork": True}

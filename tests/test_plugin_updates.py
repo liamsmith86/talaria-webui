@@ -220,6 +220,8 @@ def test_systemd_only_adds_explicit_local_home(deployment, tmp_path, monkeypatch
 
 
 def test_worker_drops_privileges_and_does_not_inherit_secrets(tmp_path, monkeypatch):
+    from talaria import plugin_worker
+
     home = tmp_path / "hermes"
     home.mkdir()
     monkeypatch.setenv("SECRET_FOR_ROOT", "private")
@@ -230,17 +232,14 @@ def test_worker_drops_privileges_and_does_not_inherit_secrets(tmp_path, monkeypa
         lambda _: SimpleNamespace(pw_uid=1234, pw_gid=1234, pw_dir=str(home)),
     )
     calls = []
-    monkeypatch.setattr(
-        plugin_updates.subprocess,
-        "run",
-        lambda args, **kw: calls.append((args, kw)) or SimpleNamespace(returncode=0),
-    )
+    monkeypatch.setattr(setup, "find_hermes_python", lambda *a, **kw: Path("/local/python"))
+    monkeypatch.setattr(plugin_worker, "run", lambda *args: calls.append(args))
     plugin_updates.run_as_owner(home, tmp_path / "source", command="/local/hermes")
-    args, kwargs = calls[0]
-    assert args[-2:] == ["--hermes-command", "/local/hermes"]
-    assert kwargs["user"] == 1234 and kwargs["extra_groups"] == []
-    assert kwargs["env"]["HOME"] == str(home)
-    assert "SECRET_FOR_ROOT" not in kwargs["env"]
+    python, target, _, _, identity, env, _ = calls[0]
+    assert python == Path("/local/python") and target == home
+    assert identity["user"] == 1234 and identity["extra_groups"] == []
+    assert env["HOME"] == str(home)
+    assert "SECRET_FOR_ROOT" not in env
 
 
 def test_restart_waits_for_the_new_loaded_revision(tmp_path, monkeypatch):
@@ -275,13 +274,15 @@ def test_restart_waits_for_the_new_loaded_revision(tmp_path, monkeypatch):
     assert len(restarts) == 1 and len(reads) == 2
 
 
-def test_failed_deferred_restart_restores_previous_export(tmp_path):
+@pytest.mark.parametrize("exports", [1, 3])
+def test_failed_deferred_restart_restores_previous_export(tmp_path, exports):
     home = tmp_path / "hermes"
     source = bundle(tmp_path / "source", "old")
     plugin_install.install(home, source, lambda _: None)
     old = fingerprint(source)
-    bundle(source, "new")
-    plugin_install.install(home, source)  # Export now; restart later.
+    for number in range(exports):
+        bundle(source, f"new-{number}")
+        plugin_install.install(home, source)  # Export now; restart later.
     calls = []
 
     def restart(target):
@@ -293,6 +294,29 @@ def test_failed_deferred_restart_restores_previous_export(tmp_path):
         plugin_install.install(home, source, restart)
     assert calls == [fingerprint(source), old]
     assert fingerprint(home / "plugins/talaria") == old
+
+
+def test_interrupted_repeated_export_recovers_verified_plugin(tmp_path, monkeypatch):
+    home = tmp_path / "hermes"
+    source = bundle(tmp_path / "source", "verified")
+    plugin_install.install(home, source, lambda _: None)
+    verified = fingerprint(source)
+    bundle(source, "unverified")
+    plugin_install.install(home, source)
+    bundle(source, "next")
+    target = home / "plugins/talaria"
+    replace = Path.replace
+
+    def interrupted(path, destination):
+        if path.parent.name.startswith(".talaria-stage-") and destination == target:
+            raise OSError("Interrupted staged rename")
+        return replace(path, destination)
+
+    monkeypatch.setattr(Path, "replace", interrupted)
+    with pytest.raises(OSError, match="Interrupted staged rename"):
+        plugin_install.install(home, source)
+    assert fingerprint(target) == verified
+    assert (home / "plugins/.talaria-maintenance/restart-required").exists()
 
 
 def test_update_checks_do_not_touch_linked_plugin(deployment, monkeypatch):

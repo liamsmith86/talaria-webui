@@ -4,12 +4,13 @@ import argparse
 import json
 import os
 import shutil
+import socket
 import sys
 import tempfile
 from pathlib import Path
 
-from .deployment import DeploymentError, default_directory, locked
 from .hermes_plugin.release import fingerprint
+from .maintenance import DeploymentError, locked
 
 
 def require_bundled_target(home):
@@ -40,7 +41,7 @@ def restore(target, backup):
     backup.replace(target)
 
 
-def replace_plugin(source, target, backup):
+def replace_plugin(source, target, backup, *, preserve_backup=False):
     # The backup survives interruption between the two directory renames.
     with tempfile.TemporaryDirectory(prefix=".talaria-stage-", dir=backup.parent) as temporary:
         staged = Path(temporary) / "talaria"
@@ -56,10 +57,13 @@ def replace_plugin(source, target, backup):
                 (staged / path.name).chmod(0o600)
         if fingerprint(staged) != fingerprint(source):
             raise DeploymentError("Plugin staging verification failed.")
-        if backup.exists():
-            shutil.rmtree(backup)
+        previous = (
+            Path(temporary) / "previous-export" if preserve_backup and backup.exists() else backup
+        )
+        if previous.exists():
+            shutil.rmtree(previous)
         if target.exists():
-            target.replace(backup)
+            target.replace(previous)
         staged.replace(target)
 
 
@@ -67,7 +71,9 @@ def install_files(source, target, backup, pending):
     was_pending = pending.exists()
     pending.touch(mode=0o600)
     try:
-        replace_plugin(source, target, backup)
+        # Several exports can precede a restart. Keep the last verified version,
+        # rather than replacing its backup with another unverified export.
+        replace_plugin(source, target, backup, preserve_backup=was_pending)
     except BaseException:
         if not target.exists():
             restore(target, backup)
@@ -111,6 +117,8 @@ def install(home, source, restart=None):
 
 
 def main(argv):
+    from .deployment import default_directory
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--home", type=Path, default=Path.home() / ".hermes")
     parser.add_argument(
@@ -151,6 +159,21 @@ def main(argv):
     if not args.restart:
         print("Enable with `hermes plugins enable talaria`, then restart the gateway.")
         print("For multiplexed gateways, also install and enable it in the primary profile.")
+
+
+def owned_worker():
+    """Use the same replacement transaction while the parent verifies restarts."""
+    home, source, fd, restart = sys.argv[1:]
+    with socket.socket(fileno=int(fd)) as sock, sock.makefile("rwb") as stream:
+        sock.settimeout(1350)
+
+        def verify(_target):
+            stream.write(b"restart\n")
+            stream.flush()
+            if stream.readline(8) != b"ok\n":
+                raise DeploymentError("The parent could not verify the Hermes restart.")
+
+        install(Path(home), Path(source), verify if restart == "1" else None)
 
 
 if __name__ == "__main__":

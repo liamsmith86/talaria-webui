@@ -3,8 +3,6 @@
 import os
 import pwd
 import shutil
-import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -15,6 +13,9 @@ from .hermes_plugin.release import fingerprint
 
 
 def run_as_owner(home, source, restart=True, command=None):
+    from .plugin_worker import run
+    from .setup import find_hermes_python
+
     owner = pwd.getpwuid(home.stat().st_uid)
     identity = {}
     if os.geteuid() == 0:
@@ -33,28 +34,13 @@ def run_as_owner(home, source, restart=True, command=None):
         env.update(
             XDG_RUNTIME_DIR=str(runtime), DBUS_SESSION_BUS_ADDRESS=f"unix:path={runtime}/bus"
         )
-    args = [
-        sys.executable,
-        "-m",
-        "talaria.plugin_install",
-        "--home",
-        str(home),
-        "--source",
-        str(source),
-    ]
-    if restart:
-        args.append("--restart")
-    if command:
-        args.extend(["--hermes-command", str(command)])
-    result = subprocess.run(
-        args, env=env, cwd="/", capture_output=True, text=True, timeout=1320, **identity
+    python = find_hermes_python(home, command=command)
+    if python is None:
+        raise DeploymentError("Cannot locate Hermes's Python for local plugin maintenance.")
+    verify = (
+        (lambda: restart_and_verify(home, home / "plugins/talaria", command)) if restart else None
     )
-    if result.returncode:
-        # Native diagnostics may contain credentials; never put them in browser job state.
-        raise DeploymentError(
-            "Local plugin maintenance failed. Previous plugin files are retained for recovery; "
-            "check the Hermes gateway status."
-        )
+    run(python, home, source, owner, identity, env, verify)
 
 
 def restart_and_verify(home, target, command):

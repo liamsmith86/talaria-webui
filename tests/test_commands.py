@@ -5,6 +5,7 @@ import json
 from playwright.sync_api import expect
 
 from .test_app import signed_in
+from .test_conversation_features import png
 
 CATALOG = [
     {
@@ -383,6 +384,11 @@ def test_compaction_continuation_preserves_unsent_draft(page, live_app):
     expect(page.locator(".command-card")).to_contain_text("Compressing context")
     draft = "Keep my unsent draft.\nIncluding this second line."
     composer.fill(draft)
+    page.get_by_label("File attachment").set_input_files(
+        {"name": "draft.png", "mimeType": "image/png", "buffer": png()}
+    )
+    attachment = page.get_by_role("button", name="Remove draft.png", exact=True)
+    expect(attachment).to_be_visible()
     page.evaluate("window.compactionPageMarker = true")
     page.route(
         f"**/api/sessions/{sid}/messages",
@@ -396,10 +402,12 @@ def test_compaction_continuation_preserves_unsent_draft(page, live_app):
     finished = True
     expect(page.locator(".command-card")).to_contain_text("Context compressed")
     expect(composer).to_have_value(draft)
+    expect(attachment).to_be_visible()
     assert page.evaluate("window.compactionPageMarker") is True
     assert page.evaluate("async () => (await import('/static/store.js')).state.active") == continued
     page.reload()
     expect(composer).to_have_value(draft)
+    expect(attachment).to_be_visible()
     assert not live_app[1].runs
 
 

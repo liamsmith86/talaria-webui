@@ -108,6 +108,7 @@ def browser(playwright_runtime):
 def page(browser, live_app):
     # Reuse the process, but isolate cookies, storage, permissions, and routes per test.
     context = browser.new_context(viewport={"width": 1440, "height": 960})
+    errors = capture_browser_errors(context)
     try:
         page = context.new_page()
         page.goto(live_app[0])
@@ -120,11 +121,34 @@ def page(browser, live_app):
         # before tests install artificial session state.
         page.evaluate("async () => (await import('/static/store.js')).refreshSessions()")
         yield page
+        assert not errors, f"Unhandled browser errors: {errors}"
     finally:
         # Let intercepted requests finish before closing their response context.
         for tab in context.pages:
             tab.unroute_all(behavior="wait")
         context.close()
+
+
+def capture_browser_errors(context):
+    # WebKit's inspector promotes some caught unload-time fetch diagnostics to
+    # Playwright pageerror. DOM events identify actual uncaught exceptions and
+    # rejected promises, without allowing particular messages or browser types.
+    errors = []
+    context.expose_binding("__talariaReportError", lambda source, error: errors.append(error))
+    context.add_init_script("""(() => {
+      const report = error => window.__talariaReportError(error).catch(() => {});
+      addEventListener('error', event => {
+        if (event instanceof ErrorEvent) report({
+          kind: 'error', message: event.message,
+          stack: event.error?.stack || '', url: event.filename || location.href,
+        });
+      });
+      addEventListener('unhandledrejection', event => report({
+        kind: 'rejection', message: String(event.reason),
+        stack: event.reason?.stack || '', url: location.href,
+      }));
+    })()""")
+    return errors
 
 
 def wait_for_store(page, predicate):

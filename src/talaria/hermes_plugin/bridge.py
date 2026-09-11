@@ -227,37 +227,6 @@ async def capabilities(adapter, db):
     )
 
 
-async def fork_session(adapter, request, db, sid):
-    from aiohttp import web
-
-    if not callable(getattr(db, "patch_session_model_config", None)):
-        return web.json_response({"error": "Branch metadata unavailable."}, status=404)
-    # Native fork validates titles only after copying the session.
-    # Reject known conflicts before it can leave an unmarked child.
-    data = await request.json()
-    if isinstance(data, dict) and data.get("title") is not None:
-        try:
-            title = db.sanitize_title(str(data["title"]))
-            if title and await asyncio.to_thread(db.get_session_by_title, title):
-                raise ValueError("That session name is already in use.")
-        except ValueError as exc:
-            return web.json_response(
-                {"error": {"code": "invalid_title", "message": str(exc)}},
-                status=400,
-            )
-    # Hermes's API fork omits the marker its CLI writes. Without
-    # it, resume resolution can redirect the original into the copy.
-    # Delegate the operation, then attach the native lineage marker
-    # before returning the new session to the client.
-    response = await adapter._handle_fork_session(request)
-    if response.status == 201:
-        fork = json.loads(response.body)["session"]
-        if fork.get("parent_session_id") != sid or fork.get("id") == sid:
-            raise ValueError("Unexpected branch identity")
-        await asyncio.to_thread(db.patch_session_model_config, fork["id"], {"_branched_from": sid})
-    return response
-
-
 async def session_details(request, db, sid, action):
     from aiohttp import web
     from hermes_constants import get_hermes_home
@@ -345,5 +314,7 @@ async def dispatch_action(request, adapter, commands=None):
     if session is None:
         return web.json_response({"error": "Session not found."}, status=404)
     if action == "fork":
+        from .forks import fork_session
+
         return await fork_session(adapter, request, db, sid)
     return await session_details(request, db, sid, action)

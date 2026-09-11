@@ -96,7 +96,7 @@ async def logout(request: Request):
 
 async def connection(request: Request):
     state = request.app.state
-    if request.method == "GET":
+    if request.method in {"GET", "HEAD"}:
         return JSONResponse(
             {
                 "url": state.settings.hermes_url,
@@ -199,7 +199,7 @@ async def model_options(request: Request):
 
 async def sessions(request: Request):
     client = request.app.state.hermes
-    if request.method == "GET":
+    if request.method in {"GET", "HEAD"}:
         try:
             offset = min(max(int(request.query_params.get("offset", "0")), 0), 1_000_000)
         except ValueError as exc:
@@ -246,7 +246,11 @@ async def session(request: Request):
             fields["pinned"] = data["pinned"]
         payload["json"] = fields
     return JSONResponse(
-        await request.app.state.hermes.request(request.method, f"/api/sessions/{sid}", **payload)
+        await request.app.state.hermes.request(
+            "GET" if request.method == "HEAD" else request.method,
+            f"/api/sessions/{sid}",
+            **payload,
+        )
     )
 
 

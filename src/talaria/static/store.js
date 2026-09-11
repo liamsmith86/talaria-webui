@@ -1,6 +1,6 @@
 import { useEffect, useState, readStorage, writeStorage } from "./lib.js";
 import { api, setCSRF } from "./api.js";
-import { withCachedImages } from "./attachments.js";
+import { migratePendingImages, withCachedImages } from "./attachments.js";
 import {
   modelInventory,
   readModelChoices,
@@ -325,9 +325,10 @@ export async function openSession(id, parent = null) {
       result.data || [],
     );
     if (generation === navigation && request >= historyCommitted) {
-      historyCommitted = request;
       const canonical = result.session_id || id;
       if (canonical !== id) {
+        await migratePendingImages(`draft.${id}`, `draft.${canonical}`);
+        if (generation !== navigation || request < historyCommitted) return;
         // Compaction can rotate the transcript ID. Carry unsent text with it,
         // retaining both drafts if another tab already wrote to the continuation.
         const from = `draft.${id}`, to = `draft.${canonical}`;
@@ -345,6 +346,7 @@ export async function openSession(id, parent = null) {
         if (parent)
           writeStorage("child-view", JSON.stringify({ id: canonical, parent }));
       }
+      historyCommitted = request;
       update({
         active: canonical,
         history,

@@ -248,6 +248,11 @@ export function applyEvent(live, event) {
     next.approval = event;
     next.status = "waiting_for_approval";
   }
+  if (type === "approval.responded" && live.approval &&
+    event.request_id === live.approval.request_id) {
+    next.approval = null;
+    next.status = "running";
+  }
   if (type?.startsWith("run.") && terminal.has(type.slice(4))) {
     next.status = type.slice(4);
     next.outcomeUnknown = event.outcome_unknown === true;

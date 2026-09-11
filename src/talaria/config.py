@@ -9,6 +9,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import httpx
+
 
 @dataclass
 class Settings:
@@ -51,7 +53,14 @@ def validate_url(value: str, *, api: bool = True) -> str:
     path = url.path.rstrip("/")
     if api and path.endswith("/v1"):
         path = path[:-3]
-    return f"{url.scheme}://{url.netloc}{path}"
+    result = f"{url.scheme}://{url.netloc}{path}"
+    try:
+        httpx.URL(result)
+    except httpx.InvalidURL as exc:
+        raise ValueError(
+            "Enter an HTTP or HTTPS address with a valid hostname or IP address."
+        ) from exc
+    return result
 
 
 def validate_public_url(value: str) -> str:

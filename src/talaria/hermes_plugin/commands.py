@@ -100,7 +100,7 @@ class CommandJobs:
         from hermes_constants import get_hermes_home
 
         scope = str(get_hermes_home())
-        if request.method == "GET":
+        if request.method in {"GET", "HEAD"}:
             jid = request.match_info.get("command_id")
             if not jid:
                 return web.json_response(

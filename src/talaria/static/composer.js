@@ -10,10 +10,12 @@ import {
 } from "./lib.js";
 import { useCommands } from "./commands.js";
 import { sendMessage, stopRun, running } from "./runs.js";
-import { fail, supports, navigationVersion } from "./store.js";
+import { fail, supports, navigationVersion, state } from "./store.js";
 import {
   prepareImage,
+  beginPendingImages,
   pendingStorage,
+  consumePendingImages,
   MAX_IMAGES_TOTAL,
 } from "./attachments.js";
 import { sessionReasoning, sessionModel, reasoningLabel } from "./models.js";
@@ -138,11 +140,13 @@ export function Composer({
         setImages([]);
         textarea.current?.focus();
       }
-      writeStorage(`draft.${sid}`, "");
-      pendingStorage(`draft.${sid}`, null).catch(() => {});
-      if (generation === navigationVersion()) {
-        writeStorage(key, "");
-        pendingStorage(key, null).catch(() => {});
+      // A component can be replaced while admission is pending. Consume only
+      // this submission; a newer composer may already have saved another draft.
+      for (const savedKey of new Set([key, `draft.${sid}`])) {
+        const saved = readStorage(savedKey);
+        if (saved === submittedDraft || (savedKey !== key && saved === text))
+          writeStorage(savedKey, "");
+        consumePendingImages(savedKey, attachments).catch(() => {});
       }
     } catch (error) {
       fail(error);
@@ -152,7 +156,7 @@ export function Composer({
     }
   }
   async function attach(files) {
-    if (!files.length || operation.current || submission.current) return;
+    if (!files.length || operation.current || submission.current || state.loading) return;
     if (active) {
       setAttachmentError(
         "Attachments can be sent after this response finishes.",
@@ -160,6 +164,7 @@ export function Composer({
       return;
     }
     operation.current = true;
+    const finish = beginPendingImages(key);
     setAttaching(true);
     setAttachmentError("");
     try {
@@ -234,13 +239,15 @@ export function Composer({
     } catch (e) {
       if (currentKey.current === key) setAttachmentError(e.message);
     } finally {
+      finish();
       operation.current = false;
       setAttaching(false);
     }
   }
   async function removeImage(image) {
-    if (operation.current || submission.current || loadingImages) return;
+    if (operation.current || submission.current || loadingImages || state.loading) return;
     operation.current = true;
+    const finish = beginPendingImages(key);
     setAttaching(true);
     setAttachmentError("");
     const next = images.filter((item) => item.id !== image.id);
@@ -250,6 +257,7 @@ export function Composer({
     } catch (e) {
       if (currentKey.current === key) setAttachmentError(e.message);
     } finally {
+      finish();
       operation.current = false;
       setAttaching(false);
     }
@@ -290,7 +298,7 @@ export function Composer({
             <${IconButton}
               name="close"
               label=${`Remove ${image.name}`}
-              disabled=${sending || attaching}
+              disabled=${sending || attaching || app.loading}
               onClick=${() => removeImage(image)}
             />
           </div>`,
@@ -359,6 +367,7 @@ export function Composer({
           name="plus"
           label="Attach files"
           disabled=${!app.connected ||
+          app.loading ||
           active ||
           attaching ||
           sending ||
