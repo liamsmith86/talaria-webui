@@ -328,6 +328,15 @@ export async function openSession(id, parent = null) {
       historyCommitted = request;
       const canonical = result.session_id || id;
       if (canonical !== id) {
+        // Compaction can rotate the transcript ID. Carry unsent text with it,
+        // retaining both drafts if another tab already wrote to the continuation.
+        const from = `draft.${id}`, to = `draft.${canonical}`;
+        const draft = readStorage(from), existing = readStorage(to);
+        if (draft) {
+          const combined = existing && existing !== draft ? `${existing}\n\n${draft}` : draft;
+          writeStorage(to, combined);
+          if (readStorage(to) === combined) writeStorage(from, "");
+        }
         if (id in state.modelChoices)
           chooseModel(state.modelChoices[id], canonical);
         if (id in state.reasoningChoices)

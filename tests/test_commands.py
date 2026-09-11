@@ -334,6 +334,7 @@ def test_compression_refresh_keeps_chat_visible_until_new_history_arrives(page, 
     expect(page.get_by_text("Original reply remains visible", exact=True)).to_be_visible()
     expect(page.locator(".history-loading")).to_have_count(0)
     page.wait_for_function("() => document.querySelector('.command-elapsed')?.textContent !== '0s'")
+    page.get_by_role("textbox", name="Message Hermes").fill("Draft during history refresh")
     assert len(history_requests) == 1
     history_requests[0].fulfill(
         json={
@@ -347,4 +348,98 @@ def test_compression_refresh_keeps_chat_visible_until_new_history_arrives(page, 
     expect(card).to_contain_text("Context compressed")
     expect(page.get_by_text("Saved continuation", exact=True)).to_be_visible()
     assert node.evaluate("el => el.isConnected && el === document.querySelector('.command-card')")
+    expect(page.get_by_role("textbox", name="Message Hermes")).to_have_value(
+        "Draft during history refresh"
+    )
     assert not peer.runs
+
+
+def test_compaction_continuation_preserves_unsent_draft(page, live_app):
+    sid = prepare(page, live_app)
+    with signed_in(live_app[0]) as client:
+        continued = client.post("/api/sessions", json={"title": "Continued session"}).json()["id"]
+    finished = False
+    page.route(
+        "**/api/commands",
+        lambda route: route.fulfill(
+            json={"commands": CATALOG} if route.request.method == "GET" else {"status": "running"}
+        ),
+    )
+    page.route(
+        "**/api/commands/*",
+        lambda route: route.fulfill(
+            json={
+                "status": "completed" if finished else "running",
+                "session_id": continued,
+                "changed": True,
+                "text": "Context compressed",
+            }
+        ),
+    )
+    composer = page.get_by_role("textbox", name="Message Hermes")
+    composer.fill("/compress ")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(composer).to_have_value("")
+    expect(page.locator(".command-card")).to_contain_text("Compressing context")
+    draft = "Keep my unsent draft.\nIncluding this second line."
+    composer.fill(draft)
+    page.evaluate("window.compactionPageMarker = true")
+    page.route(
+        f"**/api/sessions/{sid}/messages",
+        lambda route: route.fulfill(
+            json={
+                "session_id": continued,
+                "data": [],
+            }
+        ),
+    )
+    finished = True
+    expect(page.locator(".command-card")).to_contain_text("Context compressed")
+    expect(composer).to_have_value(draft)
+    assert page.evaluate("window.compactionPageMarker") is True
+    assert page.evaluate("async () => (await import('/static/store.js')).state.active") == continued
+    page.reload()
+    expect(composer).to_have_value(draft)
+    assert not live_app[1].runs
+
+
+def test_command_acknowledgement_preserves_draft_after_leaving_child_view(page, live_app):
+    sid = prepare(page, live_app)
+    with signed_in(live_app[0]) as client:
+        child = client.post("/api/sessions", json={"title": "Read-only child"}).json()["id"]
+    admissions = []
+    page.route(
+        "**/api/commands",
+        lambda route: (
+            route.fulfill(json={"commands": CATALOG})
+            if route.request.method == "GET"
+            else admissions.append(route)
+        ),
+    )
+    page.route(
+        "**/api/commands/*",
+        lambda route: route.fulfill(
+            json={
+                "status": "completed",
+                "session_id": sid,
+                "text": "Context compressed",
+            }
+        ),
+    )
+    composer = page.get_by_role("textbox", name="Message Hermes")
+    composer.fill("/compress ")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.locator(".command-card")).to_contain_text("Compressing context")
+    page.evaluate(
+        "async ids => (await import('/static/store.js')).openSession(ids.child, {id: ids.sid})",
+        {"child": child, "sid": sid},
+    )
+    expect(page.locator(".composer")).to_have_count(0)
+    page.get_by_role("button", name="Back to parent session").click()
+    composer.fill("New draft written before command acknowledgement")
+    assert len(admissions) == 1
+    admissions[0].fulfill(json={"status": "running"})
+    expect(page.locator(".command-card")).to_contain_text("Context compressed")
+    expect(composer).to_have_value("New draft written before command acknowledgement")
+    page.reload()
+    expect(composer).to_have_value("New draft written before command acknowledgement")

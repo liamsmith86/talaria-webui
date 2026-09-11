@@ -97,7 +97,8 @@ export function Composer({
   }, [draft]);
   async function send(e) {
     e?.preventDefault();
-    const text = currentDraft.current.trim();
+    const submittedDraft = currentDraft.current;
+    const text = submittedDraft.trim();
     const attachments = currentImages.current;
     if (
       commands.busy ||
@@ -115,8 +116,11 @@ export function Composer({
     setSending(true);
     try {
       if (await commands.submit(text, attachments)) {
-        if (currentKey.current === key) chooseCommand("");
-        writeStorage(key, "");
+        const saved = readStorage(key);
+        if (currentKey.current === key && currentDraft.current === submittedDraft &&
+          (!saved || saved === submittedDraft))
+          chooseCommand("");
+        if (readStorage(key) === submittedDraft) writeStorage(key, "");
         return;
       }
       const sid = await sendMessage(text, model, {
