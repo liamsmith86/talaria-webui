@@ -313,6 +313,12 @@ class Deployment:
             shutil.rmtree(release)
         uv = shutil.which("uv")
         if not uv:
+            # install.sh can install uv without changing the user's shell PATH.
+            locations = [str(Path.home() / ".local/bin"), "/usr/local/bin"]
+            if sys.platform == "darwin":
+                locations.append("/opt/homebrew/bin")
+            uv = shutil.which("uv", path=os.pathsep.join(locations))
+        if not uv:
             raise DeploymentError("Install uv to build updates: https://docs.astral.sh/uv/")
         release.mkdir(parents=True)
         try:

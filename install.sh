@@ -69,6 +69,11 @@ elevated() {
     elif command -v sudo >/dev/null 2>&1; then sudo "$@"
     else fail 'Install the missing system packages as administrator, then re-run.'; fi
 }
+# Find standard user tools even in a minimal SSH environment.
+export PATH="${HOME}/.local/bin:/usr/local/bin:$PATH"
+if [ "$(uname -s)" = Darwin ] && [ -d /opt/homebrew/bin ]; then
+    export PATH="/opt/homebrew/bin:$PATH"
+fi
 if ! command -v git >/dev/null 2>&1 ||
    { ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; }; then
     confirm 'Install Git, curl, and CA certificates using the system package manager?'
@@ -96,8 +101,6 @@ download() {
         curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --retry 3 --connect-timeout 20 --max-time 300 "$1" -o "$2"
     else wget --https-only --timeout=30 --tries=3 -q "$1" -O "$2"; fi
 }
-# Include the standard uv location without modifying any shell startup files.
-export PATH="${HOME}/.local/bin:/usr/local/bin:$PATH"
 if ! command -v uv >/dev/null 2>&1; then
     confirm 'Install pinned uv 0.12.9 from Astral?'
     download https://astral.sh/uv/0.12.9/install.sh "$work/uv.sh"
