@@ -31,7 +31,7 @@ Existing installations update Talaria without repeating setup or Hermes changes.
   --directory PATH --config PATH
   --bind local|lan|all          Default: local; --host IP overrides
   --port PORT --public-url URL  Public URL may include /talaria
-  --password-file PATH         Read a chosen WebUI password (12+ characters)
+  --password-file PATH         Read a chosen WebUI password (4+ characters)
   --hermes-home PATH --hermes-python PATH
   --hermes-url URL --hermes-key-file PATH
   --enable-hermes-api           Enable local Hermes API; reuse or create its key
