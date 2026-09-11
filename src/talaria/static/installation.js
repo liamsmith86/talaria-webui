@@ -14,6 +14,7 @@ const phases = {
   building: "Preparing update…",
   verifying: "Verifying update…",
   restarting: "Restarting Talaria…",
+  plugin: "Updating local Hermes plugin…",
   recovering: "Restoring previous release…",
 };
 
@@ -164,6 +165,7 @@ export function Installation() {
       <p class="installation-status" role="status">${busy ? phase : problem ? "Update unavailable" : available
         ? "Update available" : info?.update?.checked_at ? "Up to date" : "Not checked"}</p>
       ${problem && !busy && html`<p class="form-error" role="alert">${problem}</p>`}
+      ${available && info?.updates_local_plugin && html`<p class="field-help">Hermes restarts if its plugin changes.</p>`}
       ${info?.can_update ? html`<div class="installation-actions">
         <button class="button secondary" disabled=${busy} onClick=${() => act("check")}>
           <${Icon} name="refresh" size=${16} />Check for updates

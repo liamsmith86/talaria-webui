@@ -105,6 +105,8 @@ def test_plugin_export_replaces_stale_same_second_bytecode(tmp_path, monkeypatch
     package = tmp_path / "package"
     source = package / "hermes_plugin"
     source.mkdir(parents=True)
+    (source / "plugin.yaml").write_text("name: talaria\n")
+    (source / "__init__.py").touch()
     (source / "identity.py").write_text('VALUE = "new"\n')
     monkeypatch.setattr(plugin_install, "__file__", str(package / "plugin_install.py"))
     target = tmp_path / "hermes/plugins/talaria"
@@ -128,6 +130,8 @@ def test_interrupted_plugin_copy_keeps_the_previous_module(tmp_path, monkeypatch
     package = tmp_path / "package"
     source = package / "hermes_plugin"
     source.mkdir(parents=True)
+    (source / "plugin.yaml").write_text("name: talaria\n")
+    (source / "__init__.py").touch()
     (source / "identity.py").write_text('VALUE = "new"\n')
     monkeypatch.setattr(plugin_install, "__file__", str(package / "plugin_install.py"))
     target = tmp_path / "hermes/plugins/talaria"
@@ -135,11 +139,11 @@ def test_interrupted_plugin_copy_keeps_the_previous_module(tmp_path, monkeypatch
     module = target / "identity.py"
     module.write_text('VALUE = "old"\n')
 
-    def failed_copy(source, destination):
-        destination.write(b"incomplete")
+    def failed_copy(source, destination, **kwargs):
+        Path(destination).write_bytes(b"incomplete")
         raise OSError("Interrupted copy")
 
-    monkeypatch.setattr(plugin_install.shutil, "copyfileobj", failed_copy)
+    monkeypatch.setattr(plugin_install.shutil, "copyfile", failed_copy)
     with pytest.raises(OSError, match="Interrupted"):
         plugin_install.main(["--home", str(tmp_path / "hermes")])
     assert module.read_text() == 'VALUE = "old"\n'

@@ -463,6 +463,12 @@ class Deployment:
                 self.config["health_url"], info.get("commit") if info.get("health_commit") else None
             )
 
+    def sync_plugin(self, release):
+        from .plugin_updates import sync
+
+        if release:
+            sync(self, release)
+
     def recover(self):
         journal = self.root / "activation.json"
         if not journal.exists():
@@ -476,6 +482,7 @@ class Deployment:
         if "manager" in data:
             select(self.root, "manager", data["manager"])
         if data["current"]:
+            self.sync_plugin(data["current"])
             self.restart()
             self.verify_running(data["current"])
         journal.unlink()
@@ -492,6 +499,7 @@ class Deployment:
             },
         )
         try:
+            self.sync_plugin(target)
             select(self.root, "current", target)
             self.restart()
             self.verify_running(target)
@@ -563,6 +571,7 @@ class Deployment:
                     )
                 if not available:
                     if not check:
+                        self.sync_plugin(selected(self.root, "current"))
                         self.launcher()
                     self.report(f"Already up to date ({commit[:10]}).")
                     return

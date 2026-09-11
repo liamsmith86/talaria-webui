@@ -69,6 +69,11 @@ def service_plan(kind, root, config):
         content += "Restart=on-failure\nRestartSec=3\nTimeoutStopSec=20\nUMask=0077\n"
         content += "NoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\n"
         content += f"ReadWritePaths={unit_quote(root)} {unit_quote(config.parent)}\n"
+        from .installation import read_json
+
+        plugin = read_json(root / "deployment.json").get("hermes_plugin")
+        if plugin:
+            content += f"ReadWritePaths={unit_quote(plugin['home'])}\n"
         content += "Environment=PYTHONUNBUFFERED=1\nEnvironment=PYTHONDONTWRITEBYTECODE=1\n"
         content += f"Environment={unit_quote('HOME=' + str(Path.home()))}\n"
         # The launcher retains install permissions and drops HTTP to account.
@@ -236,7 +241,7 @@ def check_service_account(plan):
             raise DeploymentError("The talaria-webui account is unsuitable for a service.")
 
 
-def migrate_service(deployment):
+def migrate_service(deployment, *, refresh=False):
     """Upgrade only our unmodified app unit; restore it if the new launcher fails."""
     import hashlib
 
@@ -244,7 +249,7 @@ def migrate_service(deployment):
 
     metadata = deployment.config
     owned = metadata.get("setup")
-    if not owned or metadata.get("supervised"):
+    if not owned or (metadata.get("supervised") and not refresh):
         return
     if (owned["scope"] == "system") != (os.geteuid() == 0):
         raise DeploymentError(
@@ -257,6 +262,8 @@ def migrate_service(deployment):
     previous = path.read_text()
     if hashlib.sha256(previous.encode()).hexdigest() != owned["service_sha256"]:
         raise DeploymentError("Service configuration changed; it was preserved.")
+    if previous == plan["text"] and metadata.get("supervised"):
+        return
     upgraded = {
         **metadata,
         "supervised": True,

@@ -12,6 +12,7 @@ from agent.api_request_hooks import ApiRequestHooksMixin
 from agent.context_compressor import _SUMMARY_END_MARKER, HISTORICAL_TASK_HEADING, SUMMARY_PREFIX
 from hermes_cli import inventory
 from hermes_cli import models_reasoning_caps as native_caps
+from hermes_cli.plugins_discovery import scan_directory
 from hermes_state import SessionDB
 from providers import get_provider_profile
 
@@ -306,3 +307,14 @@ async def http_contract():
 asyncio.run(http_contract())
 db.close()
 print("Native Hermes contracts passed")
+
+
+# Maintenance copies must never be discovered as additional enabled plugins.
+
+active_copy = home / "plugins/talaria"
+active_copy.mkdir(parents=True, exist_ok=True)
+(active_copy / "plugin.yaml").write_text("name: talaria\nversion: 'new'\n")
+maintenance_copy = home / "plugins/.talaria-maintenance/backups/talaria"
+maintenance_copy.mkdir(parents=True)
+(maintenance_copy / "plugin.yaml").write_text("name: talaria\nversion: 'old'\n")
+assert [item.name for item in scan_directory(home / "plugins", "user")] == ["talaria"]

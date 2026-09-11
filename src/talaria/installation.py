@@ -59,6 +59,7 @@ def public_info(development: bool) -> dict:
             branch=str(config.get("branch", "main"))[:120],
             installed_at=release_info(root / "current")["installed_at"],
             can_update=(root / SOCKET).exists(),
+            updates_local_plugin=isinstance(config.get("hermes_plugin"), dict),
             operation={
                 key: value
                 for key, value in read_json(root / JOB).items()
