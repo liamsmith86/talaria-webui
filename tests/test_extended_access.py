@@ -20,7 +20,7 @@ def open_seed(page, peer, count=4, extension=True):
     sid = seed(peer, count=count)
     peer.sessions[sid]["source"] = "api_server"
     page.reload()
-    page.get_by_role("button", name="Design notes", exact=True).click()
+    page.get_by_role("link", name="Design notes", exact=True).click()
     expect(page.locator(".message")).to_have_count(count)
     return sid
 
@@ -232,6 +232,7 @@ def test_observation_store_is_bounded_and_profile_scoped(tmp_path):
     "contract,provider",
     [
         ("hermes_contract.py", "openai"),
+        ("hermes_restart_contract.py", "openai"),
         ("hermes_context_contract.py", "openai"),
         ("hermes_context_contract.py", "openrouter"),
         ("hermes_branch_contract.py", "openai"),

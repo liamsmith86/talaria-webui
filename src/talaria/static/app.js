@@ -1,5 +1,6 @@
 import {
   html,
+  isIMEKey,
   render,
   useEffect,
   useState,
@@ -137,7 +138,7 @@ function App() {
     const keydown = (e) => {
       if (
         e.defaultPrevented ||
-        e.isComposing ||
+        isIMEKey(e) ||
         document.querySelector("dialog[open]")
       )
         return;

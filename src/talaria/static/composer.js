@@ -1,5 +1,6 @@
 import {
   html,
+  isIMEKey,
   useEffect,
   useRef,
   useState,
@@ -339,11 +340,10 @@ export function Composer({
           writeStorage(key, e.target.value);
         }}
         onKeyDown=${(e) => {
-          if (commands.keyDown(e)) return;
+          if (isIMEKey(e) || commands.keyDown(e)) return;
           if (
             e.key === "Enter" &&
             !e.shiftKey &&
-            !e.isComposing &&
             !matchMedia("(pointer: coarse)").matches
           ) {
             e.preventDefault();

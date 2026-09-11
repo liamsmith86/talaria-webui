@@ -89,7 +89,7 @@ def test_long_history_and_malicious_markdown(page, live_app):
     requested = []
     page.on("request", lambda r: requested.append(r.url))
     page.reload()
-    page.get_by_role("button", name="A long session", exact=True).click()
+    page.get_by_role("link", name="A long session", exact=True).click()
     expect(page.get_by_role("button", name="Load earlier messages")).to_be_visible()
     page.get_by_role("button", name="Load earlier messages").click()
     expect(page.get_by_text("History item 0", exact=True)).to_be_visible()

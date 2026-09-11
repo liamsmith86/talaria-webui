@@ -34,14 +34,15 @@ def pytest_sessionfinish(session, exitstatus):
             session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
-def serve(app):
+def serve(app, port=0):
     # Some hosts allocate low ephemeral ports, including browser-blocked ports.
     # Keep the socket bound while selecting a port outside that range.
     while True:
         sock = socket.socket()
-        sock.bind(("127.0.0.1", 0))
-        port = sock.getsockname()[1]
-        if port >= 16384:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("127.0.0.1", port))
+        bound_port = sock.getsockname()[1]
+        if bound_port >= 16384:
             break
         sock.close()
     server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False))
@@ -53,7 +54,7 @@ def serve(app):
         time.sleep(0.02)
     else:
         raise RuntimeError("Test server did not start")
-    return server, thread, f"http://127.0.0.1:{port}"
+    return server, thread, f"http://127.0.0.1:{bound_port}"
 
 
 @pytest.fixture

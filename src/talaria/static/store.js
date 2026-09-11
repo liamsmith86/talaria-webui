@@ -150,6 +150,8 @@ export async function refreshProfiles() {
   return data;
 }
 export async function connect(configured = true) {
+  // Connection edits can replace Hermes while its previous discovery is pending.
+  modelsPending = null;
   if (!configured) {
     update({ connected: false, modal: "connection" });
     return;
@@ -169,9 +171,7 @@ export async function connect(configured = true) {
       ? refreshSessions()
       : Promise.resolve(update({ sessions: [], hasMore: false, history: [] }));
     if (caps.features?.model_options) {
-      refreshModels().catch(() =>
-        update({ models: [], providers: [], defaultModel: null }),
-      );
+      refreshModels().catch(() => {});
     } else update({ models: [], providers: [], defaultModel: null });
     refreshReadiness();
     const last = selectedSession();
@@ -187,8 +187,23 @@ export async function connect(configured = true) {
     fail(error);
   }
 }
-export async function refreshModels(force = false) {
-  update(modelInventory(await api(force ? "/models?refresh=1" : "/models")));
+let modelsPending;
+export function refreshModels(force = false) {
+  if (modelsPending && (!force || modelsPending.force)) return modelsPending.promise;
+  const request = { force };
+  modelsPending = request;
+  request.promise = api(force ? "/models?refresh=1" : "/models")
+    .then((data) => {
+      if (modelsPending === request) update(modelInventory(data));
+    })
+    .catch((error) => {
+      // A superseded failure must not erase a newer catalog or show a stale error.
+      if (modelsPending === request) throw error;
+    })
+    .finally(() => {
+      if (modelsPending === request) modelsPending = null;
+    });
+  return request.promise;
 }
 let readinessPending;
 export function refreshReadiness() {

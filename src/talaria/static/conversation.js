@@ -13,6 +13,7 @@ import { CommandCard, commandRunning } from "./command-activity.js";
 import { Clarification } from "./clarification.js";
 import { Markdown } from "./markdown.js";
 import { ToolCode } from "./tool-code.js";
+import { ToolResult } from "./tool-result.js";
 import { approve, retrySubmission, running } from "./runs.js";
 import {
   state,
@@ -66,7 +67,6 @@ function ToolCard({ tool }) {
     () => toolText(tool.preview, !isAgent),
     [tool.preview, isAgent],
   );
-  const output = useMemo(() => toolText(tool.output), [tool.output]);
   const icon = isAgent
     ? "branch"
     : /search|browse|web/.test(tool.name)
@@ -85,11 +85,11 @@ function ToolCard({ tool }) {
           ? "Subagent"
           : (tool.name || "Tool").replace(/_/g, " ")}${isAgent &&
           html`<small>${tool.name}</small>`}</span
-      ><span class="tool-status"
+      ><span class="tool-status" title=${tool.status === "finished" ? "Outcome not reported by Hermes" : undefined}
         >${tool.status === "running"
           ? html`<span class="spinner" />`
           : html`<${Icon}
-              name=${failed ? "alert" : tool.status === "not_reported" ? "info" : "check"}
+              name=${failed ? "alert" : ["not_reported", "finished"].includes(tool.status) ? "info" : "check"}
               size=${15}
             />`}<span class="sr-only"
           >${typeof tool.status === "string"
@@ -109,7 +109,7 @@ function ToolCard({ tool }) {
           </p>`}
       ${tool.output !== undefined &&
       html`<small>Result</small>
-        <${ToolCode} text=${output || "No output"} label="Tool result"
+        <${ToolResult} text=${tool.output}
           enabled=${open && tool.status !== "running"} />`}
       ${tool.duration !== undefined && html`<small>${tool.duration}s</small>`}
       ${isAgent &&
@@ -368,6 +368,15 @@ function historyItems(history, live) {
     live?.userText
       ? (live?.tools || []).filter((t) => t.kind === "agent")
       : [];
+  // Only enrich the exact settled native turn. Repeated prompts or reused call
+  // IDs in older turns must not inherit the most recent run's outcome.
+  const settledEnd = live?.persisted && live.savedMessageId != null
+    ? history.findIndex((m) => m?.id === live.savedMessageId && m.role === "assistant") : -1;
+  const settledStart = history.findLastIndex((m, i) => i < settledEnd && m?.role === "user");
+  const outcomes = new Map(settledStart >= 0 ? (live.tools || [])
+    .filter((t) => t.kind !== "agent" && t.id != null &&
+      !["running", "not_reported"].includes(t.status))
+    .map((t) => [t.id, t]) : []);
   for (const [position, message] of history.entries()) {
     if (!message || typeof message !== "object") continue;
     if (message.display_kind === "hidden") continue;
@@ -375,8 +384,10 @@ function historyItems(history, live) {
       const call = calls.get(message.tool_call_id);
       if (call) {
         const output = plainContent(message.content);
-        call.output = output.slice(0, 20000);
-        call.status = "completed";
+        call.output = output;
+        const known = position > settledStart && position <= settledEnd ? outcomes.get(call.id) : null;
+        call.status = known?.status || "finished";
+        if (known?.duration !== undefined) call.duration = known.duration;
         if (call.name === "delegate_task" && output.length <= 250000) {
           try {
             const result = JSON.parse(output);
