@@ -16,7 +16,7 @@ def test_model_selection_and_session_actions(page, live_app):
     page.get_by_role("button", name="Conversation options", exact=True).click()
     page.get_by_role("button", name="Branch conversation", exact=True).click()
     page.get_by_role("button", name="Create branch").click()
-    expect(page.locator(".topbar-title")).to_have_text("A better name · branch")
+    expect(page.locator(".topbar-title")).to_have_text("A better name #2")
     assert len(live_app[1].sessions) == 2
     page.get_by_role("button", name="Conversation options", exact=True).click()
     page.get_by_role("button", name="Delete conversation", exact=True).click()
