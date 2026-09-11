@@ -453,6 +453,9 @@
   max-height: 300px;
   font-size: 10px;
 }
+.tool-content code {
+  font: inherit;
+}
 .tool-content p,
 .tool-content small {
   font-size: 11px;

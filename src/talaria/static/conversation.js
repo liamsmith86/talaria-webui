@@ -12,6 +12,7 @@ import {
 import { CommandCard, commandRunning } from "./command-activity.js";
 import { Clarification } from "./clarification.js";
 import { Markdown } from "./markdown.js";
+import { ToolCode } from "./tool-code.js";
 import { approve, retrySubmission, running } from "./runs.js";
 import {
   state,
@@ -50,6 +51,7 @@ function toolText(value, input = false) {
 }
 
 function ToolCard({ tool }) {
+  const [open, setOpen] = useState(false);
   const isAgent = tool.kind === "agent";
   const failed = [
     "failed",
@@ -73,6 +75,7 @@ function ToolCard({ tool }) {
         : "terminal";
   return html`<details
     class=${`tool-card ${tool.status === "running" ? "working" : ""}`}
+    onToggle=${(event) => setOpen(event.currentTarget.open)}
   >
     <summary>
       <span class="tool-icon"><${Icon} name=${icon} size=${17} /></span
@@ -96,9 +99,8 @@ function ToolCard({ tool }) {
     </summary>
     <div class="tool-content">
       ${preview
-        ? html`<pre tabindex="0" role="region" aria-label="Tool details">
-${preview}</pre
-          >`
+        ? html`<${ToolCode} text=${preview} label="Tool details"
+            shell=${!isAgent && tool.name === "terminal"} enabled=${open} />`
         : html`<p>
             ${tool.status === "running"
               ? "Hermes is using this tool."
@@ -106,9 +108,8 @@ ${preview}</pre
           </p>`}
       ${tool.output !== undefined &&
       html`<small>Result</small>
-        <pre tabindex="0" role="region" aria-label="Tool result">
-${output || "No output"}</pre
-        >`}
+        <${ToolCode} text=${output || "No output"} label="Tool result"
+          enabled=${open && tool.status !== "running"} />`}
       ${tool.duration !== undefined && html`<small>${tool.duration}s</small>`}
       ${isAgent &&
       html`<div class="child-facts">
