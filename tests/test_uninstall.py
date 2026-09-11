@@ -24,6 +24,11 @@ def installed(tmp_path):
     (root / "bin").mkdir()
     (root / "bin/talaria").write_text("launcher")
     (root / "current").symlink_to("releases/build")
+    (root / "supervisor").symlink_to("releases/build")
+    (root / ".build-cache/wheels").mkdir(parents=True)
+    (root / ".build-cache/wheels/cached").write_text("cached runtime dependency")
+    (root / "control.sock").touch()
+    write_json(root / "maintenance.json", {"status": "completed"})
     config = tmp_path / "private/config.json"
     save(config, Settings(password_hash="private", api_key="test-key"))
     for name in ("initial-password.txt", "profiles.json", "service.log"):

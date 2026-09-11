@@ -37,6 +37,7 @@ from .installation import read_json
 from .setup_services import (
     describe,
     install_service,
+    migrate_service,
     passwordless_sudo,
     preflight,
     prepare_account,
@@ -460,7 +461,12 @@ def update_existing(root, args, stack):
         raise SystemExit(elevate_setup(args))
     setup_lock(root, stack)
     print(f"Existing installation: {root}. Updating Talaria; saved setup is retained.")
-    deployment.update(expect=args.expect)
+    from .supervisor_cli import manage
+
+    command = argparse.Namespace(command="update", check=False, expect=args.expect)
+    if not manage(command, root):
+        deployment.update(expect=args.expect)
+    migrate_service(deployment)
     print(f"Config: {config['config']}")
     print_management_commands(root)
     if args.plugin:
@@ -792,6 +798,7 @@ def configure_password(args, prompts, settings):
 
 def activate_setup_service(plan, root, config, deployment, settings):
     created = prepare_account(plan, config)
+    deployment.config["supervised"] = True
     deployment.config["setup"] = {
         "kind": plan["kind"],
         "scope": plan["scope"],

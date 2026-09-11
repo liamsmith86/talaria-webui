@@ -14,7 +14,7 @@ from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import auth, extensions, installation, metadata, routes, transcripts
+from . import auth, extensions, installation, metadata, routes, transcripts, updates
 from .config import Settings
 from .hermes import APIError, Hermes
 from .profiles import ProfileRouter, Profiles
@@ -126,6 +126,7 @@ def create_app(
             Route("/health", health),
             Route("/api/bootstrap", routes.bootstrap),
             Route("/api/installation", installation.details),
+            Route("/api/installation/{action}", updates.submit, methods=["POST"]),
             Route("/api/profiles", profile_listing, methods=["GET", "POST"]),
             Route("/api/profiles/test", routes.connection, methods=["POST"]),
             Route("/api/profiles/{profile_id}", profile_remove, methods=["DELETE"]),

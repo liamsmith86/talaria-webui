@@ -276,9 +276,11 @@ def test_private_files_and_service_quoting(tmp_path, monkeypatch):
     launchd = service_plan("launchd", root, config)
     data = plistlib.loads(launchd["text"].encode())
     assert data["ProgramArguments"] == [
-        str(root / "current/venv/bin/talaria"),
-        "--config",
-        str(config),
+        str(root / "manager/venv/bin/python"),
+        "-m",
+        "talaria.supervisor",
+        "--directory",
+        str(root),
     ]
     assert "StartInterval" not in data
     with pytest.raises(ValueError):
@@ -731,3 +733,78 @@ def test_resumed_setup_restarts_only_when_saved_credentials_changed(options, mon
     assert load(options.config).api_key == "new-key"
     wizard.setup(options, wizard.Prompts(None))
     assert calls == ["restart"]
+
+
+@pytest.mark.parametrize("kind", ["systemd", "launchd"])
+@pytest.mark.parametrize("fails", [False, True])
+def test_owned_service_migration_and_failed_migration_restore(tmp_path, monkeypatch, kind, fails):
+    import hashlib
+    from types import SimpleNamespace
+
+    from talaria import deployment as deploy
+    from talaria import setup_services as services
+
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    root = tmp_path / "app"
+    root.mkdir()
+    config = tmp_path / "private/config.json"
+    plan = services.service_plan(kind, root, config)
+    path = plan["path"]
+    path.parent.mkdir(parents=True)
+    previous = "Previous service contents\n"
+    path.write_text(previous)
+    metadata = {
+        "schema": 1,
+        "config": str(config),
+        "service": plan["service"],
+        "scope": "user",
+        "health_url": "http://127.0.0.1:8766",
+        "setup": {
+            "scope": "user",
+            "kind": kind,
+            "service_file": str(path),
+            "service_sha256": hashlib.sha256(previous.encode()).hexdigest(),
+        },
+    }
+    deploy.write_json(root / "deployment.json", metadata)
+    deployment = SimpleNamespace(
+        root=root, config=metadata, status=lambda: {"current": {"commit": "a" * 40}}
+    )
+    calls, loaded = [], True
+
+    def command(args, **_):
+        nonlocal loaded
+        calls.append(args)
+        if args[:2] == ["launchctl", "bootout"]:
+            loaded = False
+        if args[:2] == ["launchctl", "bootstrap"]:
+            loaded = True
+        if args[:2] == ["launchctl", "print"] and not loaded:
+            raise DeploymentError("Not loaded")
+        return ""
+
+    def health(*_):
+        if fails:
+            raise DeploymentError("New launcher failed")
+
+    monkeypatch.setattr(services, "run", command)
+    monkeypatch.setattr(deploy, "check_health", health)
+    if fails:
+        with pytest.raises(DeploymentError, match="New launcher failed"):
+            services.migrate_service(deployment)
+        assert path.read_text() == previous
+        assert deploy.read_json(root / "deployment.json") == metadata
+    else:
+        services.migrate_service(deployment)
+        assert path.read_text() == plan["text"]
+        assert deploy.read_json(root / "deployment.json")["supervised"]
+        assert (
+            deployment.config["setup"]["service_sha256"]
+            == hashlib.sha256(path.read_bytes()).hexdigest()
+        )
+    if kind == "launchd":
+        assert calls.index(plan["stop"]) < calls.index(plan["start"])
+    else:
+        assert ["systemctl", "--user", "daemon-reload"] in calls
+        assert plan["restart"] in calls

@@ -1,4 +1,4 @@
-"""CLI-only wheel deployments from Git, with atomic activation and recovery.
+"""Wheel deployments from Git, with atomic activation and recovery.
 
 Git and uv are build tools; neither is imported or invoked by the web server.
 Releases are never edited in place. Configuration stays outside the installation.
@@ -233,9 +233,10 @@ def check_health(url: str, commit: str | None, *, timeout=15, assets=False):
 
 
 class Deployment:
-    def __init__(self, root: Path, *, report=print):
+    def __init__(self, root: Path, *, report=print, restart=None):
         self.root = root.expanduser().resolve()
         self.report = report
+        self._restart = restart
         self.config = read_json(self.root / "deployment.json")
         if self.config.get("schema") != 1:
             raise DeploymentError(
@@ -273,6 +274,16 @@ class Deployment:
         return commit
 
     def probe(self, release: Path, *, startup_timeout=15):
+        run(
+            [
+                release / "venv/bin/python",
+                "-c",
+                "import importlib.util; "
+                f"({bool(self._restart or self.config.get('supervised'))} or "
+                "importlib.util.find_spec('talaria.supervisor')) and "
+                "(__import__('talaria.supervisor'), __import__('talaria.supervisor_worker'))",
+            ]
+        )
         with tempfile.TemporaryFile() as errors:
             process = subprocess.Popen(
                 [str(release / "venv/bin/python"), "-c", PROBE, self.config["config"]],
@@ -428,6 +439,8 @@ class Deployment:
             raise
 
     def restart(self):
+        if self._restart:
+            return self._restart()
         if not self.config.get("service"):
             return
         if self.config.get("manager") == "launchd":
@@ -444,7 +457,7 @@ class Deployment:
         run([*command, "restart", self.config["service"]], timeout=45)
 
     def verify_running(self, release: str):
-        if self.config.get("service"):
+        if self._restart or self.config.get("service"):
             info = read_json(self.root / release / "release.json")
             check_health(
                 self.config["health_url"], info.get("commit") if info.get("health_commit") else None
@@ -497,7 +510,9 @@ class Deployment:
             raise DeploymentError("Activation failed; the previous release was restored.") from exc
 
     def cleanup(self):
-        keep = {selected(self.root, name) for name in ("current", "previous", "manager")}
+        keep = {
+            selected(self.root, name) for name in ("current", "previous", "manager", "supervisor")
+        }
         for path in (self.root / "releases").iterdir():
             if (
                 path.is_dir()
@@ -515,7 +530,7 @@ class Deployment:
             directory / "talaria",
             (
                 '#!/bin/sh\ncase "${1-}" in\n'
-                "  install|update|rollback|status|uninstall) "
+                "  install|update|rollback|status|uninstall|supervise) "
                 f'exec {root}/manager/venv/bin/talaria "$@" ;;\n'
                 '  ""|-*) ;;\n'
                 f'  *) exec {root}/current/venv/bin/talaria "$@" ;;\n'
@@ -702,6 +717,10 @@ def main(argv):
     args = parser.parse_args(argv)
     try:
         root = args.directory.expanduser().resolve()
+        from .supervisor_cli import manage
+
+        if manage(args, root):
+            return
         if args.command == "install":
             install_command(args, root)
         else:

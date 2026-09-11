@@ -9,7 +9,7 @@ import os
 import pwd
 import shutil
 import subprocess
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from urllib.request import ProxyHandler, build_opener
 
@@ -100,10 +100,21 @@ def uninstall(root, *, yes=False, prompts=None):
         service_to_remove(root, metadata, config)
         if plan:
             stop_service(plan)
-        remove_runtime(root, config, files, account)
+        with stopped_launcher(root):
+            remove_runtime(root, config, files, account)
     print("Talaria uninstalled.")
     if root.exists():
         print(f"Unrelated files preserved in {root}")
+
+
+@contextmanager
+def stopped_launcher(root):
+    with (root / ".launcher.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise DeploymentError("Stop the Talaria launcher before uninstalling.") from exc
+        yield
 
 
 def validate_uninstall(root, metadata):
@@ -116,7 +127,9 @@ def validate_uninstall(root, metadata):
         raise DeploymentError("This is not an isolated installation directory; preserved.")
     if not (root / "repository.git/HEAD").is_file() or not (root / "releases").is_dir():
         raise DeploymentError("Managed runtime files are missing; installation preserved.")
-    if any((root / name).is_symlink() for name in ("releases", "repository.git", "bin")):
+    if any(
+        (root / name).is_symlink() for name in ("releases", "repository.git", "bin", ".build-cache")
+    ):
         raise DeploymentError("Managed runtime directories cannot be symbolic links.")
     config = Path(metadata["config"])
     if not config.is_absolute():
@@ -159,12 +172,17 @@ def remove_runtime(root, config, files, account):
         with suppress(KeyError):
             grp.getgrnam("talaria-webui")
             run(["groupdel", "talaria-webui"])
-    for name in ("releases", "repository.git"):
-        shutil.rmtree(root / name)
+    for name in ("releases", "repository.git", ".build-cache"):
+        if (root / name).exists():
+            shutil.rmtree(root / name)
     for name in (
         "current",
         "previous",
         "manager",
+        "supervisor",
+        "control.sock",
+        "maintenance.json",
+        ".launcher.lock",
         "deployment.json",
         "update.json",
         "activation.json",

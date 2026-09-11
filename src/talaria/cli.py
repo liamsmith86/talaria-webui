@@ -24,9 +24,14 @@ def main():
     if (
         os.name == "nt"
         and len(sys.argv) > 1
-        and sys.argv[1] in {"setup", "install", "update", "rollback", "status", "uninstall"}
+        and sys.argv[1]
+        in {"setup", "install", "update", "rollback", "status", "uninstall", "supervise"}
     ):
         raise SystemExit("Managed installation requires Linux, macOS, or Ubuntu inside WSL2.")
+    if len(sys.argv) > 1 and sys.argv[1] == "supervise":
+        from .supervisor import main as supervise
+
+        return supervise(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "setup":
         from .setup import main as setup
 
@@ -110,4 +115,5 @@ def serve():
         port=args.port or settings.port,
         proxy_headers=False,
         access_log=False,
+        timeout_graceful_shutdown=8,
     )

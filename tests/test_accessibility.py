@@ -32,7 +32,7 @@ def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
             "managed": True,
             "branch": "main",
             "installed_at": "2026-09-08T20:00:00Z",
-            "update_command": "sudo talaria update",
+            "can_update": False,
             "update": {"error": None, "available": True, "checked_at": "2026-09-08T21:00:00Z"},
         },
     )

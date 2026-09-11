@@ -69,6 +69,8 @@ def test_staged_startup_deadline_covers_partial_stdout(deployment, monkeypatch):
     monkeypatch.setattr(
         operations, "PROBE", "import time; print('8', end='', flush=True); time.sleep(60)"
     )
+    # This synthetic interpreter exercises the startup deadline, without a wheel.
+    monkeypatch.setattr(operations, "run", lambda *args, **kwargs: "")
     started = time.monotonic()
     with pytest.raises(DeploymentError, match="did not start"):
         deployment.probe(release, startup_timeout=0.2)

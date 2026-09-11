@@ -341,22 +341,11 @@
   border: 1px solid var(--line);
   font-size: 14px;
 }
-.update-command {
+.installation-actions {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
-  padding: 9px 10px 9px 14px;
-  margin: 14px 0;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--canvas);
-}
-.update-command code {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-  user-select: all;
+  margin-top: 14px;
 }
 .settings-footer > div {
   display: flex;
