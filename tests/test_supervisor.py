@@ -175,3 +175,12 @@ def test_real_launcher_update_failure_and_rollback(installed_launcher):
         run([root / "bin/talaria", "rollback", "--directory", root])
         check_health(address, first)
         assert config.read_bytes() == original
+
+
+def test_launcher_supplies_home_for_service_git_credentials(monkeypatch):
+    from talaria.supervisor import clean_environment
+
+    monkeypatch.delenv("HOME", raising=False)
+    assert clean_environment()["HOME"] == pwd.getpwuid(os.geteuid()).pw_dir
+    monkeypatch.setenv("HOME", "/explicit/service/home")
+    assert clean_environment()["HOME"] == "/explicit/service/home"

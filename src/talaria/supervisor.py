@@ -25,6 +25,7 @@ def clean_environment():
         for key, value in os.environ.items()
         if not key.startswith(("PYTHON", "UV_PROJECT", "VIRTUAL_ENV", "TALARIA_ADOPT"))
     }
+    env.setdefault("HOME", pwd.getpwuid(os.geteuid()).pw_dir)
     env.update(PYTHONDONTWRITEBYTECODE="1", PYTHONUNBUFFERED="1")
     return env
 

@@ -268,6 +268,7 @@ def test_private_files_and_service_quoting(tmp_path, monkeypatch):
     plan = service_plan("systemd", root, config)
     assert '\\"$$%%' in plan["text"]
     assert "update" not in plan["text"] and "timer" not in plan["text"]
+    assert f'Environment="HOME={tmp_path}"' in plan["text"]
     plan["path"].parent.mkdir(parents=True)
     plan["path"].write_text("An unrelated existing unit")
     with pytest.raises(DeploymentError, match="preserved"):
@@ -283,6 +284,7 @@ def test_private_files_and_service_quoting(tmp_path, monkeypatch):
         str(root),
     ]
     assert "StartInterval" not in data
+    assert data["EnvironmentVariables"]["HOME"] == str(tmp_path)
     with pytest.raises(ValueError):
         unit_quote("/a\nmalicious.service")
 

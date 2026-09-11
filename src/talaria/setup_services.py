@@ -70,6 +70,7 @@ def service_plan(kind, root, config):
         content += "NoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\n"
         content += f"ReadWritePaths={unit_quote(root)} {unit_quote(config.parent)}\n"
         content += "Environment=PYTHONUNBUFFERED=1\nEnvironment=PYTHONDONTWRITEBYTECODE=1\n"
+        content += f"Environment={unit_quote('HOME=' + str(Path.home()))}\n"
         # The launcher retains install permissions and drops HTTP to account.
         content += "\n[Install]\nWantedBy=" + (
             "multi-user.target\n" if system else "default.target\n"
@@ -102,7 +103,11 @@ def service_plan(kind, root, config):
             "Umask": 0o077,
             "StandardOutPath": str(config.parent / "service.log"),
             "StandardErrorPath": str(config.parent / "service.log"),
-            "EnvironmentVariables": {"PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1"},
+            "EnvironmentVariables": {
+                "HOME": str(Path.home()),
+                "PYTHONUNBUFFERED": "1",
+                "PYTHONDONTWRITEBYTECODE": "1",
+            },
         }
     ).decode()
     domain = f"gui/{os.getuid()}"
