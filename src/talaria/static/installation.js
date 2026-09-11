@@ -1,4 +1,4 @@
-import { html, useEffect, useRef, useState } from "./lib.js";
+import { html, Icon, useEffect, useRef, useState } from "./lib.js";
 import { api } from "./api.js";
 
 const phases = {
@@ -141,25 +141,23 @@ export function Installation() {
   const available = info?.update?.available;
   const problem = error || info?.update?.error;
   return html`<div class="section-heading">
-      <h3>Talaria</h3>
-      ${info && html`<span class=${development ? "environment-badge" : "quiet-badge"}>
-        ${development ? "Development" : "Production"}
-      </span>`}
+      <h3>Talaria ${info && html`<span class="installation-version" aria-label=${`Version ${info.version}`}>${info.version}</span>`}</h3>
+      ${development && html`<span class="environment-badge">Development</span>`}
     </div>
-    ${info && html`<dl class="settings-facts">
-      <div><dt>Version</dt><dd>${info.version}</dd></div>
+    ${info && html`<dl class="installation-details">
       <div><dt>Build</dt><dd>${development ? "Working checkout" : info.commit?.slice(0, 10) || "Installed package"}</dd></div>
-      ${info.managed && html`<div><dt>Update branch</dt><dd>${info.branch}</dd></div>`}
+      ${info.managed && html`<div><dt>Branch</dt><dd>${info.branch}</dd></div>`}
     </dl>`}
-    ${!development && html`<section class="settings-section installation-update">
-      <div class="section-heading"><h4>Updates</h4></div>
-      <p class="field-help" role="status">${busy ? phase : problem ? "" : available
+    ${!development && html`<section class="installation-update" aria-label="Updates">
+      <p class="installation-status" role="status">${busy ? phase : problem ? "Update unavailable" : available
         ? "Update available" : info?.update?.checked_at ? "Up to date" : "Not checked"}</p>
       ${problem && !busy && html`<p class="form-error" role="alert">${problem}</p>`}
       ${info?.can_update ? html`<div class="installation-actions">
-        <button disabled=${busy} onClick=${() => act("check")}>Check for updates</button>
-        <button class="primary" disabled=${busy || !available || !!problem}
-          onClick=${() => act("update")}>Update</button>
+        <button class="button secondary" disabled=${busy} onClick=${() => act("check")}>
+          <${Icon} name="refresh" size=${16} />Check for updates
+        </button>
+        ${available && html`<button class="button primary" disabled=${busy || !!problem}
+          onClick=${() => act("update")}><${Icon} name="download" size=${16} />Update</button>`}
       </div>` : info && html`<p class="field-help">${info.managed
         ? "Start Talaria with its managed launcher to enable updates."
         : "Update using your package or container manager."}</p>`}

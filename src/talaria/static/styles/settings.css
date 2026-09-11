@@ -219,9 +219,6 @@
   color: var(--muted);
   font-size: 10px;
 }
-.installation-update .section-heading {
-  flex-wrap: wrap;
-}
 .profile-connection {
   border-top: 1px solid var(--line);
   padding-top: 24px;
@@ -341,11 +338,48 @@
   border: 1px solid var(--line);
   font-size: 14px;
 }
+.installation-version {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.installation-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  margin: 0;
+  font-size: 12px;
+}
+.installation-details > div {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.installation-details dt {
+  color: var(--muted);
+}
+.installation-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.installation-update {
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+  margin-top: 24px;
+}
+.installation-status {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.6;
+}
 .installation-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 14px;
+  gap: 8px;
+  margin-top: 16px;
 }
 .settings-footer > div {
   display: flex;
