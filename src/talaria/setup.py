@@ -3,6 +3,7 @@
 import argparse
 import fcntl
 import getpass
+import io
 import ipaddress
 import json
 import os
@@ -681,7 +682,9 @@ def main(argv):
             terminal = None
             if not args.non_interactive:
                 try:
-                    terminal = stack.enter_context(open("/dev/tty", "r+"))
+                    # Buffered read/write files require seeking; terminals cannot seek.
+                    raw = stack.enter_context(open("/dev/tty", "r+b", buffering=0))
+                    terminal = stack.enter_context(io.TextIOWrapper(raw, write_through=True))
                 except OSError as exc:
                     raise ValueError(
                         "No terminal; use --non-interactive and explicit flags."

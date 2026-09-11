@@ -3,7 +3,10 @@
 import json
 import os
 import plistlib
+import pty
+import select
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -16,6 +19,64 @@ from talaria.auth import verify_password
 from talaria.config import load
 from talaria.deployment import DeploymentError, run
 from talaria.setup_services import preflight, service_plan, unit_quote
+
+
+@pytest.mark.parametrize("piped_stdin", [False, True])
+def test_interactive_setup_uses_controlling_terminal(piped_stdin):
+    """Exercise real prompts and password echo with shell and curl-style stdin."""
+    script = """
+import sys
+sys.path.insert(0, sys.argv[1])
+from talaria import setup as wizard
+def check(args, prompts):
+    assert prompts.ask('Service', 'auto', ('auto', 'none')) == 'none'
+    assert wizard.getpass.getpass('Password: ', stream=prompts.terminal) == 'test-private-password'
+    assert prompts.yes('Continue?', True)
+    print('Interactive setup passed', flush=True)
+wizard.setup = check
+wizard.main([])
+"""
+    pid, terminal = pty.fork()
+    if pid == 0:
+        if piped_stdin:
+            read_fd, write_fd = os.pipe()
+            os.close(write_fd)
+            os.dup2(read_fd, 0)
+            os.close(read_fd)
+        os.execv(
+            sys.executable,
+            [sys.executable, "-c", script, str(Path(wizard.__file__).resolve().parents[1])],
+        )
+    transcript = b""
+    status = None
+    try:
+        for prompt, answer in [
+            (b'Service [auto]: ', b'none\n'),
+            (b'Password: ', b'test-private-password\n'),
+            (b'Continue? (yes/no) [yes]: ', b'\n'),
+            (b'Interactive setup passed', None),
+        ]:
+            while prompt not in transcript:
+                assert select.select([terminal], [], [], 10)[0], transcript.decode()
+                try:
+                    chunk = os.read(terminal, 4096)
+                except OSError:
+                    pytest.fail(f'Terminal closed before prompt: {transcript.decode()}')
+                assert chunk, transcript.decode()
+                transcript += chunk
+            if answer is not None:
+                os.write(terminal, answer)
+        _, status = os.waitpid(pid, 0)
+        assert os.waitstatus_to_exitcode(status) == 0
+        assert b'test-private-password' not in transcript
+    finally:
+        os.close(terminal)
+        if status is None:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            os.waitpid(pid, 0)
 
 
 @pytest.fixture
