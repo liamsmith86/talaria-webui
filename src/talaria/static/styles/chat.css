@@ -617,3 +617,29 @@
   justify-content: space-between;
   color: var(--muted);
 }
+
+.command-picker, .command-feedback {
+  max-height: min(16rem, 35dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-bottom: 1px solid var(--line);
+  padding: .5rem;
+}
+.command-picker [role="option"] {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: baseline;
+  gap: .2rem .6rem;
+  padding: .45rem;
+  border-radius: .4rem;
+  cursor: pointer;
+}
+.command-picker .selected, .command-picker [role="option"]:hover {
+  background: var(--surface-hover);
+}
+.command-picker span { grid-column: 1 / -1; }
+.command-picker small { overflow-wrap: anywhere; }
+.command-picker .command-unavailable { grid-column: 2; grid-row: 1; justify-self: end; }
+.command-picker span, .command-picker small { font-size: .8rem; color: var(--muted); }
+.command-feedback { display: flex; align-items: start; gap: .5rem; }
+.command-feedback pre { flex: 1; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font: inherit; }

@@ -8,6 +8,7 @@ import {
   readStorage,
   writeStorage,
 } from "./lib.js";
+import { useCommands } from "./commands.js";
 import { sendMessage, stopRun, running } from "./runs.js";
 import { fail, supports, navigationVersion } from "./store.js";
 import {
@@ -47,6 +48,13 @@ export function Composer({
   currentKey.current = key;
   currentDraft.current = draft;
   currentImages.current = images;
+  function chooseCommand(value) {
+    currentDraft.current = value;
+    setDraft(value);
+    writeStorage(key, value);
+    textarea.current?.focus();
+  }
+  const commands = useCommands(app, draft, chooseCommand, { onModel, onReasoning, active });
   useEffect(() => {
     setDraft(readStorage(key));
     setImages([]);
@@ -91,6 +99,7 @@ export function Composer({
     const text = currentDraft.current.trim();
     const attachments = currentImages.current;
     if (
+      commands.busy ||
       submission.current ||
       operation.current ||
       attaching ||
@@ -104,6 +113,11 @@ export function Composer({
     submission.current = true;
     setSending(true);
     try {
+      if (await commands.submit(text, attachments)) {
+        if (currentKey.current === key) chooseCommand("");
+        writeStorage(key, "");
+        return;
+      }
       const sid = await sendMessage(text, model, {
         images: attachments,
         reasoning,
@@ -253,6 +267,7 @@ export function Composer({
       attach([...e.dataTransfer.files]);
     }}
   >
+    ${commands.panel}
     ${images.length > 0 &&
     html`<div class="attachment-tray" aria-label="Image attachments">
       ${images.map(
@@ -297,6 +312,9 @@ export function Composer({
       <textarea
         ref=${textarea}
         aria-label="Message Hermes"
+        aria-autocomplete="list"
+        aria-controls=${commands.expanded ? "command-picker" : undefined}
+        aria-activedescendant=${commands.expanded ? commands.option : undefined}
         placeholder=${active
           ? "Guide Hermes while it works…"
           : "Message Hermes"}
@@ -308,6 +326,7 @@ export function Composer({
           writeStorage(key, e.target.value);
         }}
         onKeyDown=${(e) => {
+          if (commands.keyDown(e)) return;
           if (
             e.key === "Enter" &&
             !e.shiftKey &&
@@ -413,6 +432,7 @@ export function Composer({
               title=${active ? "Send guidance" : "Send message"}
               disabled=${(!draft.trim() && !images.length) ||
               sending ||
+              commands.busy ||
               attaching ||
               loadingImages ||
               app.loading ||
