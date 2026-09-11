@@ -4,6 +4,7 @@ import asyncio
 import secrets
 from dataclasses import replace
 
+from starlette._utils import get_route_path
 from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 
@@ -80,14 +81,16 @@ async def login(request: Request):
         httponly=True,
         secure=state.settings.secure,
         samesite="strict",
-        path="/",
+        path=state.settings.base_path + "/",
     )
     return response
 
 
 async def logout(request: Request):
     response = JSONResponse({"ok": True})
-    response.delete_cookie(request.app.state.cookie_name, path="/")
+    response.delete_cookie(
+        request.app.state.cookie_name, path=request.app.state.settings.base_path + "/"
+    )
     return response
 
 
@@ -108,7 +111,11 @@ async def connection(request: Request):
     except (ValueError, TypeError, AttributeError) as exc:
         raise APIError(str(exc), 400, "invalid_url") from exc
     key = text_field(data, "api_key", 4096)
-    if not key and url == state.settings.hermes_url and request.url.path != "/api/profiles/test":
+    if (
+        not key
+        and url == state.settings.hermes_url
+        and get_route_path(request.scope) != "/api/profiles/test"
+    ):
         key = state.settings.api_key
     if not valid_api_key(key):
         raise APIError("Enter the API key from your Hermes API server.", 400)

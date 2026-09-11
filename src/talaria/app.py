@@ -1,13 +1,16 @@
 """ASGI application assembly and request boundaries."""
 
 import asyncio
+import hashlib
+import html
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from starlette._utils import get_route_path
 from starlette.applications import Starlette
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -17,6 +20,7 @@ from .hermes import APIError, Hermes
 from .profiles import ProfileRouter, Profiles
 from .profiles import listing as profile_listing
 from .profiles import remove as profile_remove
+from .proxy import PublicPath
 from .relay import Relay
 
 STATIC = Path(__file__).parent / "static"
@@ -30,7 +34,7 @@ class BrowserBoundary:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         request = Request(scope, receive)
-        path = scope["path"]
+        path = get_route_path(scope)
 
         async def secure_send(message):
             if message["type"] == "http.response.start":
@@ -84,7 +88,11 @@ class Assets(StaticFiles):
 
 
 async def index(request):
-    return FileResponse(STATIC / "index.html")
+    # The document is tiny; cache the template per application, not per request.
+    base = html.escape(request.app.state.settings.base_path + "/", quote=True)
+    return HTMLResponse(
+        request.app.state.index_html.replace("__TALARIA_BASE__", base)
+    )
 
 
 async def health(request):
@@ -153,6 +161,9 @@ def create_app(
     app.state.settings, app.state.config_path = settings, config_path
     app.state.development = development
     app.state.cookie_name = "talaria_dev_session" if development else auth.COOKIE
+    if settings.base_path:
+        app.state.cookie_name += "_" + hashlib.sha256(settings.base_path.encode()).hexdigest()[:10]
+    app.state.index_html = (STATIC / "index.html").read_text()
     app.state.hermes = Hermes(settings.hermes_url, settings.api_key, transport=transport)
     app.state.relay = Relay(app.state.hermes)
     app.state.limiter = auth.LoginLimiter()
@@ -164,4 +175,5 @@ def create_app(
     if profiles is None:
         app.add_middleware(ProfileRouter, profiles=app.state.profiles)
         app.add_middleware(BrowserBoundary)
+        app.add_middleware(PublicPath, prefix=settings.base_path)
     return app

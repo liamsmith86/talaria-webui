@@ -342,6 +342,12 @@ class Deployment:
     def restart(self):
         if not self.config.get("service"):
             return
+        if self.config.get("manager") == "launchd":
+            run(
+                ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{self.config['service']}"],
+                timeout=45,
+            )
+            return
         command = ["systemctl"]
         if self.config.get("scope") == "user":
             command += ["--user"]
@@ -523,6 +529,7 @@ def main(argv):
         if name == "install":
             command.add_argument("--repository", default=REPOSITORY, help="Trusted Git repository")
             command.add_argument("--branch", default="main")
+            command.add_argument("--expect", help="Only install this full remote commit SHA")
             command.add_argument("--config", type=Path, default=default_path())
             command.add_argument(
                 "--service", help="Existing systemd unit to restart after activation"
@@ -543,6 +550,8 @@ def main(argv):
     try:
         root = args.directory.expanduser().resolve()
         if args.command == "install":
+            if args.expect and not COMMIT.fullmatch(args.expect):
+                raise DeploymentError("--expect needs a full commit SHA.")
             with locked(root):
                 if (root / "deployment.json").exists():
                     raise DeploymentError(
@@ -575,7 +584,7 @@ def main(argv):
                     },
                 )
             deployment = Deployment(root)
-            deployment.update()
+            deployment.update(expect=args.expect)
             print(f"Launcher: {root / 'bin/talaria'}")
         else:
             deployment = Deployment(root)

@@ -1,0 +1,246 @@
+"""Installer failure paths use only temporary homes and fake service managers."""
+
+import json
+import os
+import plistlib
+import shutil
+import socket
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from talaria import setup as wizard
+from talaria.auth import verify_password
+from talaria.config import load
+from talaria.deployment import DeploymentError, run
+from talaria.setup_services import preflight, service_plan, unit_quote
+
+
+@pytest.fixture
+def options(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(wizard, "supported_service", lambda: "none")
+    monkeypatch.setattr(wizard, "check_port", lambda host, port: None)
+    args = wizard.parser().parse_args(
+        [
+            "--non-interactive",
+            "--skip-hermes",
+            "--service",
+            "none",
+            "--directory",
+            str(tmp_path / "install"),
+            "--config",
+            str(tmp_path / "private/config.json"),
+        ]
+    )
+    return args
+
+
+def test_invalid_setup_does_not_write_configuration(options):
+    options.public_url = "https://example.com/path?oops"
+    with pytest.raises(ValueError):
+        wizard.setup(options, wizard.Prompts(None))
+    assert not options.config.exists()
+
+
+def test_interrupted_install_reuses_saved_password_on_retry(options, monkeypatch, capsys):
+    def fail(command):
+        raise DeploymentError("Simulated interrupted build")
+
+    monkeypatch.setattr(wizard, "manage", fail)
+    for _ in range(2):
+        with pytest.raises(DeploymentError, match="interrupted build"):
+            wizard.setup(options, wizard.Prompts(None))
+        settings = load(options.config)
+        password_path = options.config.parent / "initial-password.txt"
+        password = password_path.read_text().strip()
+        assert verify_password(password, settings.password_hash)
+        assert password_path.stat().st_mode & 0o077 == 0
+        assert options.config.stat().st_mode & 0o077 == 0
+        if _ == 0:
+            original = options.config.read_bytes(), password_path.read_bytes()
+        else:
+            assert original == (options.config.read_bytes(), password_path.read_bytes())
+        assert password not in capsys.readouterr().out
+
+
+def test_chosen_password_file_can_be_reused_but_cannot_reset_login(options, monkeypatch):
+    password = options.directory.parent / "password"
+    password.write_text("A chosen private password\n")
+    password.chmod(0o600)
+    options.password_file = password
+    monkeypatch.setattr(wizard, "manage", lambda _: (_ for _ in ()).throw(DeploymentError("build")))
+    for _ in range(2):
+        with pytest.raises(DeploymentError, match="build"):
+            wizard.setup(options, wizard.Prompts(None))
+    original = options.config.read_bytes()
+    password.write_text("A different private password\n")
+    with pytest.raises(ValueError, match="different password"):
+        wizard.setup(options, wizard.Prompts(None))
+    assert options.config.read_bytes() == original
+    assert not (options.config.parent / "initial-password.txt").exists()
+
+
+def test_occupied_port_is_rejected():
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.listen()
+        with pytest.raises(ValueError, match="Cannot bind"):
+            wizard.check_port("127.0.0.1", sock.getsockname()[1])
+
+
+def test_remote_url_does_not_reuse_unrelated_local_key(options):
+    settings = load(options.config)
+    settings.api_key = "previous-profile-secret"
+    options.hermes_url = "https://other.example/hermes"
+    wizard.configure_hermes(options, wizard.Prompts(None), settings, None, None, None)
+    assert settings.hermes_url == options.hermes_url and not settings.api_key
+
+
+def test_private_files_and_service_quoting(tmp_path, monkeypatch):
+    private = tmp_path / "password"
+    private.write_text("password")
+    private.chmod(0o644)
+    with pytest.raises(ValueError, match="owner-only"):
+        wizard.secret_file(private, "password")
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    root = tmp_path / 'a space "$% directory'
+    config = tmp_path / "private/config.json"
+    plan = service_plan("systemd", root, config)
+    assert '\\"$$%%' in plan["text"]
+    assert "update" not in plan["text"] and "timer" not in plan["text"]
+    plan["path"].parent.mkdir(parents=True)
+    plan["path"].write_text("An unrelated existing unit")
+    with pytest.raises(DeploymentError, match="preserved"):
+        preflight(plan, root, config)
+    assert plan["path"].read_text() == "An unrelated existing unit"
+    launchd = service_plan("launchd", root, config)
+    data = plistlib.loads(launchd["text"].encode())
+    assert data["ProgramArguments"] == [
+        str(root / "current/venv/bin/talaria"),
+        "--config",
+        str(config),
+    ]
+    assert "StartInterval" not in data
+    with pytest.raises(ValueError):
+        unit_quote("/a\nmalicious.service")
+
+
+def test_bootstrap_help_and_unknown_branch_fail_before_execution(tmp_path):
+    script = Path(__file__).resolve().parents[1] / "install.sh"
+    subprocess.run(["bash", "-n", script], check=True)
+    result = subprocess.run(["bash", script, "--help"], capture_output=True, text=True, check=True)
+    assert "--non-interactive" in result.stdout and "No automatic updates" in result.stdout
+    result = subprocess.run(["bash", script, "--repository"], capture_output=True, text=True)
+    assert result.returncode and "needs a value" in result.stderr
+
+
+def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
+    project = Path(__file__).resolve().parents[1]
+    remote = tmp_path / "remote"
+    remote.mkdir()
+    for name in ("pyproject.toml", "uv.lock", ".gitignore", "install.sh"):
+        shutil.copyfile(project / name, remote / name)
+    shutil.copytree(project / "src", remote / "src", ignore=shutil.ignore_patterns("__pycache__"))
+    run(["git", "init", "-b", "main", remote])
+    run(
+        [
+            "git",
+            "-C",
+            remote,
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "add",
+            ".",
+        ]
+    )
+    run(
+        [
+            "git",
+            "-C",
+            remote,
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "Fixture",
+        ]
+    )
+    root = tmp_path / "a space/install"
+    config = tmp_path / "private/config.json"
+    # Use the existing interpreter/uv without downloading or altering the host.
+    env = {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "HERMES_HOME": str(tmp_path / "absent"),
+        "UV_PYTHON": sys._base_executable,
+    }
+    for name in ("VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "PYTHONPATH"):
+        env.pop(name, None)
+    command = [
+        "bash",
+        remote / "install.sh",
+        "--non-interactive",
+        "--repository",
+        str(remote),
+        "--directory",
+        str(root),
+        "--config",
+        str(config),
+        "--skip-hermes",
+        "--service",
+        "none",
+        "--port",
+        "18766",
+        "--public-url",
+        "https://example.com/telaria",
+    ]
+    for attempt in range(2):
+        result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=180)
+        assert result.returncode == 0, result.stdout + result.stderr
+        settings = load(config)
+        assert settings.public_url == "https://example.com/telaria"
+        assert "Update manually:" in result.stdout and "Hermes: not configured" in result.stdout
+        if attempt == 0:
+            saved = config.read_bytes()
+        else:
+            assert config.read_bytes() == saved
+    installed = run(
+        [root / "current/venv/bin/python", "-c", "import talaria; print(talaria.__file__)"]
+    )
+    assert installed.startswith(str(root))
+    assert json.loads((root / "deployment.json").read_text())["service"] is None
+
+
+@pytest.mark.hermes
+@pytest.mark.skipif(
+    not os.getenv("HERMES_SOURCE"), reason="Set HERMES_SOURCE for native setup checks"
+)
+def test_native_hermes_key_reuse_plugin_and_config_preservation(tmp_path):
+    source = Path(os.environ["HERMES_SOURCE"])
+    python = source / "venv/bin/python"
+    home = tmp_path / "hermes"
+    home.mkdir()
+    (home / "config.yaml").write_text("model:\n  default: preserve-this-model\n")
+    original = (home / "config.yaml").read_bytes()
+    info = wizard.hermes_request(python, home)
+    assert not info["enabled"] and not info["key"]
+    wizard.backup_hermes(home)
+    from talaria.plugin_install import main as export
+
+    export(["--home", str(home)])
+    info = wizard.hermes_request(python, home, enable=True, plugin=True)
+    assert info["enabled"] and len(info["key"]) >= 32
+    again = wizard.hermes_request(python, home, enable=True, plugin=True)
+    assert again["key"] == info["key"]
+    assert (home / "config.yaml.before-talaria").read_bytes() == original
+    assert "preserve-this-model" in (home / "config.yaml").read_text()
+    assert "talaria" in (home / "config.yaml").read_text()
+    assert (home / ".env").stat().st_mode & 0o077 == 0
