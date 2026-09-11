@@ -78,6 +78,11 @@ available; macOS uses a user LaunchAgent. Otherwise, start the app manually.
 Systemd user services follow the account's login/linger policy; LaunchAgents start
 at login. No updater services or timers are installed.
 
+**Uninstall:** run the printed launcher path with `uninstall` (use `sudo` for a
+system installation). It previews removal of Talaria's service, installation,
+configuration, and passwords, then asks for confirmation. Add `--yes` for headless
+use. Hermes, its plugin/sessions, and shared Python/Git/uv installations are kept.
+
 **Plugin only**, on the Hermes host:
 
 ```sh

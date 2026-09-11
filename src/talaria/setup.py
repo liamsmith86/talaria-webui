@@ -3,6 +3,7 @@
 import argparse
 import fcntl
 import getpass
+import hashlib
 import io
 import ipaddress
 import json
@@ -13,7 +14,7 @@ import shutil
 import socket
 import subprocess
 import sys
-from contextlib import ExitStack, suppress
+from contextlib import ExitStack, contextmanager, suppress
 from pathlib import Path
 
 from .auth import hash_password, verify_password
@@ -732,7 +733,17 @@ def _setup(args, prompts, stack):
             manage(command)
             deployment = Deployment(root)
         if plan:
-            prepare_account(plan, config)
+            created = prepare_account(plan, config)
+            deployment.config["setup"] = {
+                "kind": plan["kind"],
+                "scope": plan["scope"],
+                "service_file": str(plan["path"]),
+                "service_sha256": hashlib.sha256(plan["text"].encode()).hexdigest(),
+                "account_created": bool(created or deployment.config.get("setup", {}).get(
+                    "account_created"
+                )),
+            }
+            write_json(root / "deployment.json", deployment.config)
             try:
                 install_service(plan)
                 check_health(
@@ -784,22 +795,26 @@ def _setup(args, prompts, stack):
     pending_setup.unlink(missing_ok=True)
 
 
+@contextmanager
+def terminal(interactive, flag="--non-interactive"):
+    with ExitStack() as stack:
+        stream = None
+        if interactive:
+            try:
+                # Buffered read/write files require seeking; terminals cannot seek.
+                raw = stack.enter_context(open("/dev/tty", "r+b", buffering=0))
+                stream = stack.enter_context(io.TextIOWrapper(raw, write_through=True))
+            except OSError as exc:
+                raise ValueError(f"No terminal; use {flag} and explicit flags.") from exc
+        yield Prompts(stream)
+
+
 def main(argv):
     command = parser()
     args = command.parse_args(argv)
     try:
-        with ExitStack() as stack:
-            terminal = None
-            if not args.non_interactive:
-                try:
-                    # Buffered read/write files require seeking; terminals cannot seek.
-                    raw = stack.enter_context(open("/dev/tty", "r+b", buffering=0))
-                    terminal = stack.enter_context(io.TextIOWrapper(raw, write_through=True))
-                except OSError as exc:
-                    raise ValueError(
-                        "No terminal; use --non-interactive and explicit flags."
-                    ) from exc
-            setup(args, Prompts(terminal))
+        with terminal(not args.non_interactive) as prompts:
+            setup(args, prompts)
     except (ValueError, OSError, DeploymentError) as exc:
         error = Prompts(sys.stderr).highlight(f"Talaria setup: {exc}", "1;31")
         command.exit(

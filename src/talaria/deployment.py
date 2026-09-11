@@ -481,7 +481,8 @@ class Deployment:
             directory / "talaria",
             (
                 '#!/bin/sh\ncase "${1-}" in\n'
-                f'  install|update|rollback|status) exec {root}/manager/venv/bin/talaria "$@" ;;\n'
+                '  install|update|rollback|status|uninstall) '
+                f'exec {root}/manager/venv/bin/talaria "$@" ;;\n'
                 '  ""|-*) ;;\n'
                 f'  *) exec {root}/current/venv/bin/talaria "$@" ;;\n'
                 "esac\n"

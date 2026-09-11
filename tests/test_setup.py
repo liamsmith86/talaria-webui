@@ -405,6 +405,9 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
     )
     assert installed.startswith(str(root))
     assert json.loads((root / "deployment.json").read_text())["service"] is None
+    removed = run([root / "bin/talaria", "uninstall", "--yes"])
+    assert "Talaria uninstalled" in removed
+    assert not root.exists() and not config.parent.exists()
 
 
 @pytest.mark.hermes
@@ -629,6 +632,8 @@ def test_failed_service_setup_resumes_after_release_was_installed(options, monke
         "kind": "systemd",
         "service": "test.service",
         "scope": "user",
+        "path": options.directory.parent / "test.service",
+        "text": "test service",
         "start": ["systemctl", "--user", "start", "test.service"],
         "stop": ["systemctl", "--user", "stop", "test.service"],
         "restart": ["systemctl", "--user", "restart", "test.service"],

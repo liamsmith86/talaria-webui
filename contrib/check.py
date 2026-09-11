@@ -25,11 +25,13 @@ FOCUSED = STREAMING + [
 ]
 INSTALL_TESTS = [
     "tests/test_setup.py", "tests/test_install.py", "tests/test_deployment.py",
+    "tests/test_uninstall.py",
     "tests/test_operations_qa.py", "tests/test_environments.py", "tests/test_proxy_paths.py",
 ]
 INSTALL_FILES = {
     "install.sh", "src/talaria/cli.py", "src/talaria/credentials.py",
     "src/talaria/deployment.py", "src/talaria/plugin_install.py",
+    "src/talaria/uninstall.py", "tests/test_uninstall.py",
     "src/talaria/setup.py", "src/talaria/setup_services.py", "src/talaria/setup_hermes.py",
     "tests/test_setup.py", "tests/test_install.py", "tests/test_deployment.py",
     "tests/test_operations_qa.py",

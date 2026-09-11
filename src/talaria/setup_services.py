@@ -159,7 +159,8 @@ def preflight(plan, root, config, *, resuming=False):
 
 def prepare_account(plan, config):
     if not plan["account"]:
-        return
+        return False
+    created = False
     try:
         account = pwd.getpwnam(plan["account"])
     except KeyError:
@@ -178,11 +179,13 @@ def prepare_account(plan, config):
             ]
         )
         account = pwd.getpwnam(plan["account"])
+        created = True
     config.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chown(config.parent, account.pw_uid, account.pw_gid)
     for file in config.parent.iterdir():
         if file.is_file() and not file.is_symlink():
             os.chown(file, account.pw_uid, account.pw_gid)
+    return created
 
 
 def install_service(plan):
