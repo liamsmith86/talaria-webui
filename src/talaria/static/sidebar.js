@@ -21,6 +21,7 @@ import { running } from "./runs.js";
 import { sourceLabel } from "./content.js";
 import { readinessLabel } from "./readiness.js";
 import { ProfileSwitch } from "./profiles.js";
+import { sessionURL } from "./session-navigation.js";
 
 function groupName(session, day) {
   const now = new Date(day);
@@ -82,9 +83,14 @@ export function Sidebar({ app }) {
           <div
             class=${`session-row ${app.active === session.id ? "active" : ""}`}
           >
-            <button
+            <a
               class="session-select"
-              onClick=${() => openSession(session.id)}
+              href=${sessionURL(session.id)}
+              onClick=${(event) => {
+                if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                openSession(session.id);
+              }}
               aria-current=${app.active === session.id ? "page" : undefined}
               aria-label=${session.title || "Untitled session"}
               aria-description=${
@@ -111,7 +117,7 @@ export function Sidebar({ app }) {
                 >${sourceLabel(session.source)}</small
               >`
               }
-            </button>
+            </a>
             <button
               class="session-more"
               title="Session options"

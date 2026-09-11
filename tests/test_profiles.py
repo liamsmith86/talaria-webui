@@ -222,7 +222,7 @@ def test_same_session_ids_and_images_are_isolated_and_responses_survive_switchin
         peer.sessions[sid] = {"id": sid, "title": name, "source": "api_server"}
         peer.messages[sid] = [{"id": 1, "role": "user", "content": f"{name} history\n[screenshot]"}]
     page.reload()
-    page.get_by_role("button", name="Production", exact=True).click()
+    page.get_by_role("link", name="Production", exact=True).click()
     page.evaluate(
         """async ([sid, url]) => {
       const files = await import('/static/attachments.js');
@@ -234,7 +234,8 @@ def test_same_session_ids_and_images_are_isolated_and_responses_survive_switchin
     expect(page.get_by_role("button", name="Open production.png", exact=True)).to_be_visible()
     page.get_by_role("button", name="Switch profile").click()
     page.get_by_role("link", name="Research research", exact=False).click()
-    page.get_by_role("button", name="Research", exact=True).click()
+    page.get_by_role("link", name="Research", exact=True).click()
+    assert f"profile={profile_id}&session={sid}" in page.url
     expect(page.get_by_text("Research history", exact=False)).to_be_visible()
     expect(page.get_by_text("Production history", exact=False)).to_have_count(0)
     expect(page.get_by_role("button", name="Open production.png", exact=True)).to_have_count(0)

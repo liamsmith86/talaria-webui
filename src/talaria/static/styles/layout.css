@@ -140,6 +140,7 @@ kbd {
 }
 .session-select {
   display: flex;
+  text-decoration: none;
   align-items: center;
   gap: 9px;
   text-align: left;

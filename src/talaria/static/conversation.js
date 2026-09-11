@@ -33,6 +33,7 @@ import { Images } from "./images.js";
 import { ConversationFind } from "./conversation-find.js";
 import { responseParts } from "./response-parts.js";
 import { useReplyJump, scrollBehavior } from "./reply-jump.js";
+import { useHistoryAnchor } from "./history-anchor.js";
 
 function toolText(value, input = false) {
   if (typeof value !== "string") return "";
@@ -494,6 +495,7 @@ export function Conversation({ app, command, onDismissCommand }) {
   const replyStart = useReplyJump(scroll, app.active);
   const bottom = useRef();
   const sticky = useRef(true);
+  useHistoryAnchor(scroll, app.active, app.history, sticky);
   const scrollTop = useRef(0);
   const follow = useCallback(() => {
     bottom.current?.scrollIntoView({ behavior: "instant" });
@@ -570,17 +572,10 @@ export function Conversation({ app, command, onDismissCommand }) {
   );
   async function loadEarlier() {
     if (olderBusy) return;
-    const el = scroll.current,
-      previousHeight = el.scrollHeight,
-      previousTop = el.scrollTop;
     sticky.current = false;
     setOlderBusy(true);
     try {
       await loadOlderMessages();
-      requestAnimationFrame(() => {
-        if (el.isConnected)
-          el.scrollTop = previousTop + el.scrollHeight - previousHeight;
-      });
     } catch (e) {
       fail(e);
     } finally {

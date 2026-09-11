@@ -314,7 +314,7 @@ def test_compression_refresh_keeps_chat_visible_until_new_history_arrives(page, 
     ]
     page.evaluate("async sid => (await import('/static/store.js')).openSession(sid)", sid)
     history_requests = []
-    page.route(f"**/api/sessions/{sid}/messages", lambda route: history_requests.append(route))
+    page.route(f"**/api/sessions/{sid}/messages*", lambda route: history_requests.append(route))
     page.route("**/api/commands", lambda route: route.fulfill(json={"status": "running"}))
     page.route(
         "**/api/commands/*",
@@ -391,7 +391,7 @@ def test_compaction_continuation_preserves_unsent_draft(page, live_app):
     expect(attachment).to_be_visible()
     page.evaluate("window.compactionPageMarker = true")
     page.route(
-        f"**/api/sessions/{sid}/messages",
+        f"**/api/sessions/{sid}/messages*",
         lambda route: route.fulfill(
             json={
                 "session_id": continued,
