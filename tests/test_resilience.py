@@ -28,8 +28,8 @@ def test_request_limits_and_login_throttling(live_app):
         assert client.post("/api/runs", json={"input": "x" * 9_600_000}).status_code == 413
         assert client.get("/api/sessions/invalid%20identifier/messages").status_code == 400
     with httpx.Client(base_url=url, headers={"X-Talaria-Request": "1"}) as client:
-        codes = [client.post("/api/login", json={"password": "bad"}).status_code for _ in range(9)]
-        assert codes[:8] == [401] * 8
+        codes = [client.post("/api/login", json={"password": "bad"}).status_code for _ in range(31)]
+        assert codes[:30] == [401] * 30
         assert codes[-1] == 429
 
 

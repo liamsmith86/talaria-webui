@@ -11,6 +11,9 @@
   border-right: 1px solid var(--line);
   padding: 0 16px;
 }
+.sidebar[hidden] {
+  display: none;
+}
 .sidebar-brand {
   height: 82px;
   display: flex;

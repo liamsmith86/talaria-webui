@@ -69,6 +69,7 @@ export function modelInventory(data) {
         label: defaultId,
         provider: defaultProvider,
         providerLabel: provider ? providerName(provider) : configuredProvider,
+        configuredReasoning: text(data.configured_reasoning),
       }
     : null;
   return {
@@ -94,6 +95,11 @@ export const reasoningNames = {
   max: "Maximum",
   ultra: "Ultra",
 };
+export function reasoningLabel(value, model) {
+  const configured = model?.capabilities?.configured_reasoning || model?.configuredReasoning;
+  return reasoningNames[value === "auto" && Object.hasOwn(reasoningNames, configured)
+    ? configured : value] || "Auto";
+}
 export function reasoningOptions(model) {
   if (model?.capabilities?.reasoning === false) return ["auto"];
   const supported = model?.capabilities?.supported_efforts;

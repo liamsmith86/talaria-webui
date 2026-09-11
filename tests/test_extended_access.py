@@ -254,3 +254,58 @@ def test_native_hermes_contract(tmp_path, contract, provider):
         expected = Path(__file__).with_name("fixtures") / "hermes-completed.json"
         captured = json.loads((tmp_path / "stream.json").read_text())
         assert captured == json.loads(expected.read_text())
+
+
+def test_context_tokens_remain_visible_without_a_model_limit(page, live_app):
+    peer = live_app[1]
+    peer.discovery_overrides["/talaria/v1/sessions/notes/context"] = (
+        {"context": {"used": 43565, "maximum": None}},
+        200,
+    )
+    open_seed(page, peer)
+    indicator = page.get_by_role("button", name="Context usage", exact=True)
+    expect(indicator).to_contain_text("43,565 tokens")
+    for width in (1280, 390, 320):
+        page.set_viewport_size({"width": width, "height": 844})
+        expect(indicator).to_be_visible()
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    indicator.click()
+    expect(page.get_by_role("dialog")).to_contain_text("43,565")
+    expect(page.get_by_role("dialog")).not_to_contain_text("NaN")
+
+
+def test_inherited_reasoning_is_shown_without_overriding_hermes(page, live_app):
+    peer = live_app[1]
+    peer.extension = {"model_details": True}
+    peer.discovery_overrides["/talaria/v1/models"] = (
+        {
+            "model": "configured-model",
+            "provider": "test",
+            "configured_reasoning": "high",
+            "providers": [
+                {
+                    "slug": "test",
+                    "is_current": True,
+                    "models": ["configured-model", "other-model"],
+                    "capabilities": {"other-model": {"configured_reasoning": "none"}},
+                }
+            ],
+        },
+        200,
+    )
+    page.reload()
+    chooser = page.get_by_role("button", name="Choose reasoning", exact=True)
+    expect(chooser).to_contain_text("High")
+    chooser.click()
+    expect(page.locator(".reasoning-list .model-default")).to_contain_text("High")
+    expect(page.locator(".reasoning-list .model-default")).to_have_attribute("aria-pressed", "true")
+    page.get_by_role("button", name="Close dialog").click()
+    page.get_by_label("Message Hermes").fill("Use configured reasoning")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
+    assert list(peer.runs.values())[-1]["model_options"] is None
+    page.evaluate("""async () => {
+        const {chooseModel}=await import('/static/store.js');
+        chooseModel({id:'other-model',provider:'test'});
+    }""")
+    expect(chooser).to_contain_text("Off")

@@ -23,7 +23,7 @@ import {
 import {
   sessionModel,
   sessionReasoning,
-  reasoningNames,
+  reasoningLabel,
   reasoningOptions,
 } from "./models.js";
 
@@ -413,7 +413,7 @@ export function ReasoningPicker({ model, selected, onSelect, onClose }) {
           }}
         >
           <span
-            >${reasoningNames[value]}${value === "auto" &&
+            >${reasoningLabel(value, model)}${value === "auto" &&
             html`<small
               >Use Hermes’s configured reasoning setting.</small
             >`}</span

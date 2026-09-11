@@ -44,6 +44,7 @@ export const state = {
   profileMissing: false,
   modal: null,
   sidebar: false,
+  sidebarCollapsed: readStorage("sidebar-collapsed") === "true",
   error: "",
   toast: "",
 };
@@ -61,6 +62,10 @@ export function update(changes, defer = false) {
   cancelAnimationFrame(frame);
   frame = 0;
   for (const listener of listeners) listener({ ...state });
+}
+export function collapseSidebar(collapsed) {
+  writeStorage("sidebar-collapsed", String(collapsed));
+  update({ sidebarCollapsed: collapsed });
 }
 export function useStore() {
   const [snapshot, set] = useState({ ...state });

@@ -113,12 +113,12 @@ export function ContextIndicator({ app }) {
       aria-label="Context usage"
       title=${percent !== null
         ? `${Math.round(percent)}% context used · last request`
-        : "Context usage"}
+        : used !== null ? `${count(used)} input tokens · last request` : "Context usage"}
       aria-haspopup="dialog"
       onClick=${() => setOpen(true)}
     >
-      <${Icon} name="context" size=${18} />${percent !== null &&
-      html`<span>${Math.round(percent)}%</span>`}
+      <${Icon} name="context" size=${18} />${used !== null &&
+      html`<span>${percent !== null ? `${Math.round(percent)}%` : `${count(used)} tokens`}</span>`}
     </button>
     ${open &&
     html`<${Dialog} title="Context usage" className="usage-dialog" onClose=${() => setOpen(false)}>

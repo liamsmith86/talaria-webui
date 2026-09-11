@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   useMemo,
+  useCallback,
   Icon,
   IconButton,
   humanTime,
@@ -491,6 +492,10 @@ export function Conversation({ app }) {
   const bottom = useRef();
   const sticky = useRef(true);
   const scrollTop = useRef(0);
+  const follow = useCallback(() => {
+    bottom.current?.scrollIntoView({ behavior: "instant" });
+    scrollTop.current = scroll.current?.scrollTop || 0;
+  }, []);
   const [away, setAway] = useState(false);
   const [olderBusy, setOlderBusy] = useState(false);
   const live = app.lives[app.active];
@@ -505,24 +510,23 @@ export function Conversation({ app }) {
   useEffect(() => {
     sticky.current = true;
     setAway(false);
-    bottom.current?.scrollIntoView();
-  }, [app.active]);
+    follow();
+  }, [app.active, follow]);
   useEffect(() => {
-    if (sticky.current) bottom.current?.scrollIntoView({ behavior: "instant" });
-  }, [app.history, live?.text, live?.tools.length, live?.approval]);
+    if (sticky.current) follow();
+  }, [app.history, live?.text, live?.tools.length, live?.approval, follow]);
   useEffect(() => {
     // Revealed text can grow between network updates. Follow its actual size,
     // including code highlighting, while respecting a reader scrolling up.
     const content = scroll.current?.querySelector(".conversation-content");
     if (!content) return;
     const observer = new ResizeObserver(() => {
-      if (sticky.current)
-        bottom.current?.scrollIntoView({ behavior: "instant" });
+      if (sticky.current) follow();
     });
     observer.observe(content);
     observer.observe(scroll.current);
     return () => observer.disconnect();
-  }, [app.active]);
+  }, [app.active, follow]);
   const lastUser = items.findLast((m) => m.role === "user");
   const savedTurn = live?.persisted && live.savedMessageId != null
     ? items.find((item) => item.record?.id === live.savedMessageId)
@@ -591,13 +595,20 @@ export function Conversation({ app }) {
     <div class="conversation-shell"><div
       class="conversation-viewport"
       ref=${scroll}
+      onWheel=${(e) => {
+        if (e.deltaY < 0) {
+          sticky.current = false;
+          setAway(true);
+        }
+      }}
       onScroll=${(e) => {
         const el = e.currentTarget;
         const top = Math.max(0, el.scrollTop);
-        if (el.scrollHeight - top - el.clientHeight < 120) sticky.current = true;
-        // A delayed scroll event can arrive after the next text chunk grows
-        // the page. Only upward movement means the reader left the bottom.
-        else if (top < scrollTop.current) sticky.current = false;
+        // Small upward movements must release follow even near the bottom.
+        // Delayed events after content growth alone must keep following.
+        const distance = el.scrollHeight - top - el.clientHeight;
+        if (top < scrollTop.current && distance >= 3) sticky.current = false;
+        else if (top > scrollTop.current && distance < 3) sticky.current = true;
         scrollTop.current = top;
         setAway(!sticky.current);
       }}

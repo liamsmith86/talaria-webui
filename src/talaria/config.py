@@ -5,7 +5,7 @@ import os
 import re
 import secrets
 import tempfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -19,6 +19,7 @@ class Settings:
     public_url: str = ""
     host: str = "127.0.0.1"
     port: int = 8766
+    trusted_proxies: list[str] = field(default_factory=list)
 
     @property
     def secure(self) -> bool:

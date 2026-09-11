@@ -11,6 +11,7 @@ import {
 } from "./lib.js";
 import {
   update,
+  collapseSidebar,
   newConversation,
   openSession,
   refreshSessions,
@@ -127,6 +128,7 @@ export function Sidebar({ app }) {
   return html`<aside
     ref=${drawer}
     class=${`sidebar ${app.sidebar ? "open" : ""}`}
+    hidden=${!mobile && app.sidebarCollapsed}
     aria-label="Sessions"
     role=${mobile && app.sidebar ? "dialog" : undefined}
     aria-modal=${mobile && app.sidebar ? "true" : undefined}
@@ -159,8 +161,13 @@ export function Sidebar({ app }) {
       ><${IconButton}
         name="sidebar"
         label="Close sidebar"
-        class="icon-button mobile-only"
-        onClick=${() => update({ sidebar: false })}
+        onClick=${() => {
+          if (mobile) update({ sidebar: false });
+          else {
+            collapseSidebar(true);
+            requestAnimationFrame(() => document.querySelector('[aria-label="Open sidebar"]')?.focus());
+          }
+        }}
       />
     </div>
     <${ProfileSwitch} app=${app} />

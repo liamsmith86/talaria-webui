@@ -16,7 +16,7 @@ from hermes_state import SessionDB
 from providers import get_provider_profile
 
 from talaria.hermes_plugin.bridge import rewind, rewind_preview, wire
-from talaria.hermes_plugin.models import model_options
+from talaria.hermes_plugin.models import add_reasoning_defaults, model_options
 from talaria.hermes_plugin.observations import Observations
 
 home = Path(sys.argv[1])
@@ -194,6 +194,30 @@ with (
         assert extra["reasoning"]["effort"] == ("high" if requested == "low" else requested)
     with patch.object(inventory, "_reasoning_catalog_reader", side_effect=AttributeError):
         assert model_options() == native_catalog
+
+
+# Defaults must use Hermes's resolver, including per-model overrides and YAML false.
+for effort, expected in [("high", "high"), (False, "none"), ("", None)]:
+    catalog = {
+        "model": "global-model",
+        "providers": [
+            {
+                "capabilities": {
+                    "global-model": {},
+                    "override-model": {},
+                }
+            }
+        ],
+    }
+    config = {
+        "agent": {"reasoning_effort": effort, "reasoning_overrides": {"override-model": "low"}}
+    }
+    with patch("gateway.run._load_gateway_runtime_config", return_value=config):
+        add_reasoning_defaults(catalog)
+    assert catalog.get("configured_reasoning") == expected
+    caps = catalog["providers"][0]["capabilities"]
+    assert caps["global-model"].get("configured_reasoning") == expected
+    assert caps["override-model"]["configured_reasoning"] == "low"
 
 
 async def http_contract():

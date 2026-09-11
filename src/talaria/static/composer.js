@@ -15,7 +15,7 @@ import {
   pendingStorage,
   MAX_IMAGES_TOTAL,
 } from "./attachments.js";
-import { sessionReasoning, reasoningNames } from "./models.js";
+import { sessionReasoning, sessionModel, reasoningLabel } from "./models.js";
 
 export function Composer({
   app,
@@ -39,6 +39,7 @@ export function Composer({
   const live = app.lives[app.active];
   const displayedModel = model || app.defaultModel;
   const reasoning = sessionReasoning(app);
+  const reasoningText = reasoningLabel(reasoning, sessionModel(app) || app.defaultModel);
   const key = `draft.${app.active || "new"}`;
   const currentKey = useRef(key);
   const currentDraft = useRef(draft);
@@ -372,13 +373,13 @@ export function Composer({
           type="button"
           aria-label="Choose reasoning"
           aria-haspopup="dialog"
-          title=${`Reasoning · ${reasoningNames[reasoning]}`}
+          title=${`Reasoning · ${reasoningText}`}
           onClick=${onReasoning}
           disabled=${active || !app.connected}
         >
           <span class="model-caption"
             ><small>Reasoning</small
-            ><span>${reasoningNames[reasoning]}</span></span
+            ><span>${reasoningText}</span></span
           >
           <${Icon} name="chevron" size=${14} />
         </button>

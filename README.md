@@ -178,6 +178,7 @@ location = /telaria { return 308 /telaria/$is_args$args; }
 location /telaria/ {
     proxy_pass http://127.0.0.1:8766;
     proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_http_version 1.1;
     proxy_buffering off;
     proxy_read_timeout 3600s;
@@ -186,8 +187,10 @@ location /telaria/ {
 ```
 
 Keep buffering disabled for streaming. Talaria uses its configured public URL for
-cookies and origin checks; forwarded headers cannot change it. Login rate limits
-are shared when requests arrive through the same proxy address.
+cookies and origin checks; forwarded headers cannot change it. Login allows 30 failed attempts per IP per hour (in memory; resets on restart).
+For separate client limits behind a proxy, set `"trusted_proxies": ["127.0.0.1"]`
+in Talaria’s config, using your proxy’s actual address or CIDR. Only these peers
+may supply `X-Forwarded-For`; configure them to overwrite untrusted client headers.
 
 ## Development and platform support
 
