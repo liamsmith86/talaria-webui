@@ -23,6 +23,7 @@ while [ "$#" -gt 0 ]; do
             cat <<'HELP'
 Usage: bash install.sh [--install-deps] [setup options]
 Linux, macOS, and WSL2; root is optional. No automatic updates.
+Existing installations update Talaria without repeating setup or Hermes changes.
 
   --non-interactive             Use defaults without prompts
   --install-deps                Allow installing missing Git, uv, and Python

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from .auth import hash_password
-from .config import default_path, load, save
+from .config import default_path, load, save, validate_public_url
 
 
 def development_app():
@@ -51,6 +51,11 @@ def main():
     parser.add_argument("--host", help="Bind address; default: 127.0.0.1")
     parser.add_argument("--port", type=int, help="Listen port; default: 8766")
     parser.add_argument(
+        "--public-url",
+        type=validate_public_url,
+        help="External browser URL, including any reverse-proxy subpath",
+    )
+    parser.add_argument(
         "--dev", action="store_true", help="Development badge, separate login, and Python reload"
     )
     parser.add_argument(
@@ -65,6 +70,8 @@ def main():
     from .app import create_app
 
     settings = load(args.config)
+    if args.public_url is not None:
+        settings.public_url = args.public_url
     if args.dev and not args.config.exists():
         settings.port = 8767
     if args.set_password:

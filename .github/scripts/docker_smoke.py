@@ -8,6 +8,7 @@ import tomllib
 import urllib.request
 import uuid
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 def docker(*args):
@@ -17,18 +18,25 @@ def docker(*args):
 name = "talaria-ci-" + uuid.uuid4().hex[:12]
 volume = name + "-data"
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+public_url = sys.argv[2] if len(sys.argv) > 2 else ""
+prefix = urlsplit(public_url).path.rstrip("/")
+start = (
+    "run",
+    "--detach",
+    "--name",
+    name,
+    "--publish",
+    "127.0.0.1::8766",
+    "--mount",
+    f"type=volume,source={volume},target=/data",
+    sys.argv[1],
+    "--host",
+    "0.0.0.0",
+    *(["--public-url", public_url] if public_url else []),
+)
 try:
-    docker(
-        "run",
-        "--detach",
-        "--name",
-        name,
-        "--publish",
-        "127.0.0.1::8766",
-        "--mount",
-        f"type=volume,source={volume},target=/data",
-        sys.argv[1],
-    )
+    docker(*start)
+
     def ready():
         # Docker may assign a different ephemeral host port after a restart.
         ports = json.loads(docker("inspect", name))[0]["NetworkSettings"]["Ports"]
@@ -44,7 +52,7 @@ try:
 
     base = ready()
     for asset in ("/", "/static/app.js", "/static/styles/chat.css", "/static/vendor/manifest.json"):
-        with opener.open(base + asset, timeout=3) as response:
+        with opener.open(base + prefix + asset, timeout=3) as response:
             assert response.status == 200 and response.read(), asset
     installed = json.loads(
         docker(
@@ -78,7 +86,11 @@ print(hashlib.sha256(p.read_bytes()).hexdigest())
     docker("restart", name)
     ready()
     assert before == docker("exec", name, "python", "-c", fingerprint)
-    print("Image passed: startup, assets, locked packages, non-root, plugin export, persistence.")
+    docker("rm", "--force", name)
+    docker(*start)
+    ready()
+    assert before == docker("exec", name, "python", "-c", fingerprint)
+    print("Image passed: startup, assets, locked packages, non-root, plugin export, replacement.")
 finally:
     subprocess.run(["docker", "rm", "--force", name], check=False, capture_output=True)
     subprocess.run(["docker", "volume", "rm", volume], check=False, capture_output=True)
