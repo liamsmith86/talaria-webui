@@ -13,12 +13,14 @@ git config --local core.hooksPath .githooks
 If you already use custom Git hooks, integrate these two hooks instead of replacing your configuration.
 
 - **Commit:** lint staged Python, check staged JavaScript syntax, and reject whitespace errors.
-- **Push:** test the committed revision in a temporary checkout with locked dependencies: backend tests, Chromium submission/navigation/recovery regressions, and WebKit response/scrolling regressions. Documentation-only pushes skip runtime tests. Missing prerequisites and skipped tests fail the check.
+- **Push:** test the committed revision in a temporary checkout with locked dependencies. Installer changes run installation/backend and relevant native tests; check-runner changes test the runner; frontend changes run browser regressions. Other runtime changes fall back to backend plus Chromium/WebKit checks. Documentation-only pushes skip runtime tests. Missing prerequisites and skipped tests fail fresh checks.
 - **Before release:** run `uv run --locked python contrib/check.py full` for backend, all browser/accessibility tests, and native Hermes contracts.
 
-Run the push checks yourself with `uv run --locked python contrib/check.py check`. Hooks are local guardrails, not a server-enforced security boundary; Git allows bypassing them. They install no services and create no GitHub jobs.
+For daily work, run `uv run --locked python contrib/check.py check --changed` (compares with `origin/main`, including uncommitted files). Use `--base REF` for a narrower comparison. Checks use up to four workers; `TALARIA_TEST_WORKERS=2` reduces load, and `=0` runs serially.
 
-Native contracts use a separate Hermes checkout and its `venv/bin/python3`, temporary storage, and a loopback model simulator. Set `HERMES_SOURCE=/path/to/hermes-agent`; the push hook also accepts `git config --local talaria.hermesSource /path/to/hermes-agent`. Hermes, dependency, and shared fixture changes require these checks. Never point test fixtures at production sessions or credentials.
+Before a planned push, `uv run --locked python contrib/check.py check --revision HEAD` checks the committed snapshot. The hook reuses matching successful results for one hour; `--fresh` forces a rerun. Cache entries are local to `.git`, include the source tree, selected tests, tools and test environment, and are never used for native Hermes checks. `check` without selection flags retains the broader suite. Hooks are local guardrails, not a server-enforced security boundary; Git allows bypassing them. They install no services and create no GitHub jobs.
+
+Native contracts use a separate Hermes checkout and its `venv/bin/python3`, temporary storage, and a loopback model simulator. Set `HERMES_SOURCE=/path/to/hermes-agent` or `git config --local talaria.hermesSource /path/to/hermes-agent`. Hermes, dependency, and shared fixture changes require these checks. Never point test fixtures at production sessions or credentials.
 
 For full accessibility checks, set `TALARIA_AXE_PATH` to a local `axe-core@4.13.0` `axe.min.js` with SHA-256 `c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1`. The existing CI workflow has the download command. Browser binaries follow the locked Playwright version; no new dependency manager is needed.
 
