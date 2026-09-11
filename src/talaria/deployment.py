@@ -298,6 +298,15 @@ class Deployment:
                 process.stdout.close()
 
     def stage(self, commit: str) -> str:
+        # A dedicated service account must be able to read updated runtime files,
+        # including when install.sh calls us with its private bootstrap umask.
+        previous_mask = os.umask(0o022)
+        try:
+            return self._stage(commit)
+        finally:
+            os.umask(previous_mask)
+
+    def _stage(self, commit: str) -> str:
         release = self.root / "releases" / commit
         if release.exists():
             if read_json(release / "release.json").get("commit") == commit:

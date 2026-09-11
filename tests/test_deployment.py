@@ -54,6 +54,15 @@ def deployment(tmp_path):
     return Deployment(root, report=lambda text: None)
 
 
+@pytest.fixture
+def private_umask():
+    previous = os.umask(0o077)
+    try:
+        yield
+    finally:
+        os.umask(previous)
+
+
 def test_only_one_updater_can_change_an_installation(deployment):
     with locked(deployment.root), pytest.raises(DeploymentError, match="Another update"):
         deployment.update()
@@ -210,7 +219,7 @@ def test_managed_launcher_never_injects_production_config_into_dev(deployment):
 @pytest.mark.skipif(not shutil.which("uv") or not shutil.which("git"), reason="Needs Git and uv")
 @pytest.mark.parametrize("sudo", [False, True])
 def test_real_git_wheel_install_update_failure_and_rollback(
-    deployment, tmp_path, monkeypatch, sudo,
+    deployment, tmp_path, monkeypatch, sudo, private_umask,
 ):
     """Exercise the actual build/install/probe pipeline without touching a host service."""
     # A fresh install puts uv here but does not edit the user's shell startup files.
@@ -253,6 +262,12 @@ def test_real_git_wheel_install_update_failure_and_rollback(
     original = config.read_bytes()
     deployment.update(expect=first)
     root = deployment.root
+    runtime = root / "current"
+    for path in [runtime, runtime / "venv", runtime / "venv/bin/talaria"]:
+        assert path.stat().st_mode & 0o005 == 0o005
+    marker = tmp_path / "private-file"
+    marker.write_text("private")
+    assert marker.stat().st_mode & 0o077 == 0
     python = root / "current/venv/bin/python"
     info = json.loads(
         run(
