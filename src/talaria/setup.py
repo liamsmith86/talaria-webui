@@ -545,7 +545,11 @@ def _setup(args, prompts, stack):
     elif not config.exists():
         suggested = str(info["host"]) if info else "127.0.0.1"
         default = "all" if suggested in {"0.0.0.0", "::"} and prompts.terminal else "local"
-        binding = prompts.ask("Bind (local/lan/all)", default, ("local", "lan", "all"))
+        if prompts.terminal is not None:
+            print("local = this machine; lan = local network; all = all network interfaces.")
+        binding = prompts.ask(
+            "Allow connections from (local/lan/all)", default, ("local", "lan", "all")
+        )
         settings.host = {"local": "127.0.0.1", "all": "0.0.0.0"}.get(binding) or lan_address()
     settings.port = args.port if args.port is not None else settings.port
     public = (
@@ -576,7 +580,9 @@ def _setup(args, prompts, stack):
             raise ValueError("Sign-in password must contain 12 to 1024 characters.")
         if not settings.password_hash:
             settings.password_hash = hash_password(password)
-    elif not settings.password_hash and prompts.yes("Choose your own WebUI password?", False):
+    elif not settings.password_hash and prompts.yes(
+        "Choose your own WebUI password instead of generating one?", False
+    ):
         password = getpass.getpass("WebUI password (12+ characters): ", stream=prompts.terminal)
         if not 12 <= len(password) <= 1024 or password != getpass.getpass(
             "Confirm: ", stream=prompts.terminal

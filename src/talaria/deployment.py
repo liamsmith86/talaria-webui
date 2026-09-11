@@ -104,8 +104,9 @@ def run(command, *, cwd=None, timeout=180) -> str:
     caller = os.environ.get("SUDO_UID", "")
     if str(command[0]) == "git" and os.geteuid() == 0 and caller.isdecimal() and int(caller) != 0:
         account = pwd.getpwuid(int(caller))
-        # Ask the invoking user's own Git helpers for HTTPS credentials, and run
-        # SSH as that user. Do not execute their Git configuration as root.
+        # Keep root's HTTPS credentials, then ask the invoking user's helpers if
+        # needed. A root login shell can retain SUDO_UID without using that user's
+        # Git account. Never execute the caller's Git configuration as root.
         user_git = shlex.join(
             [
                 "sudo",
@@ -126,8 +127,6 @@ def run(command, *, cwd=None, timeout=180) -> str:
         )
         command = [
             command[0],
-            "-c",
-            "credential.helper=",
             "-c",
             "credential.helper=" + helper,
             *command[1:],
@@ -516,8 +515,11 @@ class Deployment:
                 )
                 raise
             self.cleanup()
-            self.report(f"Installed {commit[:10]}. Previous release retained for talaria rollback.")
-            if not self.config.get("service"):
+            message = f"Installed {commit[:10]}."
+            if current:
+                message += " Previous release retained for talaria rollback."
+            self.report(message)
+            if current and not self.config.get("service"):
                 self.report("Restart your Talaria process to use the selected release.")
 
     def rollback(self):
