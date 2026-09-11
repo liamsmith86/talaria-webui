@@ -184,6 +184,9 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
     }
     for name in ("VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "PYTHONPATH"):
         env.pop(name, None)
+    with socket.socket() as available:
+        available.bind(("127.0.0.1", 0))
+        port = available.getsockname()[1]
     command = [
         "bash",
         remote / "install.sh",
@@ -198,7 +201,7 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
         "--service",
         "none",
         "--port",
-        "18766",
+        str(port),
         "--public-url",
         "https://example.com/telaria",
     ]
@@ -206,7 +209,7 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
         with socket.socket() as occupied:
             if attempt:
                 # An already-running manual instance must not block installing an update.
-                occupied.bind(("127.0.0.1", 18766))
+                occupied.bind(("127.0.0.1", port))
                 occupied.listen()
             result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=180)
         assert result.returncode == 0, result.stdout + result.stderr
