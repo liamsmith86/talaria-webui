@@ -7,6 +7,7 @@ from starlette.responses import JSONResponse
 
 from .content import MAX_CHAT_BODY, image_inputs
 from .hermes import APIError, identifier, object_result
+from .plugin_status import release_status
 
 PREFIX = "/talaria/v1"
 
@@ -71,6 +72,7 @@ async def discover(client):
             context = context if isinstance(context, dict) else {}
             return {
                 "version": 1,
+                "release": release_status(result),
                 "agent": {"name": name[:80] if isinstance(name, str) else ""},
                 "profile_context": {
                     key: context.get(key)

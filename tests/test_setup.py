@@ -615,6 +615,96 @@ def test_completed_installer_rerun_only_updates(options, monkeypatch, tmp_path):
     assert options.config.read_bytes() == before
 
 
+def test_installer_refreshes_explicit_local_plugin_using_installed_release(options, monkeypatch):
+    options.hermes_home = options.directory.parent / "hermes"
+    options.restart_hermes = True
+    calls = []
+    monkeypatch.setattr(wizard.subprocess, "run", lambda command, **kw: calls.append(command))
+    wizard.refresh_existing_plugin(options.directory, options)
+    assert calls == [
+        [
+            str(options.directory / "bin/talaria"),
+            "hermes-plugin",
+            "--home",
+            str(options.hermes_home),
+            "--restart",
+        ]
+    ]
+
+
+def test_current_enabled_plugin_does_not_prompt_or_restart(options, monkeypatch, tmp_path):
+    from talaria.config import Settings
+    from talaria.plugin_install import install
+
+    options.skip_hermes = False
+    options.plugin = options.enable_hermes_api = options.restart_hermes = True
+    options.restart_hermes = False
+    home = tmp_path / "hermes"
+    install(home, Path(wizard.__file__).with_name("hermes_plugin"), lambda _: None)
+    info = {
+        "enabled": True,
+        "plugin_enabled": True,
+        "key": "existing",
+        "port": 8642,
+        "host": "127.0.0.1",
+    }
+    monkeypatch.setattr(wizard.Prompts, "yes", lambda *a: pytest.fail("Unnecessary prompt"))
+    monkeypatch.setattr(
+        wizard, "hermes_request", lambda *a, **kw: pytest.fail("Reconfigured Hermes")
+    )
+    monkeypatch.setattr(wizard, "restart_gateway", lambda *a: pytest.fail("Restarted Hermes"))
+    assert not wizard.configure_hermes(options, wizard.Prompts(None), Settings(), home, None, info)
+
+
+@pytest.mark.parametrize("version", ["1.0.0", "999.0.0"])
+def test_setup_refreshes_older_plugin_but_preserves_newer_version(
+    options, monkeypatch, tmp_path, version
+):
+    from talaria.config import Settings
+    from talaria.hermes_plugin.release import LOADED_REVISION, fingerprint
+
+    home = tmp_path / "hermes"
+    target = home / "plugins/talaria"
+    target.mkdir(parents=True)
+    (target / "plugin.yaml").write_text(f'name: talaria\nversion: "{version}"\n')
+    (target / "__init__.py").write_text("# Prior plugin\n")
+    before = fingerprint(target)
+    info = {
+        "enabled": True,
+        "plugin_enabled": True,
+        "key": "keep-key",
+        "port": 8642,
+        "host": "127.0.0.1",
+    }
+    monkeypatch.setattr(wizard, "hermes_request", lambda *a, **kw: dict(info))
+    result = wizard.apply_local_hermes(options, Settings(), home, None, info, False, True)
+    assert result["changed"] is (version == "1.0.0")
+    assert result["key"] == "keep-key"
+    assert fingerprint(target) == (LOADED_REVISION if version == "1.0.0" else before)
+
+
+@pytest.mark.parametrize("plugin", ["timeout", "html", {"version": 2}, {"version": True}, []])
+def test_plugin_failure_does_not_disguise_a_working_hermes_connection(monkeypatch, plugin):
+    import httpx
+
+    from talaria.config import Settings
+
+    def serve(request):
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(200, json={"platform": "hermes-agent"})
+        if plugin == "timeout":
+            raise httpx.ReadTimeout("Plugin timed out")
+        if plugin == "html":
+            return httpx.Response(200, text="<html>Proxy error</html>")
+        return httpx.Response(200, json=plugin)
+
+    client = httpx.Client(transport=httpx.MockTransport(serve))
+    monkeypatch.setattr(httpx, "Client", lambda **kw: client)
+    result = wizard.verify_hermes(Settings(api_key="synthetic-key"))
+    assert result.startswith("connected;")
+    assert "extended access available" not in result
+
+
 def test_installer_refuses_ambiguous_installations(tmp_path, monkeypatch):
     first, second = tmp_path / "one", tmp_path / "two"
     for path in (first, second):

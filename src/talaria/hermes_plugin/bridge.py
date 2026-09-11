@@ -7,7 +7,7 @@ import json
 import logging
 
 from .observations import Observations
-from .release import LOADED_REVISION
+from .release import LOADED_REVISION, PLUGIN_VERSION
 
 log = logging.getLogger(__name__)
 PREFIX = "/talaria/v1"
@@ -120,7 +120,7 @@ def rewind(db, sid, data):
     return {"ok": True, "removed": result["rewound_count"]}
 
 
-def wire(app, adapter):
+def wire(app, adapter, **kwargs):
     if not callable(getattr(adapter, "_check_auth", None)) or not callable(
         getattr(adapter, "_ensure_session_db_async", None)
     ):
@@ -200,6 +200,7 @@ async def capabilities(adapter, db):
         {
             "version": 1,
             "revision": LOADED_REVISION,
+            "plugin_version": PLUGIN_VERSION,
             "response_details": True,
             "context_usage": True,
             "model_details": True,

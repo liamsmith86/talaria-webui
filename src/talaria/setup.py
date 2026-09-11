@@ -239,24 +239,43 @@ def backup_hermes(home):
 
 
 def configure_hermes(args, prompts, settings, home, python, info):
+    from .plugin_status import installed_status
+
     apply_hermes_credentials(args, settings)
     if args.skip_hermes:
         return False
     if info is None:
         configure_remote_hermes(args, prompts, settings)
         return False
-    print(f"Found Hermes at {home} (API {'enabled' if info['enabled'] else 'disabled'}).")
-    enable = args.enable_hermes_api or (
-        not info["enabled"] and prompts.yes("Enable this Hermes profile's API server?")
+    print(
+        f"Found Hermes {info.get('version', '')} at {home} "
+        f"(API {'enabled' if info['enabled'] else 'disabled'})."
     )
-    plugin = args.plugin or prompts.yes(
-        "Install and enable Talaria's extended-access plugin?", True
+    enable = not info["enabled"] and (
+        args.enable_hermes_api or prompts.yes("Enable this Hermes profile's API server?")
+    )
+    release = installed_status(home)
+    version = release["version"] or (
+        "not installed" if release["status"] == "missing" else "unknown version"
+    )
+    print(f"Talaria plugin: {version} ({release['status']}).")
+    needs_plugin = release["status"] not in {"current", "newer"}
+    label = (
+        "Install and enable"
+        if release["status"] == "missing"
+        else "Update"
+        if needs_plugin
+        else "Enable"
+    )
+    plugin = args.plugin or (
+        (needs_plugin or not info.get("plugin_enabled"))
+        and prompts.yes(f"{label} Talaria's extended-access plugin?", True)
     )
     # A headless run never implicitly changes Hermes, even for recommended defaults.
     if prompts.terminal is None:
         plugin = args.plugin
     info = apply_local_hermes(args, settings, home, python, info, enable, plugin)
-    changed = bool(enable or plugin)
+    changed = info.get("changed", False)
     if changed:
         print(f"Hermes configuration backup: {home}/{{config.yaml,.env}}.before-talaria")
         if info.get("multiplex"):
@@ -264,14 +283,26 @@ def configure_hermes(args, prompts, settings, home, python, info):
                 "Multiplexed gateway: also enable the plugin in its primary profile. "
                 "Use --hermes-url for a routed /p/PROFILE endpoint."
             )
+    pending = changed or (home / "plugins/.talaria-maintenance/restart-required").exists()
     restart = args.restart_hermes or (
-        changed and prompts.yes("Restart Hermes now? Active work may be interrupted.")
+        pending and prompts.yes("Restart Hermes now? Active work may be interrupted.")
     )
     if restart:
-        restart_gateway(home)
-    elif changed:
+        restart_setup_hermes(home)
+    elif pending:
         print("Restart the Hermes gateway to apply its configuration changes.")
-    return changed and not restart
+    return pending and not restart
+
+
+def restart_setup_hermes(home):
+    pending = home / "plugins/.talaria-maintenance/restart-required"
+    if pending.exists():
+        from .plugin_updates import restart_and_verify
+
+        restart_and_verify(home, home / "plugins/talaria", None)
+        pending.unlink(missing_ok=True)
+    else:
+        restart_gateway(home)
 
 
 def verify_hermes(settings):
@@ -287,17 +318,34 @@ def verify_hermes(settings):
             )
             response.raise_for_status()
             data = response.json()
-            if data.get("platform") != "hermes-agent" and not data.get("features"):
+            if not isinstance(data, dict) or (
+                data.get("platform") != "hermes-agent" and not data.get("features")
+            ):
                 return "unexpected API response; check the Hermes URL"
-            plugin = client.get(
-                settings.hermes_url + "/talaria/v1/capabilities",
-                headers={"Authorization": "Bearer " + settings.api_key},
-            )
-            return (
-                "connected; extended access available" if plugin.status_code == 200 else "connected"
-            )
+            return verify_plugin(client, settings)
     except (httpx.HTTPError, ValueError, AttributeError):
         return "not reachable or authenticated yet; check the API address/key and gateway status"
+
+
+def verify_plugin(client, settings):
+    import httpx
+
+    from .plugin_status import release_status
+
+    try:
+        response = client.get(
+            settings.hermes_url + "/talaria/v1/capabilities",
+            headers={"Authorization": "Bearer " + settings.api_key},
+        )
+        if response.status_code != 200:
+            return "connected"
+        data = response.json()
+    except (httpx.HTTPError, ValueError):
+        return "connected; extended access unavailable"
+    if not isinstance(data, dict) or type(data.get("version")) is not int or data["version"] != 1:
+        return "connected; incompatible plugin API"
+    release = release_status(data)
+    return f"connected; extended access available; plugin {release['status']}"
 
 
 def parser():
@@ -471,10 +519,25 @@ def update_existing(root, args, stack):
     migrate_service(deployment)
     print(f"Config: {config['config']}")
     print_management_commands(root)
-    if args.plugin and not config.get("hermes_plugin"):
+    if args.plugin and not args.skip_hermes and not config.get("hermes_plugin"):
+        refresh_existing_plugin(root, args)
+
+
+def refresh_existing_plugin(root, args):
+    # Preserve an existing installation's connection and credentials. Only an explicit
+    # local profile may receive the newly installed release's bundled plugin.
+    if args.hermes_home:
+        command = [str(root / "bin/talaria"), "hermes-plugin", "--home", str(args.hermes_home)]
+        if args.restart_hermes:
+            command.append("--restart")
+        try:
+            subprocess.run(command, check=True, timeout=1320)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            raise DeploymentError("Talaria updated, but its local plugin refresh failed.") from exc
+    else:
         print(
-            "The Hermes plugin is separate: refresh it with talaria hermes-plugin "
-            "on the Hermes host, then restart the gateway."
+            "Pass --plugin --hermes-home /path/to/profile to refresh an unlinked local plugin. "
+            "Add --restart-hermes to restart and verify its gateway."
         )
 
 
@@ -616,11 +679,17 @@ def apply_hermes_credentials(args, settings):
 
 
 def apply_local_hermes(args, settings, home, python, info, enable, plugin):
-    if enable or plugin:
+    from .plugin_status import installed_status
+
+    needs_files = plugin and installed_status(home)["status"] not in {"current", "newer"}
+    needs_enable = plugin and not info.get("plugin_enabled")
+    changed = bool(enable or needs_files or needs_enable)
+    if changed:
         backup_hermes(home)
-        if plugin:
+        if needs_files:
             export_owned_plugin(home)
-        info = hermes_request(python, home, enable=enable, plugin=plugin)
+        info = hermes_request(python, home, enable=enable, plugin=needs_enable)
+    info = {**info, "changed": changed}
     if info["enabled"] and info["key"]:
         if not args.hermes_url and not settings.api_key:
             settings.hermes_url = local_url(str(info["host"]), int(info["port"]))
