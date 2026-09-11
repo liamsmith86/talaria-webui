@@ -96,6 +96,24 @@ def test_failed_push_check_propagates_the_failure(repo, monkeypatch):
         check.pre_push()
 
 
+def test_docs_only_ref_cannot_skip_a_code_update_to_another_ref(repo, monkeypatch):
+    import io
+
+    (repo / "app.py").write_text("answer = 0\n")
+    old = commit()
+    (repo / "app.py").write_text("answer = 42\n")
+    code = commit()
+    (repo / "README.md").write_text("Documentation\n")
+    revision = commit()
+    monkeypatch.setattr(sys, "stdin", io.StringIO(
+        f"refs/heads/docs {revision} docs {code}\nrefs/heads/main {revision} main {old}\n"
+    ))
+    calls = []
+    monkeypatch.setattr(check, "run", lambda *args, **kwargs: calls.append(args))
+    check.pre_push()
+    assert len(calls) == 1
+
+
 @pytest.mark.parametrize("mode", ["fixed", "unfixed", "unchanged", "setup-error"])
 def test_proof_requires_a_failure_before_and_success_after(repo, mode):
     (repo / "src").mkdir()

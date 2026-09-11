@@ -12,9 +12,11 @@ import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-FOCUSED = [
+STREAMING = [
     "tests/test_response_turns.py",
     "tests/test_stream_reveal.py",
+]
+FOCUSED = STREAMING + [
     "tests/test_frontend_state_qa.py",
     "tests/test_message_submission.py",
 ]
@@ -73,7 +75,7 @@ def check(full=False, native=False):
         if full:
             pytest("-m", "browser", env=browser_env)
         else:
-            pytest(*FOCUSED, env=browser_env)
+            pytest(*(FOCUSED if browser == "chromium" else STREAMING), env=browser_env)
     if full or native:
         pytest("-m", "hermes", env=env)
 
@@ -106,7 +108,6 @@ def pre_push():
         commit = git("rev-parse", f"{revision}^{{commit}}")
         if commit in checked:
             continue
-        checked.add(commit)
         try:
             base = remote if set(remote) != {"0"} else git("merge-base", commit, "origin/main")
             paths = git("diff", "--name-only", "--no-renames", "-z", base, commit).split("\0")
@@ -116,6 +117,7 @@ def pre_push():
         if docs_only(paths):
             print("Documentation-only push: no runtime checks needed.", flush=True)
             continue
+        checked.add(commit)
         with tempfile.TemporaryDirectory(prefix="talaria-push-") as directory:
             root = Path(directory)
             export(commit, root)

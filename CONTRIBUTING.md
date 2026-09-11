@@ -13,7 +13,7 @@ git config --local core.hooksPath .githooks
 If you already use custom Git hooks, integrate these two hooks instead of replacing your configuration.
 
 - **Commit:** lint staged Python, check staged JavaScript syntax, and reject whitespace errors.
-- **Push:** test the committed revision in a temporary checkout with locked dependencies: backend tests and focused Chromium/WebKit regressions for submission, navigation, recovery, and scrolling. Documentation-only pushes skip runtime tests. Missing prerequisites and skipped tests fail the check.
+- **Push:** test the committed revision in a temporary checkout with locked dependencies: backend tests, Chromium submission/navigation/recovery regressions, and WebKit response/scrolling regressions. Documentation-only pushes skip runtime tests. Missing prerequisites and skipped tests fail the check.
 - **Before release:** run `uv run --locked python contrib/check.py full` for backend, all browser/accessibility tests, and native Hermes contracts.
 
 Run the push checks yourself with `uv run --locked python contrib/check.py check`. Hooks are local guardrails, not a server-enforced security boundary; Git allows bypassing them. They install no services and create no GitHub jobs.
