@@ -390,11 +390,41 @@ def test_sudo_git_credentials_run_as_the_caller(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", launch)
     deployment.run(["git", "fetch", "remote"])
     command, env = captured[0]
-    assert "credential.helper=" in command
+    assert "credential.helper=" not in command
     helper = next(arg for arg in command if arg.startswith("credential.helper=!"))
     assert "'#12345'" in helper and "credential" in helper
     assert "sudo -n -H -u '#12345'" in env["GIT_SSH_COMMAND"]
     assert command[-2:] == ["fetch", "remote"]
+
+
+def test_root_shell_keeps_its_existing_git_credentials(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from talaria import deployment
+
+    config = tmp_path / "gitconfig"
+    config.write_text(
+        '[credential]\n helper = "!f() { echo username=test-owner; '
+        'echo password=test-token; }; f"\n'
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("SUDO_UID", "12345")
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setattr(
+        deployment.pwd, "getpwuid", lambda uid: SimpleNamespace(pw_dir=str(tmp_path))
+    )
+    request = tmp_path / "request"
+    request.write_text("protocol=https\nhost=example.invalid\n\n")
+    original = subprocess.Popen
+    with request.open() as input_file:
+        monkeypatch.setattr(
+            subprocess, "Popen", lambda *args, **kwargs: original(
+                *args, stdin=input_file, **kwargs
+            )
+        )
+        result = deployment.run(["git", "credential", "fill"], cwd=tmp_path)
+    assert "username=test-owner" in result and "password=test-token" in result
 
 
 def test_completed_installer_rerun_only_updates(options, monkeypatch, tmp_path):
