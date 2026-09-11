@@ -474,11 +474,10 @@ def _setup(args, prompts, stack):
         if args.service is None:
             args.service = resume.get("service")
     available = supported_service()
-    kind = args.service or prompts.ask(
-        "App service (auto/none)", "auto" if available != "none" else "none", ("auto", "none")
-    )
-    if prompts.terminal is None and not args.service:
-        kind = "none"
+    kind = args.service or "none"
+    if args.service is None and prompts.terminal is not None and available != "none":
+        if prompts.yes("Install as persistent background service?", True):
+            kind = available
     if kind == "auto":
         kind = available
     if kind not in {"none", available}:
