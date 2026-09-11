@@ -184,6 +184,19 @@ def wire(app, adapter):
             if action == "fork":
                 if not callable(getattr(db, "patch_session_model_config", None)):
                     return web.json_response({"error": "Branch metadata unavailable."}, status=404)
+                # Native fork validates titles only after copying the session.
+                # Reject known conflicts before it can leave an unmarked child.
+                data = await request.json()
+                if isinstance(data, dict) and data.get("title") is not None:
+                    try:
+                        title = db.sanitize_title(str(data["title"]))
+                        if title and await asyncio.to_thread(db.get_session_by_title, title):
+                            raise ValueError("That conversation name is already in use.")
+                    except ValueError as exc:
+                        return web.json_response(
+                            {"error": {"code": "invalid_title", "message": str(exc)}},
+                            status=400,
+                        )
                 # Hermes's API fork omits the marker its CLI writes. Without
                 # it, resume resolution can redirect the original into the copy.
                 # Delegate the operation, then attach the native lineage marker

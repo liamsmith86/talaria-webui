@@ -7,6 +7,47 @@ from .conftest import wait_for_store
 from .test_conversation_features import IMAGE, seed
 
 
+def test_repeated_default_branches_use_distinct_hermes_names(page, live_app):
+    peer = live_app[1]
+    peer.extension = {"session_fork": True}
+    sid = seed(peer, "repeat-original", count=2)
+    peer.sessions[sid]["title"] = "Original"
+    page.reload()
+    for _ in range(3):
+        page.get_by_role("button", name="Original", exact=True).click()
+        wait_for_store(page, "s => s.active === 'repeat-original' && !s.loading")
+        page.get_by_role("button", name="Options for Original", exact=True).click()
+        page.get_by_role("button", name="Branch conversation", exact=True).click()
+        page.get_by_role("button", name="Create branch", exact=True).click()
+        expect(page.get_by_role("dialog")).to_have_count(0)
+        wait_for_store(page, "s => s.active !== 'repeat-original' && !s.loading")
+    children = [s for s in peer.sessions.values() if s.get("parent_session_id") == sid]
+    assert len(children) == 3
+    assert {s["title"] for s in children} == {"Original #2", "Original #3", "Original #4"}
+
+
+def test_rejected_branch_can_close_and_open_context_usage(page, live_app):
+    peer = live_app[1]
+    peer.extension = {"session_fork": True}
+    sid = seed(peer, "rejected-original", count=2)
+    peer.sessions[sid]["title"] = "Original"
+    page.reload()
+    page.get_by_role("button", name="Original", exact=True).click()
+    page.get_by_role("button", name="Options for Original", exact=True).click()
+    page.get_by_role("button", name="Branch conversation", exact=True).click()
+    page.get_by_label("Conversation name", exact=True).fill("Original")
+    page.get_by_role("button", name="Create branch", exact=True).click()
+    expect(page.get_by_role("alert")).to_contain_text("already in use")
+    expect(page.get_by_role("button", name="Create branch", exact=True)).to_be_enabled()
+    page.keyboard.press("Escape")
+    expect(page.get_by_role("dialog")).to_have_count(0)
+    page.get_by_role("button", name="Context usage", exact=True).click()
+    expect(page.get_by_role("dialog", name="Context usage")).to_be_visible()
+    page.get_by_role("button", name="Close dialog", exact=True).click()
+    expect(page.get_by_role("dialog")).to_have_count(0)
+    assert len(peer.sessions) == 1
+
+
 def test_return_to_discord_original_after_branching(page, live_app):
     peer = live_app[1]
     peer.extension = {"session_fork": True}
@@ -30,7 +71,7 @@ def test_return_to_discord_original_after_branching(page, live_app):
     expect(original).to_have_attribute("aria-current", "page")
     expect(page.locator(".message")).to_have_count(2)
     expect(page.locator(".conversation-content")).not_to_contain_text("Only in the copy")
-    page.get_by_role("button", name="Independent copy · branch", exact=True).click()
+    page.get_by_role("button", name="Independent copy", exact=True).click()
     expect(page.locator(".message.assistant").last).to_contain_text("Only in the copy")
 
 

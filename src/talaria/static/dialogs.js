@@ -230,7 +230,9 @@ export function Connection({
 }
 
 export function SessionDialog({ mode, session, onClose }) {
-  const [title, setTitle] = useState(session.title || "Untitled conversation");
+  const [title, setTitle] = useState(
+    mode === "fork" ? "" : session.title || "Untitled conversation",
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function submit(e) {
@@ -243,12 +245,9 @@ export function SessionDialog({ mode, session, onClose }) {
         method:
           mode === "delete" ? "DELETE" : mode === "fork" ? "POST" : "PATCH",
         body:
-          mode === "delete"
+          mode === "delete" || (mode === "fork" && !title.trim())
             ? {}
-            : {
-                title:
-                  mode === "fork" ? `${title} · branch`.slice(0, 160) : title,
-              },
+            : { title },
       });
       if (mode === "delete") {
         writeStorage(`draft.${session.id}`, "");
@@ -284,7 +283,7 @@ export function SessionDialog({ mode, session, onClose }) {
   }
   return html`<${Dialog} title=${{ rename: "Rename conversation", delete: "Delete conversation?", fork: "Branch conversation" }[mode]} onClose=${onClose} dismissible=${!busy}>
     <form onSubmit=${submit}>
-      ${mode === "delete" ? html`<p class="dialog-intro">“${title}” will be permanently deleted from Hermes. This cannot be undone.</p>` : html`<label class="field">Conversation name<input value=${title} onInput=${(e) => setTitle(e.target.value)} maxlength="150" required autofocus /></label>`}
+      ${mode === "delete" ? html`<p class="dialog-intro">“${title}” will be permanently deleted from Hermes. This cannot be undone.</p>` : html`<label class="field">Conversation name<input value=${title} onInput=${(e) => setTitle(e.target.value)} placeholder=${mode === "fork" ? "Automatic name from Hermes" : ""} maxlength="150" required=${mode !== "fork"} autofocus /></label>`}
       ${mode === "fork" && html`<p class="field-help">Continue in a new direction with a copy of this conversation’s history.</p>`}
       ${error && html`<div class="form-error" role="alert">${error}</div>`}
       <div class="dialog-actions"><button type="button" class="button secondary" disabled=${busy} onClick=${onClose}>Cancel</button><button disabled=${busy} class=${`button ${mode === "delete" ? "danger" : "primary"}`}>${busy ? "Working…" : { rename: "Save name", delete: "Delete conversation", fork: "Create branch" }[mode]}</button></div>

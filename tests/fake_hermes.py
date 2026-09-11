@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 import time
 import uuid
 
@@ -238,14 +239,27 @@ class FakeHermes:
                     }
                 )
             if path.endswith("/fork"):
+                title = body.get("title")
+                titles = {s.get("title") for s in self.sessions.values()}
+                if title is None:
+                    base = re.sub(r" #\d+$", "", self.sessions[sid].get("title") or "fork")
+                    title, number = base, 1
+                    while title in titles:
+                        number += 1
+                        title = f"{base} #{number}"
+                elif title in titles and plugin_fork:
+                    return JSONResponse({"error": {"code": "invalid_title"}}, 400)
                 new_id = uuid.uuid4().hex
                 self.sessions[sid]["end_reason"] = "branched"
                 self.sessions[new_id] = {
-                    "id": new_id, "title": body["title"],
+                    "id": new_id, "title": title,
                     "source": "api_server", "parent_session_id": sid,
                     "model_config": {"_branched_from": sid} if plugin_fork else {},
                 }
                 self.messages[new_id] = list(self.messages[sid])
+                if title in titles:
+                    self.sessions[new_id]["title"] = None
+                    return JSONResponse({"error": {"code": "invalid_title"}}, 400)
                 return JSONResponse(
                     {"object": "hermes.session", "session": self.sessions[new_id]}, 201
                 )

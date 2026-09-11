@@ -263,7 +263,8 @@ async def fork(request: Request):
 
     sid = identifier(request.path_params["session_id"])
     data = await body(request)
-    payload = {"title": text_field(data, "title", 160, "Branched conversation")}
+    # Omitted titles use Hermes's own lineage naming (including uniqueness).
+    payload = {"title": text_field(data, "title", 160)} if "title" in data else {}
     client = request.app.state.hermes
     try:
         result = await client.request("POST", f"{PREFIX}/sessions/{sid}/fork", json=payload)

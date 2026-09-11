@@ -51,6 +51,19 @@ async def test_fork_only_falls_back_when_the_plugin_endpoint_is_missing(backend,
     assert response.status_code == (201 if status == 404 else 409 if status == 409 else 502)
 
 
+@pytest.mark.parametrize("plugin", [False, True])
+async def test_default_branch_names_are_chosen_by_hermes(backend, plugin):
+    client, _, peer = backend
+    peer.extension = {"session_fork": True} if plugin else None
+    peer.sessions["original"] = {"id": "original", "title": "Original", "source": "discord"}
+    peer.messages["original"] = []
+    for number in (2, 3):
+        response = await client.post("/api/sessions/original/fork", json={})
+        assert response.status_code == 201, response.text
+        assert response.json()["title"] == f"Original #{number}"
+    assert len(peer.sessions) == 3
+
+
 @pytest.mark.parametrize("fail", [False, True])
 async def test_capability_reads_overlap_and_do_not_outlive_the_request(backend, fail):
     client, app, _ = backend
