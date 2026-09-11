@@ -228,6 +228,7 @@ def test_observation_store_is_bounded_and_profile_scoped(tmp_path):
         ("hermes_contract.py", "openai"),
         ("hermes_context_contract.py", "openai"),
         ("hermes_context_contract.py", "openrouter"),
+        ("hermes_branch_contract.py", "openai"),
     ],
 )
 def test_native_hermes_contract(tmp_path, contract, provider):
