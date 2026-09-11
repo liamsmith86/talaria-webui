@@ -43,14 +43,13 @@ def text_field(data: dict, key: str, limit: int, default: str = "") -> str:
 
 async def bootstrap(request: Request):
     logged_in = auth.authenticated(request)
-    settings = request.app.state.settings
     return JSONResponse(
         {
             "version": __version__,
             "environment": "development" if request.app.state.development else "production",
             "authenticated": logged_in,
             "csrf": auth.csrf_token(request) if logged_in else None,
-            "connected": bool(settings.api_key) if logged_in else False,
+            "connected": bool(request.app.state.hermes_key) if logged_in else False,
             "agent": agent_identity(request.app.state.capabilities, request.app.state.extensions)
             if logged_in
             else None,
@@ -94,13 +93,39 @@ async def logout(request: Request):
     return response
 
 
+def connection_key(request, data, url):
+    state = request.app.state
+    key = text_field(data, "api_key", 4096)
+    if (
+        not key
+        and url == state.settings.hermes_url
+        and get_route_path(request.scope) != "/api/profiles/test"
+    ):
+        key = state.hermes_key
+    if (
+        state.key_from_env
+        and get_route_path(request.scope) != "/api/profiles/test"
+        and (url != state.settings.hermes_url or data.get("api_key"))
+    ):
+        raise APIError(
+            "This connection uses TALARIA_HERMES_API_KEY. Change it in the server environment.",
+            409,
+        )
+    if not valid_api_key(key):
+        raise APIError("Enter the API key from your Hermes API server.", 400)
+    if request.method == "PUT" and state.hermes_key and url != state.settings.hermes_url:
+        raise APIError("Add a profile to connect to another Hermes address or profile.", 409)
+    return key
+
+
 async def connection(request: Request):
     state = request.app.state
     if request.method in {"GET", "HEAD"}:
         return JSONResponse(
             {
                 "url": state.settings.hermes_url,
-                "key_set": bool(state.settings.api_key),
+                "key_set": bool(state.hermes_key),
+                "key_from_env": state.key_from_env,
                 **state.profiles.describe(state.profile_id),
             }
         )
@@ -110,17 +135,7 @@ async def connection(request: Request):
         url = connection_url(data)
     except (ValueError, TypeError, AttributeError) as exc:
         raise APIError(str(exc), 400, "invalid_url") from exc
-    key = text_field(data, "api_key", 4096)
-    if (
-        not key
-        and url == state.settings.hermes_url
-        and get_route_path(request.scope) != "/api/profiles/test"
-    ):
-        key = state.settings.api_key
-    if not valid_api_key(key):
-        raise APIError("Enter the API key from your Hermes API server.", 400)
-    if request.method == "PUT" and state.settings.api_key and url != state.settings.hermes_url:
-        raise APIError("Add a profile to connect to another Hermes address or profile.", 409)
+    key = connection_key(request, data, url)
     client = Hermes(url, key, transport=state.profiles.transport)
     try:
         caps = object_result(await client.request("GET", "/v1/capabilities"))
@@ -134,10 +149,15 @@ async def connection(request: Request):
 
                     async def save_connection():
                         nonlocal client
-                        settings = replace(state.settings, hermes_url=url, api_key=key)
+                        settings = replace(
+                            state.settings,
+                            hermes_url=url,
+                            api_key=state.settings.api_key if state.key_from_env else key,
+                        )
                         await state.profiles.save_settings(state.profile_id, settings)
                         old_relay, old_client = state.relay, state.hermes
                         state.settings, state.hermes = settings, client
+                        state.hermes_key = key
                         state.relay = Relay(client)
                         state.capabilities, state.extensions = caps, {}
                         client = None

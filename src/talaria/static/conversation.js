@@ -683,8 +683,7 @@ export function Conversation({ app, command, onDismissCommand }) {
           ${live.statusText}</div>`}
         ${live?.reconnecting &&
         html`<div class="run-notice" role="status">
-          <span class="spinner" /> Reconnecting to live updates. Hermes is still
-          working.
+          <span class="spinner" /> Reconnecting to Hermes. The response status is not yet confirmed.
         </div>`}
         ${live?.error &&
         html`<div class="run-error" role="alert">

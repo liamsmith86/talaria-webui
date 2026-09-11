@@ -135,7 +135,13 @@ class Hermes:
                     )
                 if not data:
                     return {}
-                return decode_json(data)
+                try:
+                    return decode_json(data)
+                except (ValueError, RecursionError) as exc:
+                    raise APIError(
+                        "Hermes returned an unreadable response. Try again shortly.",
+                        code="invalid_response",
+                    ) from exc
         except (httpx.HTTPError, ValueError, RecursionError) as exc:
             raise APIError("Cannot reach Hermes. Check the connection and try again.") from exc
 

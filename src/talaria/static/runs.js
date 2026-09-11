@@ -1,4 +1,4 @@
-import { api, RequestError } from "./api.js";
+import { api, RequestError, errorMessage } from "./api.js";
 import { apiURL } from "./profile-context.js";
 import {
   state,
@@ -90,6 +90,11 @@ function canRetry(live) {
 }
 const receiptError =
   "The submission confirmation was lost. Check the session before sending another message.";
+function runError(status, error) {
+  return error || status === "failed"
+    ? errorMessage(error, "Hermes could not finish this response. Check the model/provider and try again.")
+    : null;
+}
 export const running = (sid, lives = state.lives) =>
   Object.hasOwn(lives, sid) && !!lives[sid] && !terminal.has(lives[sid].status);
 
@@ -273,7 +278,7 @@ export function applyEvent(live, event) {
         : tool,
     );
     next.usage = event.usage;
-    next.error = event.error;
+    next.error = runError(next.status, event.error);
     next.approval = null;
     next.clarification = null;
     next.statusText = "";
@@ -728,7 +733,7 @@ async function recoverRuns() {
         status: status.status,
         approval: terminal.has(status.status) ? null : status.approval,
         clarification: terminal.has(status.status) ? null : status.clarification,
-        error: status.error,
+        error: runError(status.status, status.error),
         usage: status.usage,
         pendingSteer: status.pending_steer,
         needsHistory:

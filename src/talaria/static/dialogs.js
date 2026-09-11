@@ -91,6 +91,7 @@ export function Connection({
   const [label, setLabel] = useState("");
   const [key, setKey] = useState("");
   const [keySet, setKeySet] = useState(false);
+  const [keyFromEnv, setKeyFromEnv] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [tested, setTested] = useState(false);
@@ -104,6 +105,7 @@ export function Connection({
         setUrl(d.server_url || d.url);
         setProfile(d.profile || "default");
         setKeySet(d.key_set);
+        setKeyFromEnv(d.key_from_env === true);
       })
       .catch((e) => setError(e.message));
   }, [creating]);
@@ -186,17 +188,21 @@ export function Connection({
         >API key<input
           type="password"
           value=${key}
+          disabled=${keyFromEnv}
           onInput=${(e) => {
             setKey(e.target.value);
             setTested(false);
           }}
-          placeholder=${keySet
+          placeholder=${keyFromEnv ? "Managed by server environment" : keySet
             ? "Leave blank to keep saved key"
             : "Your Hermes API server key"}
           autocomplete="new-password"
       /></label>
       <p class="field-help">
-        Your key is saved to ~/.config/talaria/config.json.
+        ${keyFromEnv ? "Using TALARIA_HERMES_API_KEY from the server environment."
+          : creating || state.profile?.id !== "default"
+            ? "Your key is saved to ~/.config/talaria/profiles.json."
+            : "Your key is saved to ~/.config/talaria/config.json."}
       </p>
       ${error && html`<div class="form-error" role="alert">${error}</div>`}
       ${tested &&
