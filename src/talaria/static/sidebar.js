@@ -21,8 +21,8 @@ import { sourceLabel } from "./content.js";
 import { readinessLabel } from "./readiness.js";
 import { ProfileSwitch } from "./profiles.js";
 
-function groupName(session) {
-  const now = new Date();
+function groupName(session, day) {
+  const now = new Date(day);
   now.setHours(0, 0, 0, 0);
   const raw =
     session.last_active ||
@@ -70,9 +70,10 @@ export function Sidebar({ app }) {
   // Text deltas do not change the sidebar. Retain row VNodes until the list,
   // selection, date grouping, or running indicators actually change.
   const rows = useMemo(() => {
+    const runningIds = new Set(liveKey.split("\n"));
     let lastGroup = "";
     return sessions.map((session) => {
-      const group = session.pinned ? "Pinned" : query ? "" : groupName(session);
+      const group = session.pinned ? "Pinned" : query ? "" : groupName(session, day);
       const heading = group && group !== lastGroup;
       lastGroup = group;
       return html`<div key=${session.id}>
@@ -96,10 +97,10 @@ export function Sidebar({ app }) {
                   ? html`<${Icon}
                     name="pin"
                     size=${13}
-                    class=${`pin-icon ${running(session.id, app.lives) ? "live" : ""}`}
+                    class=${`pin-icon ${runningIds.has(session.id) ? "live" : ""}`}
                   />`
                   : html`<span
-                    class=${`session-dot ${running(session.id, app.lives) ? "live" : ""}`}
+                    class=${`session-dot ${runningIds.has(session.id) ? "live" : ""}`}
                   ></span>`
               }<span class="session-caption"
                 >${session.title || "Untitled session"}</span

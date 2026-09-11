@@ -63,15 +63,14 @@ def service_plan(kind, root, config):
         account = "talaria-webui" if system else None
         content = MARKER + "[Unit]\nDescription=Talaria WebUI\nAfter=network.target\n\n[Service]\n"
         content += (
-            f"ExecStart={unit_quote(root / 'current/venv/bin/talaria')} "
-            f"--config {unit_quote(config)}\n"
+            f"ExecStart={unit_quote(root / 'manager/venv/bin/python')} "
+            f"-m talaria.supervisor --directory {unit_quote(root)}\n"
         )
         content += "Restart=on-failure\nRestartSec=3\nTimeoutStopSec=20\nUMask=0077\n"
         content += "NoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\n"
-        content += f"ReadWritePaths={unit_quote(config.parent)}\n"
+        content += f"ReadWritePaths={unit_quote(root)} {unit_quote(config.parent)}\n"
         content += "Environment=PYTHONUNBUFFERED=1\nEnvironment=PYTHONDONTWRITEBYTECODE=1\n"
-        if account:
-            content += f"User={account}\nGroup={account}\n"
+        # The launcher retains install permissions and drops HTTP to account.
         content += "\n[Install]\nWantedBy=" + (
             "multi-user.target\n" if system else "default.target\n"
         )
@@ -90,7 +89,13 @@ def service_plan(kind, root, config):
     content = plistlib.dumps(
         {
             "Label": LABEL,
-            "ProgramArguments": [str(root / "current/venv/bin/talaria"), "--config", str(config)],
+            "ProgramArguments": [
+                str(root / "manager/venv/bin/python"),
+                "-m",
+                "talaria.supervisor",
+                "--directory",
+                str(root),
+            ],
             "RunAtLoad": True,
             "KeepAlive": {"SuccessfulExit": False},
             "ThrottleInterval": 3,
@@ -131,17 +136,8 @@ def preflight(plan, root, config, *, resuming=False):
         )
     if not plan["account"]:
         return
-    # Do not repurpose an existing interactive or privileged account.
-    try:
-        account = pwd.getpwnam(plan["account"])
-    except KeyError:
-        if not shutil.which("useradd"):
-            raise DeploymentError(
-                "System service setup needs useradd; use --service none."
-            ) from None
-    else:
-        if account.pw_uid == 0 or account.pw_shell.rsplit("/", 1)[-1] not in {"nologin", "false"}:
-            raise DeploymentError("The talaria-webui account is unsuitable for a service.")
+    check_service_account(plan)
+    check_system_directory(root)
     # A user service must be able to traverse its interpreter and release parents.
     for target in (Path(sys._base_executable).resolve(), root):
         for parent in [target, *target.parents]:
@@ -157,9 +153,16 @@ def preflight(plan, root, config, *, resuming=False):
         )
 
 
+def check_system_directory(root):
+    for path in (root, *root.parents):
+        if path.exists() and (path.stat().st_uid != 0 or path.stat().st_mode & 0o022):
+            raise DeploymentError("System installations must have root-owned, unwritable parents.")
+
+
 def prepare_account(plan, config):
     if not plan["account"]:
-        return
+        return False
+    created = False
     try:
         account = pwd.getpwnam(plan["account"])
     except KeyError:
@@ -178,11 +181,13 @@ def prepare_account(plan, config):
             ]
         )
         account = pwd.getpwnam(plan["account"])
+        created = True
     config.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chown(config.parent, account.pw_uid, account.pw_gid)
     for file in config.parent.iterdir():
         if file.is_file() and not file.is_symlink():
             os.chown(file, account.pw_uid, account.pw_gid)
+    return created
 
 
 def install_service(plan):
@@ -210,3 +215,67 @@ def describe(plan):
         else []
     )
     return {action: shlex.join([*prefix, *plan[action]]) for action in ("start", "stop", "restart")}
+
+
+def check_service_account(plan):
+    # Do not repurpose an existing interactive or privileged account.
+    try:
+        account = pwd.getpwnam(plan["account"])
+    except KeyError:
+        if not shutil.which("useradd"):
+            raise DeploymentError(
+                "System service setup needs useradd; use --service none."
+            ) from None
+    else:
+        if account.pw_uid == 0 or account.pw_shell.rsplit("/", 1)[-1] not in {"nologin", "false"}:
+            raise DeploymentError("The talaria-webui account is unsuitable for a service.")
+
+
+def migrate_service(deployment):
+    """Upgrade only our unmodified app unit; restore it if the new launcher fails."""
+    import hashlib
+
+    from .deployment import check_health, write_json
+
+    metadata = deployment.config
+    owned = metadata.get("setup")
+    if not owned or metadata.get("supervised"):
+        return
+    if (owned["scope"] == "system") != (os.geteuid() == 0):
+        raise DeploymentError(
+            "Run setup as the service installation owner to upgrade its launcher."
+        )
+    plan = service_plan(owned["kind"], deployment.root, Path(metadata["config"]))
+    path = plan["path"]
+    if str(path) != owned["service_file"] or path.is_symlink():
+        raise DeploymentError("Service ownership changed; its configuration was preserved.")
+    previous = path.read_text()
+    if hashlib.sha256(previous.encode()).hexdigest() != owned["service_sha256"]:
+        raise DeploymentError("Service configuration changed; it was preserved.")
+    upgraded = {
+        **metadata,
+        "supervised": True,
+        "setup": {
+            **owned,
+            "service_sha256": hashlib.sha256(plan["text"].encode()).hexdigest(),
+        },
+    }
+    write_json(deployment.root / "deployment.json", upgraded)
+    try:
+        if plan["kind"] == "launchd":
+            run(plan["stop"])
+        install_service(plan)
+        if plan["kind"] == "systemd":
+            run(plan["restart"], timeout=45)
+        check_health(metadata["health_url"], deployment.status()["current"]["commit"])
+    except BaseException:
+        write_file(path, previous, 0o644)
+        write_json(deployment.root / "deployment.json", metadata)
+        if plan["kind"] == "systemd":
+            run([*plan["restart"][:-2], "daemon-reload"])
+        else:
+            run(plan["stop"])
+            run(plan["start"])
+        run(plan["restart"], timeout=45)
+        raise
+    deployment.config = upgraded

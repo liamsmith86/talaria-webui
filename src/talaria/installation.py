@@ -1,4 +1,4 @@
-"""Read-only release information. No Git, installer, or service access from HTTP."""
+"""Public release and launcher progress, with private deployment settings omitted."""
 
 import asyncio
 import json
@@ -9,6 +9,7 @@ from pathlib import Path
 from starlette.responses import JSONResponse
 
 from . import __version__
+from .control import JOB, SOCKET
 
 
 def read_json(path: Path) -> dict:
@@ -57,7 +58,13 @@ def public_info(development: bool) -> dict:
         data.update(
             branch=str(config.get("branch", "main"))[:120],
             installed_at=release_info(root / "current")["installed_at"],
-            update_command=("sudo " if config.get("scope") == "system" else "") + "talaria update",
+            can_update=(root / SOCKET).exists(),
+            operation={
+                key: value
+                for key, value in read_json(root / JOB).items()
+                if key in {"id", "action", "status", "phase", "error", "expect"}
+                and isinstance(value, (str, type(None)))
+            },
             update={
                 **{
                     key: state[key][:300] if isinstance(state.get(key), str) else None

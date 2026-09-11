@@ -1,9 +1,11 @@
 """Deployment failures must leave a usable release and private config intact."""
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +15,7 @@ from talaria.deployment import (
     DeploymentError,
     check_health,
     locked,
+    readable_runtime,
     run,
     select,
     selected,
@@ -21,6 +24,22 @@ from talaria.deployment import (
 from talaria.installation import read_json
 
 A, B, C = "a" * 40, "b" * 40, "c" * 40
+
+
+def test_runtime_permissions_preserve_external_interpreter(tmp_path):
+    runtime = tmp_path / "venv"
+    runtime.mkdir(mode=0o700)
+    module = runtime / "module.py"
+    module.write_text("pass")
+    module.chmod(0o600)
+    outside = tmp_path / "python"
+    outside.write_text("interpreter")
+    outside.chmod(0o700)
+    (runtime / "python").symlink_to(outside)
+    readable_runtime(runtime)
+    assert runtime.stat().st_mode & 0o777 == 0o755
+    assert module.stat().st_mode & 0o777 == 0o644
+    assert outside.stat().st_mode & 0o777 == 0o700
 
 
 def release(root, commit):
@@ -50,6 +69,15 @@ def deployment(tmp_path):
     )
     select(root, "current", release(root, A))
     return Deployment(root, report=lambda text: None)
+
+
+@pytest.fixture
+def private_umask():
+    previous = os.umask(0o077)
+    try:
+        yield
+    finally:
+        os.umask(previous)
 
 
 def test_only_one_updater_can_change_an_installation(deployment):
@@ -206,8 +234,37 @@ def test_managed_launcher_never_injects_production_config_into_dev(deployment):
 
 
 @pytest.mark.skipif(not shutil.which("uv") or not shutil.which("git"), reason="Needs Git and uv")
-def test_real_git_wheel_install_update_failure_and_rollback(deployment, tmp_path):
+@pytest.mark.parametrize("sudo", [False, True])
+def test_real_git_wheel_install_update_failure_and_rollback(
+    deployment,
+    tmp_path,
+    monkeypatch,
+    sudo,
+    private_umask,
+):
     """Exercise the actual build/install/probe pipeline without touching a host service."""
+    # A fresh install puts uv here but does not edit the user's shell startup files.
+    home = tmp_path / "home"
+    user_bin = home / ".local/bin"
+    user_bin.mkdir(parents=True)
+    (user_bin / "uv").symlink_to(shutil.which("uv"))
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.delenv("SUDO_UID", raising=False)
+    if sudo:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "root")
+        monkeypatch.setattr(os, "geteuid", lambda: 0)
+        monkeypatch.setenv("SUDO_UID", "12345")
+        monkeypatch.setattr(
+            "talaria.deployment.pwd.getpwuid", lambda uid: SimpleNamespace(pw_dir=str(home))
+        )
+    which = shutil.which
+    monkeypatch.setattr(
+        shutil,
+        "which",
+        lambda command, **kwargs: (
+            None if command == "uv" and not kwargs else which(command, **kwargs)
+        ),
+    )
     project = Path(__file__).resolve().parents[1]
     remote = Path(deployment.config["repository"])
     remote.mkdir()
@@ -228,6 +285,12 @@ def test_real_git_wheel_install_update_failure_and_rollback(deployment, tmp_path
     original = config.read_bytes()
     deployment.update(expect=first)
     root = deployment.root
+    runtime = root / "current"
+    for path in [runtime, runtime / "venv", runtime / "venv/bin/talaria"]:
+        assert path.stat().st_mode & 0o005 == 0o005
+    marker = tmp_path / "private-file"
+    marker.write_text("private")
+    assert marker.stat().st_mode & 0o077 == 0
     python = root / "current/venv/bin/python"
     info = json.loads(
         run(

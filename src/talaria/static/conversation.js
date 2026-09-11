@@ -497,6 +497,8 @@ export function Conversation({ app }) {
   const agentName = app.agent?.name?.trim() || "Hermes";
   const items = useMemo(
     () => historyItems(app.history, live),
+    // Snapshot live metadata when saved history/image reconciliation changes, not on text deltas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [app.history, live?.persisted, live?.userImages],
   );
   const streaming = running(app.active, app.lives);

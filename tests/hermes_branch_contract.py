@@ -32,13 +32,17 @@ async def main():
             db.create_session(sid, "discord")
             db.append_message(sid, "user", "Original question")
             db.append_message(sid, "assistant", "Original answer")
-            response = await client.post(f"{prefix}/sessions/{sid}/fork", headers=headers,
-                                         json={"title": sid + " branch"})
+            response = await client.post(
+                f"{prefix}/sessions/{sid}/fork", headers=headers, json={"title": sid + " branch"}
+            )
             assert response.status == 201, await response.text()
             fork = (await response.json())["session"]
-            history = await (await client.get(
-                f"/api/sessions/{sid}/messages", headers=headers,
-            )).json()
+            history = await (
+                await client.get(
+                    f"/api/sessions/{sid}/messages",
+                    headers=headers,
+                )
+            ).json()
             if prefix == "/api":
                 # Capture the upstream defect without inventing a browser scenario.
                 redirected = history["session_id"] == fork["id"]
@@ -64,8 +68,9 @@ async def main():
         db.create_session("named-original", "api_server")
         db.set_session_title("named-original", "Named original")
         for number in (2, 3):
-            response = await client.post("/talaria/v1/sessions/named-original/fork",
-                                         headers=headers, json={})
+            response = await client.post(
+                "/talaria/v1/sessions/named-original/fork", headers=headers, json={}
+            )
             assert response.status == 201, await response.text()
             fork = (await response.json())["session"]
             assert fork["title"] == f"Named original #{number}"
@@ -73,8 +78,9 @@ async def main():
         # A rejected custom title must not create an unnamed, unmarked child.
         before = db._read_one("SELECT count(*) AS n FROM sessions")["n"]
         for title in ("Named original #2", "x" * 1000):
-            response = await client.post("/talaria/v1/sessions/named-original/fork",
-                                         headers=headers, json={"title": title})
+            response = await client.post(
+                "/talaria/v1/sessions/named-original/fork", headers=headers, json={"title": title}
+            )
             assert response.status == 400, await response.text()
             assert db._read_one("SELECT count(*) AS n FROM sessions")["n"] == before
             assert db.resolve_resume_session_id("named-original") == "named-original"

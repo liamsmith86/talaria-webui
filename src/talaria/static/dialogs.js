@@ -12,10 +12,8 @@ import { api } from "./api.js";
 import { pendingStorage, forgetImages } from "./attachments.js";
 import {
   state,
-  update,
   connect,
   toast,
-  fail,
   refreshSessions,
   newConversation,
   openSession,
@@ -98,7 +96,7 @@ export function Connection({
   const [tested, setTested] = useState(false);
   useEffect(() => {
     if (creating) {
-      setUrl(state.profile?.server_url || state.profiles[0]?.server_url || url);
+      setUrl((current) => state.profile?.server_url || state.profiles[0]?.server_url || current);
       return;
     }
     api("/connection")
@@ -108,7 +106,7 @@ export function Connection({
         setKeySet(d.key_set);
       })
       .catch((e) => setError(e.message));
-  }, []);
+  }, [creating]);
   async function submit(save) {
     setBusy(true);
     setError("");

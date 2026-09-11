@@ -71,14 +71,14 @@ export function Composer({
       writeStorage(key, "");
       pendingStorage(key, null).catch(() => {});
     }
-  }, [live?.recovered, key]);
+  }, [live?.recovered, live?.userText, key]);
   useEffect(() => {
     if (draftSuggestion && !app.active) {
       setDraft(draftSuggestion.text);
       writeStorage(key, draftSuggestion.text);
       textarea.current?.focus();
     }
-  }, [draftSuggestion]);
+  }, [draftSuggestion, app.active, key]);
   useEffect(() => {
     const el = textarea.current;
     if (!el || CSS.supports("field-sizing", "content")) return;

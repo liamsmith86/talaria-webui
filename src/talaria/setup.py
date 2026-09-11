@@ -3,6 +3,7 @@
 import argparse
 import fcntl
 import getpass
+import hashlib
 import io
 import ipaddress
 import json
@@ -13,7 +14,7 @@ import shutil
 import socket
 import subprocess
 import sys
-from contextlib import ExitStack, suppress
+from contextlib import ExitStack, contextmanager, suppress
 from pathlib import Path
 
 from .auth import hash_password, verify_password
@@ -36,6 +37,7 @@ from .installation import read_json
 from .setup_services import (
     describe,
     install_service,
+    migrate_service,
     passwordless_sudo,
     preflight,
     prepare_account,
@@ -66,7 +68,9 @@ class Prompts:
         while True:
             print(
                 f"{self.highlight(label)} {self.highlight(f'[{default}]', '1;33')}: ",
-                end="", file=self.terminal, flush=True,
+                end="",
+                file=self.terminal,
+                flush=True,
             )
             answer = self.terminal.readline()
             if not answer:
@@ -233,29 +237,11 @@ def backup_hermes(home):
 
 
 def configure_hermes(args, prompts, settings, home, python, info):
-    if args.hermes_url:
-        url = validate_url(args.hermes_url)
-        if url != settings.hermes_url:
-            settings.api_key = ""
-        settings.hermes_url = url
-    if args.hermes_key_file:
-        settings.api_key = secret_file(args.hermes_key_file, "Hermes API key")
+    apply_hermes_credentials(args, settings)
     if args.skip_hermes:
         return False
     if info is None:
-        if args.enable_hermes_api or args.plugin or args.restart_hermes or args.hermes_home:
-            raise ValueError(
-                "Local Hermes was not found; supply --hermes-home and --hermes-python."
-            )
-        if not settings.api_key and prompts.terminal:
-            url = prompts.ask("Hermes API URL (blank to connect later)", args.hermes_url or "")
-            if url:
-                settings.hermes_url = validate_url(url)
-                settings.api_key = getpass.getpass(
-                    prompts.highlight("Hermes API key: "), stream=prompts.terminal
-                )
-        if not settings.api_key:
-            print("Connect to Hermes in the WebUI after signing in.")
+        configure_remote_hermes(args, prompts, settings)
         return False
     print(f"Found Hermes at {home} (API {'enabled' if info['enabled'] else 'disabled'}).")
     enable = args.enable_hermes_api or (
@@ -267,27 +253,7 @@ def configure_hermes(args, prompts, settings, home, python, info):
     # A headless run never implicitly changes Hermes, even for recommended defaults.
     if prompts.terminal is None:
         plugin = args.plugin
-    if enable or plugin:
-        backup_hermes(home)
-        if plugin:
-            from .plugin_install import main as export_plugin
-
-            plugins = home / "plugins"
-            parent_exists = plugins.exists()
-            export_plugin(["--home", str(home)])
-            if os.geteuid() == 0:
-                owner = home.stat()
-                target = plugins / "talaria"
-                owned = [target, *target.iterdir()] + ([] if parent_exists else [plugins])
-                for path in owned:
-                    if not path.is_symlink():
-                        os.chown(path, owner.st_uid, owner.st_gid)
-        info = hermes_request(python, home, enable=enable, plugin=plugin)
-    if info["enabled"] and info["key"]:
-        if not args.hermes_url and not settings.api_key:
-            settings.hermes_url = local_url(str(info["host"]), int(info["port"]))
-        if not args.hermes_key_file and not settings.api_key and not args.hermes_url:
-            settings.api_key = info["key"]
+    info = apply_local_hermes(args, settings, home, python, info, enable, plugin)
     changed = bool(enable or plugin)
     if changed:
         print(f"Hermes configuration backup: {home}/{{config.yaml,.env}}.before-talaria")
@@ -300,32 +266,7 @@ def configure_hermes(args, prompts, settings, home, python, info):
         changed and prompts.yes("Restart Hermes now? Active work may be interrupted.")
     )
     if restart:
-        command = shutil.which("hermes")
-        if not command:
-            raise ValueError("Hermes CLI is not on PATH; restart your gateway manually.")
-        env = {**os.environ, "HERMES_HOME": str(home)}
-        owner = home.stat()
-        identity = {}
-        if os.geteuid() == 0 and owner.st_uid != 0:
-            account = pwd.getpwuid(owner.st_uid)
-            identity = {
-                "user": owner.st_uid,
-                "group": owner.st_gid,
-                "extra_groups": os.getgrouplist(account.pw_name, account.pw_gid),
-            }
-            env["HOME"] = account.pw_dir
-        command = [command, "gateway", "restart"] + (["--system"] if owner.st_uid == 0 else [])
-        # Restart diagnostics can contain private Hermes configuration; keep them private.
-        try:
-            result = subprocess.run(
-                command, env=env, cwd=home, capture_output=True, timeout=60, **identity
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise ValueError(
-                "Hermes restart is still pending; check `hermes gateway status`."
-            ) from exc
-        if result.returncode:
-            raise ValueError("Hermes could not restart; check `hermes gateway status`.")
+        restart_gateway(home)
     elif changed:
         print("Restart the Hermes gateway to apply its configuration changes.")
     return changed and not restart
@@ -396,39 +337,15 @@ def default_hermes_home(args):
 def discover_hermes_home(args, prompts):
     home = default_hermes_home(args)
     if (
-        args.skip_hermes or args.hermes_url or args.hermes_home
-        or "HERMES_HOME" in os.environ or home.is_dir() or os.geteuid() != 0
+        args.skip_hermes
+        or args.hermes_url
+        or args.hermes_home
+        or "HERMES_HOME" in os.environ
+        or home.is_dir()
+        or os.geteuid() != 0
     ):
         return home
-    # One directory lookup per distinct account home; never traverse its contents.
-    candidates = {}
-    seen = set()
-    accounts = sorted(
-        pwd.getpwall(),
-        key=lambda account: (
-            Path(account.pw_shell).name in {"nologin", "false", "sync", "halt", "shutdown"},
-            account.pw_name,
-        ),
-    )
-    for account in accounts:
-        directory = Path(account.pw_dir)
-        if not directory.is_absolute() or directory == Path("/"):
-            continue
-        candidate = directory / ".hermes"
-        if candidate in seen:
-            continue
-        if len(seen) == MAX_DISCOVERY_HOMES:
-            print(
-                f"Discovery stopped after {MAX_DISCOVERY_HOMES} account homes. "
-                "Use --hermes-home PATH for another location."
-            )
-            break
-        seen.add(candidate)
-        try:
-            if candidate.is_dir():
-                candidates[candidate] = account.pw_name
-        except OSError:
-            continue
+    candidates = discover_account_homes()
     if not candidates:
         return home
     paths = sorted(candidates, key=str)
@@ -475,6 +392,8 @@ def elevate_setup(args, *, service="systemd"):
         "--",
         "env",
         "PATH=" + os.environ["PATH"],
+        # The caller must still be able to remove the temporary bootstrap venv.
+        "PYTHONDONTWRITEBYTECODE=1",
         sys.executable,
         "-c",
         "from talaria.cli import main; main()",
@@ -520,9 +439,10 @@ def setup_lock(root, stack):
         raise ValueError("Another setup is running for this installation.") from exc
 
 
-def print_update_command(root):
+def print_management_commands(root):
     prefix = "sudo -n " if os.geteuid() == 0 and os.environ.get("SUDO_UID", "0") != "0" else ""
     print(f"Update manually: {prefix}{shlex.quote(str(root / 'bin/talaria'))} update")
+    print(f"Uninstall: {prefix}{shlex.quote(str(root / 'bin/talaria'))} uninstall")
 
 
 def update_existing(root, args, stack):
@@ -541,9 +461,14 @@ def update_existing(root, args, stack):
         raise SystemExit(elevate_setup(args))
     setup_lock(root, stack)
     print(f"Existing installation: {root}. Updating Talaria; saved setup is retained.")
-    deployment.update(expect=args.expect)
+    from .supervisor_cli import manage
+
+    command = argparse.Namespace(command="update", check=False, expect=args.expect)
+    if not manage(command, root):
+        deployment.update(expect=args.expect)
+    migrate_service(deployment)
     print(f"Config: {config['config']}")
-    print_update_command(root)
+    print_management_commands(root)
     if args.plugin:
         print(
             "The Hermes plugin is separate: refresh it with talaria hermes-plugin "
@@ -552,51 +477,11 @@ def update_existing(root, args, stack):
 
 
 def _setup(args, prompts, stack):
-    if not (sys.platform.startswith("linux") or sys.platform == "darwin"):
-        raise ValueError("Use Linux, macOS, or WSL2; native Windows is not supported.")
-    if args.expect and not COMMIT.fullmatch(args.expect):
-        raise ValueError("--expect needs a full commit SHA.")
-    if args.skip_hermes and (args.enable_hermes_api or args.plugin or args.restart_hermes):
-        raise ValueError("--skip-hermes conflicts with Hermes modification flags.")
-    for command in ("git", "uv"):
-        if not shutil.which(command):
-            raise ValueError(f"{command} is missing. Use install.sh to install prerequisites.")
-    existing = existing_installation(args)
-    if existing:
-        pending = existing / ".setup-pending.json"
-        if (existing / "current").is_symlink() and not pending.exists():
-            return update_existing(existing, args, stack)
-        args.directory = existing
-        resume = read_json(pending)
-        if args.config is None and resume.get("config"):
-            args.config = Path(resume["config"])
-        if args.service is None:
-            args.service = resume.get("service")
-    if (
-        os.geteuid() != 0 and not args.skip_hermes and not args.hermes_url
-        and not args.hermes_home and "HERMES_HOME" not in os.environ
-        and not default_hermes_home(args).is_dir() and shutil.which("sudo")
-    ):
-        admin = passwordless_sudo()
-        if not admin and prompts.terminal is not None and prompts.yes(
-            "Check other users for Hermes using sudo?", True
-        ):
-            admin = subprocess.call(["sudo", "-v"]) == 0
-        if admin:
-            print("Using sudo to check other users and complete installation.")
-            raise SystemExit(elevate_setup(args, service=args.service))
-    available = supported_service()
-    kind = args.service or "none"
-    if args.service is None and prompts.terminal is not None and available != "none":
-        if prompts.yes("Install as persistent background service?", True):
-            kind = available
-    if kind == "auto":
-        kind = available
-    if kind not in {"none", available}:
-        raise ValueError(f"{kind} is not available in this login; use --service none.")
-    if kind == "systemd" and os.geteuid() != 0 and passwordless_sudo():
-        print("Using passwordless sudo for the system installation and app service.")
-        raise SystemExit(elevate_setup(args))
+    validate_setup(args)
+    if resume_setup(args, stack):
+        return
+    elevate_for_discovery(args, prompts)
+    kind = choose_service(args, prompts)
     system = kind == "systemd" and os.geteuid() == 0
     root = (
         (args.directory or (Path("/opt/talaria") if system else default_directory()))
@@ -611,6 +496,225 @@ def _setup(args, prompts, stack):
     setup_lock(root, stack)
     pending_setup = root / ".setup-pending.json"
     metadata = read_json(root / "deployment.json")
+    config = setup_config_path(args, metadata, system)
+    settings = load(config)
+    original = (settings.host, settings.port, settings.public_url)
+    home, python, info = inspect_hermes(args, prompts)
+    configure_binding(args, prompts, settings, config, info)
+    existing_service = metadata.get("service")
+    if existing_service and original != (settings.host, settings.port, settings.public_url):
+        raise ValueError(
+            "For an existing service, edit its config and restart it to change its URL or binding."
+        )
+    if not existing_service:
+        check_port(settings.host, settings.port)
+    plan = service_plan(kind, root, config) if kind != "none" and not existing_service else None
+    if plan:
+        preflight(plan, root, config, resuming=bool(metadata) or pending_setup.exists())
+    configure_password(args, prompts, settings)
+    write_json(pending_setup, {"service": kind, "config": str(config)})
+    pending = configure_hermes(args, prompts, settings, home, python, info)
+    settings_changed = settings != load(config)
+    password_path = initialize_password(config, settings)
+    # Shared runtime files must be readable by the optional dedicated service user.
+    old_mask = os.umask(0o022)
+    try:
+        deployment = install_runtime(
+            args, root, config, settings, metadata, existing_service, settings_changed
+        )
+        if plan:
+            activate_setup_service(plan, root, config, deployment, settings)
+    finally:
+        os.umask(old_mask)
+    report_setup(
+        args, settings, root, config, password_path, pending, plan, existing_service, metadata
+    )
+
+    pending_setup.unlink(missing_ok=True)
+
+
+@contextmanager
+def terminal(interactive, flag="--non-interactive"):
+    with ExitStack() as stack:
+        stream = None
+        if interactive:
+            try:
+                # Buffered read/write files require seeking; terminals cannot seek.
+                raw = stack.enter_context(open("/dev/tty", "r+b", buffering=0))
+                stream = stack.enter_context(io.TextIOWrapper(raw, write_through=True))
+            except OSError as exc:
+                raise ValueError(f"No terminal; use {flag} and explicit flags.") from exc
+        yield Prompts(stream)
+
+
+def restart_gateway(home):
+    command = shutil.which("hermes")
+    if not command:
+        raise ValueError("Hermes CLI is not on PATH; restart your gateway manually.")
+    env = {**os.environ, "HERMES_HOME": str(home)}
+    owner = home.stat()
+    identity = {}
+    if os.geteuid() == 0 and owner.st_uid != 0:
+        account = pwd.getpwuid(owner.st_uid)
+        identity = {
+            "user": owner.st_uid,
+            "group": owner.st_gid,
+            "extra_groups": os.getgrouplist(account.pw_name, account.pw_gid),
+        }
+        env["HOME"] = account.pw_dir
+    command = [command, "gateway", "restart"] + (["--system"] if owner.st_uid == 0 else [])
+    # Restart diagnostics can contain private Hermes configuration; keep them private.
+    try:
+        result = subprocess.run(
+            command, env=env, cwd=home, capture_output=True, timeout=60, **identity
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("Hermes restart is still pending; check `hermes gateway status`.") from exc
+    if result.returncode:
+        raise ValueError("Hermes could not restart; check `hermes gateway status`.")
+
+
+def export_owned_plugin(home):
+    from .plugin_install import main as export_plugin
+
+    plugins = home / "plugins"
+    parent_exists = plugins.exists()
+    export_plugin(["--home", str(home)])
+    if os.geteuid() == 0:
+        owner = home.stat()
+        target = plugins / "talaria"
+        owned = [target, *target.iterdir()] + ([] if parent_exists else [plugins])
+        for path in owned:
+            if not path.is_symlink():
+                os.chown(path, owner.st_uid, owner.st_gid)
+
+
+def configure_remote_hermes(args, prompts, settings):
+    if args.enable_hermes_api or args.plugin or args.restart_hermes or args.hermes_home:
+        raise ValueError("Local Hermes was not found; supply --hermes-home and --hermes-python.")
+    if not settings.api_key and prompts.terminal:
+        url = prompts.ask("Hermes API URL (blank to connect later)", args.hermes_url or "")
+        if url:
+            settings.hermes_url = validate_url(url)
+            settings.api_key = getpass.getpass(
+                prompts.highlight("Hermes API key: "), stream=prompts.terminal
+            )
+    if not settings.api_key:
+        print("Connect to Hermes in the WebUI after signing in.")
+
+
+def apply_hermes_credentials(args, settings):
+    if args.hermes_url:
+        url = validate_url(args.hermes_url)
+        if url != settings.hermes_url:
+            settings.api_key = ""
+        settings.hermes_url = url
+    if args.hermes_key_file:
+        settings.api_key = secret_file(args.hermes_key_file, "Hermes API key")
+
+
+def apply_local_hermes(args, settings, home, python, info, enable, plugin):
+    if enable or plugin:
+        backup_hermes(home)
+        if plugin:
+            export_owned_plugin(home)
+        info = hermes_request(python, home, enable=enable, plugin=plugin)
+    if info["enabled"] and info["key"]:
+        if not args.hermes_url and not settings.api_key:
+            settings.hermes_url = local_url(str(info["host"]), int(info["port"]))
+        if not args.hermes_key_file and not settings.api_key and not args.hermes_url:
+            settings.api_key = info["key"]
+    return info
+
+
+def discover_account_homes():
+    # One directory lookup per distinct account home; never traverse its contents.
+    candidates = {}
+    seen = set()
+    accounts = sorted(
+        pwd.getpwall(),
+        key=lambda account: (
+            Path(account.pw_shell).name in {"nologin", "false", "sync", "halt", "shutdown"},
+            account.pw_name,
+        ),
+    )
+    for account in accounts:
+        directory = Path(account.pw_dir)
+        if not directory.is_absolute() or directory == Path("/"):
+            continue
+        candidate = directory / ".hermes"
+        if candidate in seen:
+            continue
+        if len(seen) == MAX_DISCOVERY_HOMES:
+            print(
+                f"Discovery stopped after {MAX_DISCOVERY_HOMES} account homes. "
+                "Use --hermes-home PATH for another location."
+            )
+            break
+        seen.add(candidate)
+        try:
+            if candidate.is_dir():
+                candidates[candidate] = account.pw_name
+        except OSError:
+            continue
+    return candidates
+
+
+def validate_setup(args):
+    if not (sys.platform.startswith("linux") or sys.platform == "darwin"):
+        raise ValueError("Use Linux, macOS, or WSL2; native Windows is not supported.")
+    if args.expect and not COMMIT.fullmatch(args.expect):
+        raise ValueError("--expect needs a full commit SHA.")
+    if args.skip_hermes and (args.enable_hermes_api or args.plugin or args.restart_hermes):
+        raise ValueError("--skip-hermes conflicts with Hermes modification flags.")
+    for command in ("git", "uv"):
+        if not shutil.which(command):
+            raise ValueError(f"{command} is missing. Use install.sh to install prerequisites.")
+
+
+def elevate_for_discovery(args, prompts):
+    if (
+        os.geteuid() != 0
+        and not args.skip_hermes
+        and not args.hermes_url
+        and not args.hermes_home
+        and "HERMES_HOME" not in os.environ
+        and not default_hermes_home(args).is_dir()
+        and shutil.which("sudo")
+    ):
+        admin = passwordless_sudo()
+        if (
+            not admin
+            and prompts.terminal is not None
+            and prompts.yes("Check other users for Hermes using sudo?", True)
+        ):
+            admin = subprocess.call(["sudo", "-v"]) == 0
+        if admin:
+            print("Using sudo to check other users and complete installation.")
+            raise SystemExit(elevate_setup(args, service=args.service))
+
+
+def choose_service(args, prompts):
+    available = supported_service()
+    kind = args.service or "none"
+    if (
+        args.service is None
+        and prompts.terminal is not None
+        and available != "none"
+        and prompts.yes("Install as persistent background service?", True)
+    ):
+        kind = available
+    if kind == "auto":
+        kind = available
+    if kind not in {"none", available}:
+        raise ValueError(f"{kind} is not available in this login; use --service none.")
+    if kind == "systemd" and os.geteuid() != 0 and passwordless_sudo():
+        print("Using passwordless sudo for the system installation and app service.")
+        raise SystemExit(elevate_setup(args))
+    return kind
+
+
+def setup_config_path(args, metadata, system):
     config = (
         (
             args.config
@@ -633,8 +737,10 @@ def _setup(args, prompts, stack):
         raise ValueError(
             "This installation has another source; pass its existing repository/branch."
         )
-    settings = load(config)
-    original = (settings.host, settings.port, settings.public_url)
+    return config
+
+
+def inspect_hermes(args, prompts):
     home = discover_hermes_home(args, prompts)
     python = args.hermes_python or find_hermes_python(home)
     info = None
@@ -643,9 +749,12 @@ def _setup(args, prompts, stack):
         and home.is_dir()
         and python
         and (not args.hermes_url or args.hermes_home)
-    ):
-        if args.hermes_home or prompts.yes(f"Import the Hermes connection from {home}?", True):
-            info = hermes_request(python, home)
+    ) and (args.hermes_home or prompts.yes(f"Import the Hermes connection from {home}?", True)):
+        info = hermes_request(python, home)
+    return home, python, info
+
+
+def configure_binding(args, prompts, settings, config, info):
     if args.host:
         settings.host = args.host
     elif args.bind:
@@ -668,16 +777,9 @@ def _setup(args, prompts, stack):
         )
     )
     settings.public_url = validate_public_url(public) if public else ""
-    existing_service = metadata.get("service")
-    if existing_service and original != (settings.host, settings.port, settings.public_url):
-        raise ValueError(
-            "For an existing service, edit its config and restart it to change its URL or binding."
-        )
-    if not existing_service:
-        check_port(settings.host, settings.port)
-    plan = service_plan(kind, root, config) if kind != "none" and not existing_service else None
-    if plan:
-        preflight(plan, root, config, resuming=bool(metadata) or pending_setup.exists())
+
+
+def configure_password(args, prompts, settings):
     if args.password_file:
         password = secret_file(args.password_file, "sign-in password")
         if settings.password_hash and not verify_password(password, settings.password_hash):
@@ -692,65 +794,76 @@ def _setup(args, prompts, stack):
         "Choose your own WebUI password instead of generating one?", False
     ):
         settings.password_hash = hash_password(prompts.password())
-    write_json(pending_setup, {"service": kind, "config": str(config)})
-    pending = configure_hermes(args, prompts, settings, home, python, info)
-    settings_changed = settings != load(config)
-    password_path = initialize_password(config, settings)
-    # Shared runtime files must be readable by the optional dedicated service user.
-    old_mask = os.umask(0o022)
+
+
+def activate_setup_service(plan, root, config, deployment, settings):
+    created = prepare_account(plan, config)
+    deployment.config["supervised"] = True
+    deployment.config["setup"] = {
+        "kind": plan["kind"],
+        "scope": plan["scope"],
+        "service_file": str(plan["path"]),
+        "service_sha256": hashlib.sha256(plan["text"].encode()).hexdigest(),
+        "account_created": bool(
+            created or deployment.config.get("setup", {}).get("account_created")
+        ),
+    }
+    write_json(root / "deployment.json", deployment.config)
     try:
-        if metadata:
-            deployment = Deployment(root)
-            before = deployment.status()["current"]["commit"]
-            deployment.config["health_url"] = local_url(settings.host, settings.port)
-            write_json(root / "deployment.json", deployment.config)
-            deployment.update(expect=args.expect)
-            if (
-                existing_service
-                and settings_changed
-                and deployment.status()["current"]["commit"] == before
-            ):
-                # Resuming a failed setup can change credentials without changing releases.
-                deployment.restart()
-                check_health(deployment.config["health_url"], before)
-        else:
-            command = [
-                "install",
-                "--directory",
-                str(root),
-                "--config",
-                str(config),
-                "--repository",
-                args.repository,
-                "--branch",
-                args.branch,
-            ]
-            if args.expect:
-                command += ["--expect", args.expect]
-            manage(command)
-            deployment = Deployment(root)
-        if plan:
-            prepare_account(plan, config)
-            try:
-                install_service(plan)
-                check_health(
-                    local_url(settings.host, settings.port),
-                    deployment.status()["current"]["commit"],
-                )
-            except BaseException:
-                # Do not leave a newly configured, failing app restarting forever.
-                with suppress(DeploymentError):
-                    run(plan["stop"], timeout=45)
-                if plan["kind"] == "systemd":
-                    with suppress(DeploymentError):
-                        run([*plan["stop"][:-2], "disable", plan["service"]], timeout=10)
-                raise
-            deployment.config.update(
-                service=plan["service"], scope=plan["scope"], manager=plan["kind"]
-            )
-            write_json(root / "deployment.json", deployment.config)
-    finally:
-        os.umask(old_mask)
+        install_service(plan)
+        check_health(
+            local_url(settings.host, settings.port),
+            deployment.status()["current"]["commit"],
+        )
+    except BaseException:
+        # Do not leave a newly configured, failing app restarting forever.
+        with suppress(DeploymentError):
+            run(plan["stop"], timeout=45)
+        if plan["kind"] == "systemd":
+            with suppress(DeploymentError):
+                run([*plan["stop"][:-2], "disable", plan["service"]], timeout=10)
+        raise
+    deployment.config.update(service=plan["service"], scope=plan["scope"], manager=plan["kind"])
+    write_json(root / "deployment.json", deployment.config)
+
+
+def install_runtime(args, root, config, settings, metadata, existing_service, settings_changed):
+    if metadata:
+        deployment = Deployment(root)
+        before = deployment.status()["current"]["commit"]
+        deployment.config["health_url"] = local_url(settings.host, settings.port)
+        write_json(root / "deployment.json", deployment.config)
+        deployment.update(expect=args.expect)
+        if (
+            existing_service
+            and settings_changed
+            and deployment.status()["current"]["commit"] == before
+        ):
+            # Resuming a failed setup can change credentials without changing releases.
+            deployment.restart()
+            check_health(deployment.config["health_url"], before)
+    else:
+        command = [
+            "install",
+            "--directory",
+            str(root),
+            "--config",
+            str(config),
+            "--repository",
+            args.repository,
+            "--branch",
+            args.branch,
+        ]
+        if args.expect:
+            command += ["--expect", args.expect]
+        manage(command)
+        deployment = Deployment(root)
+    return deployment
+
+
+def report_setup(
+    args, settings, root, config, password_path, pending, plan, existing_service, metadata
+):
     url = settings.public_url or local_url(settings.host, settings.port)
     if settings.host in {"0.0.0.0", "::"} and not settings.public_url:
         print(
@@ -769,7 +882,7 @@ def _setup(args, prompts, stack):
         print(f"Service: {existing_service} ({metadata.get('scope', 'user')})")
     else:
         print(f"Start: {shlex.quote(str(root / 'bin/talaria'))}")
-    print_update_command(root)
+    print_management_commands(root)
     if args.restart_hermes and (
         not connection.startswith("connected")
         or (args.plugin and "extended access available" not in connection)
@@ -779,31 +892,34 @@ def _setup(args, prompts, stack):
             "Check the gateway status and configured endpoint."
         )
 
-    pending_setup.unlink(missing_ok=True)
+
+def resume_setup(args, stack):
+    existing = existing_installation(args)
+    if existing:
+        pending = existing / ".setup-pending.json"
+        if (existing / "current").is_symlink() and not pending.exists():
+            update_existing(existing, args, stack)
+            return True
+        args.directory = existing
+        resume = read_json(pending)
+        if args.config is None and resume.get("config"):
+            args.config = Path(resume["config"])
+        if args.service is None:
+            args.service = resume.get("service")
+    return False
 
 
 def main(argv):
     command = parser()
     args = command.parse_args(argv)
     try:
-        with ExitStack() as stack:
-            terminal = None
-            if not args.non_interactive:
-                try:
-                    # Buffered read/write files require seeking; terminals cannot seek.
-                    raw = stack.enter_context(open("/dev/tty", "r+b", buffering=0))
-                    terminal = stack.enter_context(io.TextIOWrapper(raw, write_through=True))
-                except OSError as exc:
-                    raise ValueError(
-                        "No terminal; use --non-interactive and explicit flags."
-                    ) from exc
-            setup(args, Prompts(terminal))
+        with terminal(not args.non_interactive) as prompts:
+            setup(args, prompts)
     except (ValueError, OSError, DeploymentError) as exc:
         error = Prompts(sys.stderr).highlight(f"Talaria setup: {exc}", "1;31")
         command.exit(
             1,
-            error + "\n"
-            "Re-run with the same options to retry; saved credentials are preserved.\n",
+            error + "\nRe-run with the same options to retry; saved credentials are preserved.\n",
         )
     except (KeyboardInterrupt, EOFError):
         command.exit(130, "Talaria setup interrupted. Re-run with the same options to resume.\n")

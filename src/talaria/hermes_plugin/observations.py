@@ -106,8 +106,16 @@ class Observations:
             return None
 
     def before(
-        self, *, turn_id=None, task_id=None, request=None, started_at=None,
-        model=None, provider=None, api_request_id=None, **kwargs,
+        self,
+        *,
+        turn_id=None,
+        task_id=None,
+        request=None,
+        started_at=None,
+        model=None,
+        provider=None,
+        api_request_id=None,
+        **kwargs,
     ):
         if not turn_id or not task_id or not isinstance(request, dict):
             return

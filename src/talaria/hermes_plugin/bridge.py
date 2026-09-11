@@ -120,180 +120,25 @@ def rewind(db, sid, data):
 
 
 def wire(app, adapter):
-    from aiohttp import web
-    from hermes_constants import get_hermes_home
-
     if not callable(getattr(adapter, "_check_auth", None)) or not callable(
         getattr(adapter, "_ensure_session_db_async", None)
     ):
         log.warning("Talaria routes unavailable: incompatible Hermes API adapter")
         return
 
-    async def dispatch(request):
-        auth_error = adapter._check_auth(request)
-        if auth_error is not None:
-            return auth_error
-        # Named profiles opt in independently, even when the root listener wires the routes.
-        if not await asyncio.to_thread(enabled):
-            return web.json_response(
-                {"error": "Talaria plugin is not enabled for this profile."}, status=404
-            )
-        try:
-            action = request.match_info.get("action", "capabilities")
-            if action == "runs":
-                from .context import start_run, supports_context_runs
-
-                if not supports_context_runs(adapter):
-                    return web.json_response({"error": "Profile context unavailable."}, status=404)
-                return await start_run(adapter, request)
-            if action == "models":
-                from .models import model_options
-
-                return web.json_response(
-                    await asyncio.to_thread(model_options, request.query.get("refresh") == "1")
-                )
-            db = await adapter._ensure_session_db_async()
-            if db is None:
-                return web.json_response(
-                    {"error": "Hermes session storage is unavailable."}, status=503
-                )
-            can_rewind = supports_rewind(db)
-            if action == "capabilities":
-                from .context import load_context, supports_context_runs
-                from .identity import inspect_home
-
-                identity = await asyncio.to_thread(inspect_home, str(get_hermes_home()))
-                context_runs = supports_context_runs(adapter)
-                context = await asyncio.to_thread(load_context) if context_runs else None
-                return web.json_response(
-                    {
-                        "version": 1,
-                        "response_details": True,
-                        "context_usage": True,
-                        "model_details": True,
-                        "context_runs": context_runs,
-                        "profile_context": context.public() if context else {},
-                        "rewind": can_rewind,
-                        "agent": {"name": identity.name},
-                    }
-                )
-            sid = request.match_info["session_id"]
-            session = await asyncio.to_thread(db.get_session, sid)
-            if session is None:
-                return web.json_response({"error": "Session not found."}, status=404)
-            if action == "fork":
-                if not callable(getattr(db, "patch_session_model_config", None)):
-                    return web.json_response({"error": "Branch metadata unavailable."}, status=404)
-                # Native fork validates titles only after copying the session.
-                # Reject known conflicts before it can leave an unmarked child.
-                data = await request.json()
-                if isinstance(data, dict) and data.get("title") is not None:
-                    try:
-                        title = db.sanitize_title(str(data["title"]))
-                        if title and await asyncio.to_thread(db.get_session_by_title, title):
-                            raise ValueError("That session name is already in use.")
-                    except ValueError as exc:
-                        return web.json_response(
-                            {"error": {"code": "invalid_title", "message": str(exc)}},
-                            status=400,
-                        )
-                # Hermes's API fork omits the marker its CLI writes. Without
-                # it, resume resolution can redirect the original into the copy.
-                # Delegate the operation, then attach the native lineage marker
-                # before returning the new session to the client.
-                response = await adapter._handle_fork_session(request)
-                if response.status == 201:
-                    fork = json.loads(response.body)["session"]
-                    if fork.get("parent_session_id") != sid or fork.get("id") == sid:
-                        raise ValueError("Unexpected branch identity")
-                    await asyncio.to_thread(
-                        db.patch_session_model_config, fork["id"], {"_branched_from": sid}
-                    )
-                return response
-            observations = Observations(get_hermes_home())
-            if action == "rewind":
-                if not can_rewind:
-                    return web.json_response(
-                        {"error": "Update Hermes to enable session changes."}, status=501
-                    )
-                data = await request.json()
-                if not isinstance(data, dict):
-                    raise ValueError("Choose a saved message.")
-                message_identifier(data.get("message_id"))
-                return web.json_response(await asyncio.to_thread(rewind, db, sid, data))
-            message_id = request.query.get("message_id")
-            if action == "response":
-                message_id = message_identifier(int(message_id))
-                rows = await asyncio.to_thread(
-                    db.get_messages, sid, after_id=message_id - 1, limit=1
-                )
-                if not rows or rows[0]["id"] != message_id:
-                    return web.json_response({"error": "Message not found."}, status=404)
-                row = rows[0]
-                detail = await asyncio.to_thread(observations.read, sid, message_id)
-                return web.json_response(
-                    {
-                        "message_id": message_id,
-                        "timestamp": row.get("timestamp"),
-                        "finish_reason": row.get("finish_reason"),
-                        "has_reasoning": bool(row.get("reasoning") or row.get("reasoning_content")),
-                        **(detail or {}),
-                    }
-                )
-            detail = await asyncio.to_thread(observations.read, sid)
-            if detail:
-                rows = await asyncio.to_thread(
-                    db.get_messages, sid, after_id=detail["message_id"] - 1, limit=1
-                )
-                if not rows or rows[0]["id"] != detail["message_id"]:
-                    detail = None  # A rewind invalidates the removed turn's context observation.
-            usage = detail.get("usage") if detail else None
-            return web.json_response(
-                {
-                    "context": {
-                        "used": usage.get("input_tokens") if isinstance(usage, dict) else None,
-                        "maximum": detail.get("context_max"),
-                        "model": detail.get("model"),
-                        "observed_at": detail.get("observed_at"),
-                    }
-                    if detail
-                    else None
-                }
-            )
-        except (ValueError, TypeError):
-            return web.json_response(
-                {
-                    "error": "This message cannot be changed safely. "
-                    "Refresh the session and try again."
-                },
-                status=400,
-            )
-        except RuntimeError:
-            return web.json_response(
-                {
-                    "error": "The session changed or is busy. "
-                    "Wait for it to finish, then reopen this action."
-                },
-                status=409,
-            )
-        except Exception:
-            log.exception("Talaria extension request failed")
-            return web.json_response(
-                {
-                    "error": "Hermes could not complete this action. "
-                    "Your session is still available."
-                },
-                status=503,
-            )
+    async def dispatch_request(request):
+        return await dispatch(request, adapter)
 
     for prefix in (PREFIX, f"/p/{{profile}}{PREFIX}"):
-        app.router.add_get(f"{prefix}/capabilities", dispatch)
-        app.router.add_get(f"{prefix}/{{action:models}}", dispatch)
-        app.router.add_post(f"{prefix}/{{action:runs}}", dispatch)
+        app.router.add_get(f"{prefix}/capabilities", dispatch_request)
+        app.router.add_get(f"{prefix}/{{action:models}}", dispatch_request)
+        app.router.add_post(f"{prefix}/{{action:runs}}", dispatch_request)
         app.router.add_get(
-            f"{prefix}/sessions/{{session_id}}/{{action:context|response}}", dispatch
+            f"{prefix}/sessions/{{session_id}}/{{action:context|response}}", dispatch_request
         )
-        app.router.add_post(f"{prefix}/sessions/{{session_id}}/{{action:rewind|fork}}", dispatch)
+        app.router.add_post(
+            f"{prefix}/sessions/{{session_id}}/{{action:rewind|fork}}", dispatch_request
+        )
 
 
 def register(ctx):
@@ -304,3 +149,177 @@ def register(ctx):
     ctx.register_hook("pre_api_request", observations.before)
     ctx.register_hook("post_api_request", observations.after)
     ctx.register_hook("on_session_end", observations.end)
+
+
+async def dispatch(request, adapter):
+    from aiohttp import web
+
+    auth_error = adapter._check_auth(request)
+    if auth_error is not None:
+        return auth_error
+    # Named profiles opt in independently, even when the root listener wires the routes.
+    if not await asyncio.to_thread(enabled):
+        return web.json_response(
+            {"error": "Talaria plugin is not enabled for this profile."}, status=404
+        )
+    try:
+        return await dispatch_action(request, adapter)
+    except (ValueError, TypeError):
+        return web.json_response(
+            {"error": "This message cannot be changed safely. Refresh the session and try again."},
+            status=400,
+        )
+    except RuntimeError:
+        return web.json_response(
+            {
+                "error": "The session changed or is busy. "
+                "Wait for it to finish, then reopen this action."
+            },
+            status=409,
+        )
+    except Exception:
+        log.exception("Talaria extension request failed")
+        return web.json_response(
+            {"error": "Hermes could not complete this action. Your session is still available."},
+            status=503,
+        )
+
+
+async def capabilities(adapter, db):
+    from aiohttp import web
+    from hermes_constants import get_hermes_home
+
+    from .context import load_context, supports_context_runs
+    from .identity import inspect_home
+
+    identity = await asyncio.to_thread(inspect_home, str(get_hermes_home()))
+    context_runs = supports_context_runs(adapter)
+    context = await asyncio.to_thread(load_context) if context_runs else None
+    return web.json_response(
+        {
+            "version": 1,
+            "response_details": True,
+            "context_usage": True,
+            "model_details": True,
+            "context_runs": context_runs,
+            "profile_context": context.public() if context else {},
+            "rewind": supports_rewind(db),
+            "agent": {"name": identity.name},
+        }
+    )
+
+
+async def fork_session(adapter, request, db, sid):
+    from aiohttp import web
+
+    if not callable(getattr(db, "patch_session_model_config", None)):
+        return web.json_response({"error": "Branch metadata unavailable."}, status=404)
+    # Native fork validates titles only after copying the session.
+    # Reject known conflicts before it can leave an unmarked child.
+    data = await request.json()
+    if isinstance(data, dict) and data.get("title") is not None:
+        try:
+            title = db.sanitize_title(str(data["title"]))
+            if title and await asyncio.to_thread(db.get_session_by_title, title):
+                raise ValueError("That session name is already in use.")
+        except ValueError as exc:
+            return web.json_response(
+                {"error": {"code": "invalid_title", "message": str(exc)}},
+                status=400,
+            )
+    # Hermes's API fork omits the marker its CLI writes. Without
+    # it, resume resolution can redirect the original into the copy.
+    # Delegate the operation, then attach the native lineage marker
+    # before returning the new session to the client.
+    response = await adapter._handle_fork_session(request)
+    if response.status == 201:
+        fork = json.loads(response.body)["session"]
+        if fork.get("parent_session_id") != sid or fork.get("id") == sid:
+            raise ValueError("Unexpected branch identity")
+        await asyncio.to_thread(db.patch_session_model_config, fork["id"], {"_branched_from": sid})
+    return response
+
+
+async def session_details(request, db, sid, action):
+    from aiohttp import web
+    from hermes_constants import get_hermes_home
+
+    can_rewind = supports_rewind(db)
+    observations = Observations(get_hermes_home())
+    if action == "rewind":
+        if not can_rewind:
+            return web.json_response(
+                {"error": "Update Hermes to enable session changes."}, status=501
+            )
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise ValueError("Choose a saved message.")
+        message_identifier(data.get("message_id"))
+        return web.json_response(await asyncio.to_thread(rewind, db, sid, data))
+    message_id = request.query.get("message_id")
+    if action == "response":
+        message_id = message_identifier(int(message_id))
+        rows = await asyncio.to_thread(db.get_messages, sid, after_id=message_id - 1, limit=1)
+        if not rows or rows[0]["id"] != message_id:
+            return web.json_response({"error": "Message not found."}, status=404)
+        row = rows[0]
+        detail = await asyncio.to_thread(observations.read, sid, message_id)
+        return web.json_response(
+            {
+                "message_id": message_id,
+                "timestamp": row.get("timestamp"),
+                "finish_reason": row.get("finish_reason"),
+                "has_reasoning": bool(row.get("reasoning") or row.get("reasoning_content")),
+                **(detail or {}),
+            }
+        )
+    detail = await asyncio.to_thread(observations.read, sid)
+    if detail:
+        rows = await asyncio.to_thread(
+            db.get_messages, sid, after_id=detail["message_id"] - 1, limit=1
+        )
+        if not rows or rows[0]["id"] != detail["message_id"]:
+            detail = None  # A rewind invalidates the removed turn's context observation.
+    usage = detail.get("usage") if detail else None
+    return web.json_response(
+        {
+            "context": {
+                "used": usage.get("input_tokens") if isinstance(usage, dict) else None,
+                "maximum": detail.get("context_max"),
+                "model": detail.get("model"),
+                "observed_at": detail.get("observed_at"),
+            }
+            if detail
+            else None
+        }
+    )
+
+
+async def dispatch_action(request, adapter):
+    from aiohttp import web
+
+    action = request.match_info.get("action", "capabilities")
+    if action == "runs":
+        from .context import start_run, supports_context_runs
+
+        if not supports_context_runs(adapter):
+            return web.json_response({"error": "Profile context unavailable."}, status=404)
+        return await start_run(adapter, request)
+    if action == "models":
+        from .models import model_options
+
+        return web.json_response(
+            await asyncio.to_thread(model_options, request.query.get("refresh") == "1")
+        )
+    db = await adapter._ensure_session_db_async()
+    if db is None:
+        return web.json_response({"error": "Hermes session storage is unavailable."}, status=503)
+    if action == "capabilities":
+        return await capabilities(adapter, db)
+    sid = request.match_info["session_id"]
+    session = await asyncio.to_thread(db.get_session, sid)
+    if session is None:
+        return web.json_response({"error": "Session not found."}, status=404)
+    if action == "fork":
+        return await fork_session(adapter, request, db, sid)
+    return await session_details(request, db, sid, action)

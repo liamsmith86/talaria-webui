@@ -113,7 +113,8 @@ async def test_fragmented_event_scans_each_byte_once(monkeypatch):
     raw = b'data: {"event":"message.delta","delta":"' + b"x" * 262144 + b'"}\r\n\r\n'
     chunks = Chunks([raw[i : i + 127] for i in range(0, len(raw), 127)])
     client = Hermes(
-        "http://hermes.test", "",
+        "http://hermes.test",
+        "",
         transport=httpx.MockTransport(lambda _: httpx.Response(200, stream=chunks)),
     )
     try:
@@ -126,12 +127,15 @@ async def test_fragmented_event_scans_each_byte_once(monkeypatch):
 
 @pytest.mark.parametrize("width", [1, 2, 7, 4096])
 async def test_event_boundaries_preserve_multiline_json_and_utf8(width):
-    raw = ('data: {"event":"message.delta",\r\n'
-           'data: "delta":"café 👩🏽‍💻"}\r\n\r\n'
-           'data: {"event":"run.completed"}\n\n').encode()
+    raw = (
+        'data: {"event":"message.delta",\r\n'
+        'data: "delta":"café 👩🏽‍💻"}\r\n\r\n'
+        'data: {"event":"run.completed"}\n\n'
+    ).encode()
     chunks = Chunks([raw[i : i + width] for i in range(0, len(raw), width)])
     client = Hermes(
-        "http://hermes.test", "",
+        "http://hermes.test",
+        "",
         transport=httpx.MockTransport(lambda _: httpx.Response(200, stream=chunks)),
     )
     try:

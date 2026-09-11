@@ -14,7 +14,7 @@ from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import auth, extensions, installation, metadata, routes, transcripts
+from . import auth, extensions, installation, metadata, routes, transcripts, updates
 from .config import Settings
 from .hermes import APIError, Hermes
 from .profiles import ProfileRouter, Profiles
@@ -63,13 +63,14 @@ class BrowserBoundary:
             public = path in {"/api/bootstrap", "/api/login"}
             if not public and not auth.authenticated(request):
                 error = (401, "Please sign in to continue.", "unauthenticated")
-            elif request.method not in {"GET", "HEAD", "OPTIONS"}:
-                if not auth.browser_request_valid(request, login=path == "/api/login"):
-                    error = (
-                        403,
-                        "Your session needs refreshing. Reload the page and try again.",
-                        "csrf",
-                    )
+            elif request.method not in {"GET", "HEAD", "OPTIONS"} and not (
+                auth.browser_request_valid(request, login=path == "/api/login")
+            ):
+                error = (
+                    403,
+                    "Your session needs refreshing. Reload the page and try again.",
+                    "csrf",
+                )
         if error:
             status, message, code = error
             return await JSONResponse({"error": message, "code": code}, status_code=status)(
@@ -90,9 +91,7 @@ class Assets(StaticFiles):
 async def index(request):
     # The document is tiny; cache the template per application, not per request.
     base = html.escape(request.app.state.settings.base_path + "/", quote=True)
-    return HTMLResponse(
-        request.app.state.index_html.replace("__TALARIA_BASE__", base)
-    )
+    return HTMLResponse(request.app.state.index_html.replace("__TALARIA_BASE__", base))
 
 
 async def health(request):
@@ -127,6 +126,7 @@ def create_app(
             Route("/health", health),
             Route("/api/bootstrap", routes.bootstrap),
             Route("/api/installation", installation.details),
+            Route("/api/installation/{action}", updates.submit, methods=["POST"]),
             Route("/api/profiles", profile_listing, methods=["GET", "POST"]),
             Route("/api/profiles/test", routes.connection, methods=["POST"]),
             Route("/api/profiles/{profile_id}", profile_remove, methods=["DELETE"]),

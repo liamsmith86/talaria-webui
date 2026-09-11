@@ -208,22 +208,34 @@ async def main():
                     task = adapter._active_run_tasks.get(data["run_id"])
                     if key == "first" and not (home / "stream.json").exists():
                         stream = await client.get(
-                            f"/v1/runs/{data['run_id']}/events", headers=headers,
+                            f"/v1/runs/{data['run_id']}/events",
+                            headers=headers,
                         )
                         assert stream.status == 200
                         frames = [
-                            json.loads(line[6:]) for line in (await stream.text()).splitlines()
+                            json.loads(line[6:])
+                            for line in (await stream.text()).splitlines()
                             if line.startswith("data: ")
                         ]
                         # Only synthetic fixture content is recorded. Exclude
                         # variable identifiers, timing, usage and provider metadata.
-                        fields = {"event", "delta", "text", "output", "tool", "preview",
-                                  "tool_call_id"}
+                        fields = {
+                            "event",
+                            "delta",
+                            "text",
+                            "output",
+                            "tool",
+                            "preview",
+                            "tool_call_id",
+                        }
                         trace = {
-                            "events": [{k: v for k, v in event.items() if k in fields}
-                                       for event in frames],
-                            "messages": [{k: row[k] for k in ("role", "content")}
-                                         for row in db.get_messages("context-test")],
+                            "events": [
+                                {k: v for k, v in event.items() if k in fields} for event in frames
+                            ],
+                            "messages": [
+                                {k: row[k] for k in ("role", "content")}
+                                for row in db.get_messages("context-test")
+                            ],
                         }
                         (home / "stream.json").write_text(json.dumps(trace, indent=2) + "\n")
                     if task:

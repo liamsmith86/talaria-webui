@@ -1,4 +1,4 @@
-"""CLI-only wheel deployments from Git, with atomic activation and recovery.
+"""Wheel deployments from Git, with atomic activation and recovery.
 
 Git and uv are build tools; neither is imported or invoked by the web server.
 Releases are never edited in place. Configuration stays outside the installation.
@@ -75,6 +75,16 @@ def write_file(path: Path, text: str, mode=0o644):
 
 def write_json(path: Path, data: dict):
     write_file(path, json.dumps(data, indent=2) + "\n")
+
+
+def readable_runtime(directory):
+    # Dependencies may have been cached under a private bootstrap umask. These
+    # are independent copies: never chmod a shared cache or interpreter symlink.
+    for parent, _, files in os.walk(directory):
+        for path in [Path(parent), *(Path(parent) / name for name in files)]:
+            if not path.is_symlink():
+                mode = path.stat().st_mode
+                path.chmod(0o755 if path.is_dir() or mode & 0o111 else 0o644)
 
 
 def stop(process):
@@ -223,9 +233,10 @@ def check_health(url: str, commit: str | None, *, timeout=15, assets=False):
 
 
 class Deployment:
-    def __init__(self, root: Path, *, report=print):
+    def __init__(self, root: Path, *, report=print, restart=None):
         self.root = root.expanduser().resolve()
         self.report = report
+        self._restart = restart
         self.config = read_json(self.root / "deployment.json")
         if self.config.get("schema") != 1:
             raise DeploymentError(
@@ -263,6 +274,16 @@ class Deployment:
         return commit
 
     def probe(self, release: Path, *, startup_timeout=15):
+        run(
+            [
+                release / "venv/bin/python",
+                "-c",
+                "import importlib.util; "
+                f"({bool(self._restart or self.config.get('supervised'))} or "
+                "importlib.util.find_spec('talaria.supervisor')) and "
+                "(__import__('talaria.supervisor'), __import__('talaria.supervisor_worker'))",
+            ]
+        )
         with tempfile.TemporaryFile() as errors:
             process = subprocess.Popen(
                 [str(release / "venv/bin/python"), "-c", PROBE, self.config["config"]],
@@ -298,6 +319,15 @@ class Deployment:
                 process.stdout.close()
 
     def stage(self, commit: str) -> str:
+        # A dedicated service account must be able to read updated runtime files,
+        # including when install.sh calls us with its private bootstrap umask.
+        previous_mask = os.umask(0o022)
+        try:
+            return self._stage(commit)
+        finally:
+            os.umask(previous_mask)
+
+    def _stage(self, commit: str) -> str:
         release = self.root / "releases" / commit
         if release.exists():
             if read_json(release / "release.json").get("commit") == commit:
@@ -312,6 +342,15 @@ class Deployment:
                 )
             shutil.rmtree(release)
         uv = shutil.which("uv")
+        if not uv:
+            # install.sh can install uv without changing the user's shell PATH.
+            locations = [str(Path.home() / ".local/bin"), "/usr/local/bin"]
+            if sys.platform == "darwin":
+                locations.append("/opt/homebrew/bin")
+            if os.geteuid() == 0 and (caller := os.environ.get("SUDO_UID")):
+                with suppress(KeyError, ValueError):
+                    locations.append(str(Path(pwd.getpwuid(int(caller)).pw_dir) / ".local/bin"))
+            uv = shutil.which("uv", path=os.pathsep.join(locations))
         if not uv:
             raise DeploymentError("Install uv to build updates: https://docs.astral.sh/uv/")
         release.mkdir(parents=True)
@@ -352,11 +391,36 @@ class Deployment:
                 )
                 run([uv, "venv", "--python", sys._base_executable, release / "venv"])
                 python = release / "venv/bin/python"
-                run([uv, "pip", "sync", "--python", python, "--require-hashes", requirements])
+                run(
+                    [
+                        uv,
+                        "pip",
+                        "sync",
+                        "--python",
+                        python,
+                        "--require-hashes",
+                        "--link-mode",
+                        "copy",
+                        requirements,
+                    ]
+                )
                 wheels = list((release / "artifacts").glob("talaria_webui-*.whl"))
                 if len(wheels) != 1:
                     raise DeploymentError("Expected exactly one Talaria wheel.")
-                run([uv, "pip", "install", "--python", python, "--no-deps", wheels[0]])
+                run(
+                    [
+                        uv,
+                        "pip",
+                        "install",
+                        "--python",
+                        python,
+                        "--no-deps",
+                        "--link-mode",
+                        "copy",
+                        wheels[0],
+                    ]
+                )
+                readable_runtime(release / "venv")
                 self.report("Checking startup, configuration, and packaged assets…")
                 self.probe(release)
                 version = run([python, "-c", "from talaria import __version__; print(__version__)"])
@@ -375,6 +439,8 @@ class Deployment:
             raise
 
     def restart(self):
+        if self._restart:
+            return self._restart()
         if not self.config.get("service"):
             return
         if self.config.get("manager") == "launchd":
@@ -391,7 +457,7 @@ class Deployment:
         run([*command, "restart", self.config["service"]], timeout=45)
 
     def verify_running(self, release: str):
-        if self.config.get("service"):
+        if self._restart or self.config.get("service"):
             info = read_json(self.root / release / "release.json")
             check_health(
                 self.config["health_url"], info.get("commit") if info.get("health_commit") else None
@@ -444,15 +510,16 @@ class Deployment:
             raise DeploymentError("Activation failed; the previous release was restored.") from exc
 
     def cleanup(self):
-        keep = {selected(self.root, name) for name in ("current", "previous", "manager")}
+        keep = {
+            selected(self.root, name) for name in ("current", "previous", "manager", "supervisor")
+        }
         for path in (self.root / "releases").iterdir():
             if (
                 path.is_dir()
                 and not path.is_symlink()
                 and re.fullmatch(r"[0-9a-f]{7,64}", path.name)
-            ):
-                if f"releases/{path.name}" not in keep:
-                    shutil.rmtree(path)
+            ) and f"releases/{path.name}" not in keep:
+                shutil.rmtree(path)
 
     def launcher(self):
         """Keep management commands usable after rolling back to a pre-updater release."""
@@ -463,7 +530,8 @@ class Deployment:
             directory / "talaria",
             (
                 '#!/bin/sh\ncase "${1-}" in\n'
-                f'  install|update|rollback|status) exec {root}/manager/venv/bin/talaria "$@" ;;\n'
+                "  install|update|rollback|status|uninstall|supervise) "
+                f'exec {root}/manager/venv/bin/talaria "$@" ;;\n'
                 '  ""|-*) ;;\n'
                 f'  *) exec {root}/current/venv/bin/talaria "$@" ;;\n'
                 "esac\n"
@@ -549,11 +617,64 @@ class Deployment:
         }
 
 
-def main(argv):
-    def interrupted(signum, frame):
-        raise KeyboardInterrupt
+def install_command(args, root):
+    if args.expect and not COMMIT.fullmatch(args.expect):
+        raise DeploymentError("--expect needs a full commit SHA.")
+    with locked(root):
+        if (root / "deployment.json").exists():
+            raise DeploymentError("This installation is already initialized. Use talaria update.")
+        if args.repository.startswith("-") or any(c in args.repository for c in "\n\r\x00"):
+            raise DeploymentError("Invalid repository address.")
+        run(["git", "check-ref-format", f"refs/heads/{args.branch}"])
+        if args.service and not re.fullmatch(r"[a-zA-Z0-9_.@-]+\.service", args.service):
+            raise DeploymentError("Use a complete systemd unit name, such as talaria.service.")
+        path = args.config.expanduser().resolve()
+        settings = load(path)
+        host = settings.host
+        if host in {"0.0.0.0", "::"}:
+            host = "127.0.0.1" if host == "0.0.0.0" else "[::1]"
+        elif ":" in host:
+            host = f"[{host}]"
+        write_json(
+            root / "deployment.json",
+            {
+                "schema": 1,
+                "repository": args.repository,
+                "branch": args.branch,
+                "config": str(path),
+                "service": args.service,
+                "scope": args.scope,
+                "health_url": f"http://{host}:{settings.port}",
+            },
+        )
+    deployment = Deployment(root)
+    deployment.update(expect=args.expect)
+    print(f"Launcher: {root / 'bin/talaria'}")
 
-    signal.signal(signal.SIGTERM, interrupted)
+
+def print_status(deployment, as_json):
+    data = deployment.status()
+    if as_json:
+        print(json.dumps(data, indent=2))
+    else:
+        for key in ("current", "previous"):
+            item = data[key]
+            print(
+                f"{key.capitalize()}: {item['version']} · {item['commit'][:10]}"
+                if item
+                else f"{key.capitalize()}: none"
+            )
+        print(f"Branch: {data['branch']}")
+        if data["recovery_pending"]:
+            print(
+                "An activation was interrupted. The next update will restore "
+                "the previous release first."
+            )
+        if data["update"].get("error"):
+            print(data["update"]["error"])
+
+
+def management_parser():
     parser = argparse.ArgumentParser(description="Install and update isolated Talaria releases.")
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("install", "update", "rollback", "status"):
@@ -584,46 +705,24 @@ def main(argv):
             command.add_argument(
                 "--json", action="store_true", help="Print machine-readable installation status"
             )
+    return parser
+
+
+def main(argv):
+    def interrupted(_signum, _frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, interrupted)
+    parser = management_parser()
     args = parser.parse_args(argv)
     try:
         root = args.directory.expanduser().resolve()
+        from .supervisor_cli import manage
+
+        if manage(args, root):
+            return
         if args.command == "install":
-            if args.expect and not COMMIT.fullmatch(args.expect):
-                raise DeploymentError("--expect needs a full commit SHA.")
-            with locked(root):
-                if (root / "deployment.json").exists():
-                    raise DeploymentError(
-                        "This installation is already initialized. Use talaria update."
-                    )
-                if args.repository.startswith("-") or any(c in args.repository for c in "\n\r\x00"):
-                    raise DeploymentError("Invalid repository address.")
-                run(["git", "check-ref-format", f"refs/heads/{args.branch}"])
-                if args.service and not re.fullmatch(r"[a-zA-Z0-9_.@-]+\.service", args.service):
-                    raise DeploymentError(
-                        "Use a complete systemd unit name, such as talaria.service."
-                    )
-                path = args.config.expanduser().resolve()
-                settings = load(path)
-                host = settings.host
-                if host in {"0.0.0.0", "::"}:
-                    host = "127.0.0.1" if host == "0.0.0.0" else "[::1]"
-                elif ":" in host:
-                    host = f"[{host}]"
-                write_json(
-                    root / "deployment.json",
-                    {
-                        "schema": 1,
-                        "repository": args.repository,
-                        "branch": args.branch,
-                        "config": str(path),
-                        "service": args.service,
-                        "scope": args.scope,
-                        "health_url": f"http://{host}:{settings.port}",
-                    },
-                )
-            deployment = Deployment(root)
-            deployment.update(expect=args.expect)
-            print(f"Launcher: {root / 'bin/talaria'}")
+            install_command(args, root)
         else:
             deployment = Deployment(root)
             if args.command == "update":
@@ -633,25 +732,7 @@ def main(argv):
             elif args.command == "rollback":
                 deployment.rollback()
             else:
-                data = deployment.status()
-                if args.json:
-                    print(json.dumps(data, indent=2))
-                else:
-                    for key in ("current", "previous"):
-                        item = data[key]
-                        print(
-                            f"{key.capitalize()}: {item['version']} · {item['commit'][:10]}"
-                            if item
-                            else f"{key.capitalize()}: none"
-                        )
-                    print(f"Branch: {data['branch']}")
-                    if data["recovery_pending"]:
-                        print(
-                            "An activation was interrupted. The next update will restore "
-                            "the previous release first."
-                        )
-                    if data["update"].get("error"):
-                        print(data["update"]["error"])
+                print_status(deployment, args.json)
     except (DeploymentError, OSError, KeyError, ValueError) as exc:
         parser.exit(1, f"Talaria: {exc}\n")
     except KeyboardInterrupt:

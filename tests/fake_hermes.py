@@ -127,9 +127,8 @@ class FakeHermes:
                             "durable": True,
                             "retention_seconds": 86400,
                         },
-                        **{
-                            key: True
-                            for key in [
+                        **dict.fromkeys(
+                            [
                                 "run_submission",
                                 "run_stop",
                                 "run_steer",
@@ -140,8 +139,9 @@ class FakeHermes:
                                 "session_fork",
                                 "model_options",
                                 "skills_api",
-                            ]
-                        },
+                            ],
+                            True,
+                        ),
                     },
                 }
             )
@@ -221,13 +221,16 @@ class FakeHermes:
             if path.endswith("/messages"):
                 # Native API forks lacking the CLI's marker are incorrectly
                 # treated as continuations by Hermes's resume resolver.
-                children = [s for s in self.sessions.values()
-                            if s.get("parent_session_id") == sid
-                            and not any(
-                                (s.get("model_config") or {}).get(key)
-                                for key in ("_branched_from", "_delegate_from", "_reset_from")
-                            )
-                            and s.get("source") != "tool"]
+                children = [
+                    s
+                    for s in self.sessions.values()
+                    if s.get("parent_session_id") == sid
+                    and not any(
+                        (s.get("model_config") or {}).get(key)
+                        for key in ("_branched_from", "_delegate_from", "_reset_from")
+                    )
+                    and s.get("source") != "tool"
+                ]
                 if children:
                     sid = children[-1]["id"]
                 offset = int(request.query_params.get("offset", "0"))
@@ -256,8 +259,10 @@ class FakeHermes:
                 new_id = uuid.uuid4().hex
                 self.sessions[sid]["end_reason"] = "branched"
                 self.sessions[new_id] = {
-                    "id": new_id, "title": title,
-                    "source": "api_server", "parent_session_id": sid,
+                    "id": new_id,
+                    "title": title,
+                    "source": "api_server",
+                    "parent_session_id": sid,
                     "model_config": {"_branched_from": sid} if plugin_fork else {},
                 }
                 self.messages[new_id] = list(self.messages[sid])

@@ -69,21 +69,31 @@ elevated() {
     elif command -v sudo >/dev/null 2>&1; then sudo "$@"
     else fail 'Install the missing system packages as administrator, then re-run.'; fi
 }
+# Find standard user tools even in a minimal SSH environment.
+export PATH="${HOME}/.local/bin:/usr/local/bin:$PATH"
+if [ "$(uname -s)" = Darwin ] && [ -d /opt/homebrew/bin ]; then
+    export PATH="/opt/homebrew/bin:$PATH"
+fi
 if ! command -v git >/dev/null 2>&1 ||
    { ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; }; then
-    confirm 'Install Git, curl, and CA certificates using the system package manager?'
+    packages=()
+    command -v git >/dev/null 2>&1 || packages+=(git)
+    if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+        packages+=(curl ca-certificates)
+    fi
+    confirm "Install missing prerequisites (${packages[*]}) using the system package manager?"
     if [ "$(uname -s)" = Darwin ]; then
         [ "$(id -u)" -ne 0 ] || fail 'Install Git/curl using your normal macOS account first.'
         command -v brew >/dev/null 2>&1 || fail 'Install Apple command-line tools (xcode-select --install), then re-run.'
-        brew install git curl
+        brew install "${packages[@]}"
     elif command -v apt-get >/dev/null 2>&1; then
         elevated apt-get update
-        elevated apt-get install -y git curl ca-certificates
-    elif command -v dnf >/dev/null 2>&1; then elevated dnf install -y git curl ca-certificates
-    elif command -v yum >/dev/null 2>&1; then elevated yum install -y git curl ca-certificates
-    elif command -v apk >/dev/null 2>&1; then elevated apk add git curl ca-certificates
-    elif command -v pacman >/dev/null 2>&1; then elevated pacman -S --needed --noconfirm git curl ca-certificates
-    elif command -v zypper >/dev/null 2>&1; then elevated zypper --non-interactive install git curl ca-certificates
+        elevated apt-get install -y --no-install-recommends "${packages[@]}"
+    elif command -v dnf >/dev/null 2>&1; then elevated dnf install -y "${packages[@]}"
+    elif command -v yum >/dev/null 2>&1; then elevated yum install -y "${packages[@]}"
+    elif command -v apk >/dev/null 2>&1; then elevated apk add "${packages[@]}"
+    elif command -v pacman >/dev/null 2>&1; then elevated pacman -S --needed --noconfirm "${packages[@]}"
+    elif command -v zypper >/dev/null 2>&1; then elevated zypper --non-interactive install "${packages[@]}"
     else fail 'Install Git and curl (or wget) with your package manager, then re-run.'; fi
 fi
 git --version >/dev/null || fail 'Git is unavailable; finish installing your command-line tools.'
@@ -96,8 +106,6 @@ download() {
         curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --retry 3 --connect-timeout 20 --max-time 300 "$1" -o "$2"
     else wget --https-only --timeout=30 --tries=3 -q "$1" -O "$2"; fi
 }
-# Include the standard uv location without modifying any shell startup files.
-export PATH="${HOME}/.local/bin:/usr/local/bin:$PATH"
 if ! command -v uv >/dev/null 2>&1; then
     confirm 'Install pinned uv 0.12.9 from Astral?'
     download https://astral.sh/uv/0.12.9/install.sh "$work/uv.sh"

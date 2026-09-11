@@ -12,7 +12,10 @@ from .conftest import wait_for_store
 
 @pytest.mark.parametrize("chunk_size", [31, 4096])
 def test_native_completed_trace_reconciles_with_fragmented_or_batched_delivery(
-    page, live_app, monkeypatch, chunk_size,
+    page,
+    live_app,
+    monkeypatch,
+    chunk_size,
 ):
     trace = json.loads((Path(__file__).with_name("fixtures") / "hermes-completed.json").read_text())
     peer = live_app[1]
@@ -24,7 +27,7 @@ def test_native_completed_trace_reconciles_with_fragmented_or_batched_delivery(
         run.update(status="completed", output=trace["messages"][-1]["content"])
         wire = "".join("data: " + json.dumps(event) + "\n\n" for event in trace["events"])
         for offset in range(0, len(wire), chunk_size):
-            yield wire[offset:offset + chunk_size]
+            yield wire[offset : offset + chunk_size]
             await asyncio.sleep(0.005)
 
     monkeypatch.setattr(peer, "events", events)
@@ -61,22 +64,38 @@ def test_tool_rounds_settle_to_one_ordered_response(page, live_app, monkeypatch,
         await asyncio.wait_for(ready.wait(), 15)
         final = (
             "Operation interrupted: waiting for model response (3.5s elapsed)."
-            if run["status"] == "cancelled" else "The final answer."
+            if run["status"] == "cancelled"
+            else "The final answer."
         )
         messages = peer.messages[run["session_id"]]
         for text, call, command in [
             ("Before the first tool.", "a", "date"),
             ("Between the tools.", "b", "uname"),
         ]:
-            messages.append({
-                "id": len(messages) + 1, "role": "assistant", "content": text,
-                "tool_calls": [{"id": call, "function": {
-                    "name": "terminal", "arguments": json.dumps({"command": command}),
-                }}],
-            })
-            messages.append({
-                "id": len(messages) + 1, "role": "tool", "tool_call_id": call, "content": "done",
-            })
+            messages.append(
+                {
+                    "id": len(messages) + 1,
+                    "role": "assistant",
+                    "content": text,
+                    "tool_calls": [
+                        {
+                            "id": call,
+                            "function": {
+                                "name": "terminal",
+                                "arguments": json.dumps({"command": command}),
+                            },
+                        }
+                    ],
+                }
+            )
+            messages.append(
+                {
+                    "id": len(messages) + 1,
+                    "role": "tool",
+                    "tool_call_id": call,
+                    "content": "done",
+                }
+            )
         messages.append({"id": len(messages) + 1, "role": "assistant", "content": final})
         if run["status"] == "cancelled":
             yield frame("run.cancelled")  # Native Hermes omits output and usage here.
@@ -111,13 +130,19 @@ def test_tool_rounds_settle_to_one_ordered_response(page, live_app, monkeypatch,
     ending = "Operation interrupted" if cancelled else "The final answer"
     assert text.index("uname") < text.index(ending)
     if cancelled:
-        page.route("**/response?message_id=6", lambda route: route.fulfill(
-            json={"message_id": 6},
-        ))
+        page.route(
+            "**/response?message_id=6",
+            lambda route: route.fulfill(
+                json={"message_id": 6},
+            ),
+        )
     response.get_by_role("button", name="Response details", exact=True).click()
-    assert page.evaluate("""async () => {
+    assert (
+        page.evaluate("""async () => {
       const {state}=await import('/static/store.js');return state.modal.message.id;
-    }""") == 6
+    }""")
+        == 6
+    )
     if cancelled:
         expect(page.locator(".response-facts > div").filter(has_text="Status")).to_contain_text(
             "Interrupted"
@@ -164,8 +189,11 @@ def test_terminal_text_preserves_earlier_rounds_and_closes_working_tools(page):
       live=applyEvent(live,{event:'run.cancelled'});
       return {completed,recovered,statuses:live.tools.map(tool=>tool.status)};
     }""")
-    assert result == {"completed": ["Earlier prose", "a", "Final answer"],
-                      "recovered": True, "statuses": ["completed", "cancelled"]}
+    assert result == {
+        "completed": ["Earlier prose", "a", "Final answer"],
+        "recovered": True,
+        "statuses": ["completed", "cancelled"],
+    }
 
 
 def test_late_reasoning_does_not_split_or_duplicate_the_current_markdown(page):
@@ -180,8 +208,10 @@ def test_late_reasoning_does_not_split_or_duplicate_the_current_markdown(page):
         {event:'run.completed',output:'**One paragraph**'}]) live=applyEvent(live,event);
       return live.parts;
     }""")
-    assert result == [{"kind": "reasoning", "text": "Final thinking"},
-                      {"kind": "text", "text": "**One paragraph**"}]
+    assert result == [
+        {"kind": "reasoning", "text": "Final thinking"},
+        {"kind": "text", "text": "**One paragraph**"},
+    ]
 
 
 def test_expired_live_updates_use_the_same_saved_turn_reconciliation(page, live_app):
@@ -210,11 +240,17 @@ def test_expired_live_updates_use_the_same_saved_turn_reconciliation(page, live_
     expect(page.locator(".message.assistant")).to_have_count(1)
     expect(page.locator(".message.assistant")).to_contain_text("The saved answer")
     assert page.evaluate("expiredSource.closed")
-    assert page.evaluate("""async () => (await import('/static/store.js'))
-      .state.lives.expired.tools[0].status""") == "not_reported"
+    assert (
+        page.evaluate("""async () => (await import('/static/store.js'))
+      .state.lives.expired.tools[0].status""")
+        == "not_reported"
+    )
     page.get_by_role("button", name="Response details", exact=True).click()
-    assert page.evaluate("""async () => (await import('/static/store.js'))
-      .state.modal.message.responseStatus""") is None
+    assert (
+        page.evaluate("""async () => (await import('/static/store.js'))
+      .state.modal.message.responseStatus""")
+        is None
+    )
 
 
 def test_saved_turn_can_be_recognized_when_its_user_row_is_on_an_older_page(page):
@@ -246,12 +282,18 @@ def test_cached_run_status_stays_with_its_saved_message_after_history_grows(page
     expect(page.locator(".completed-children")).to_have_count(0)
     details = page.get_by_role("button", name="Response details", exact=True)
     details.first.click()
-    assert page.evaluate("""async () => (await import('/static/store.js'))
-      .state.modal.message.responseStatus""") == "cancelled"
+    assert (
+        page.evaluate("""async () => (await import('/static/store.js'))
+      .state.modal.message.responseStatus""")
+        == "cancelled"
+    )
     page.get_by_role("button", name="Close dialog").click()
     details.last.click()
-    assert page.evaluate("""async () => (await import('/static/store.js'))
-      .state.modal.message.responseStatus""") is None
+    assert (
+        page.evaluate("""async () => (await import('/static/store.js'))
+      .state.modal.message.responseStatus""")
+        is None
+    )
 
 
 def test_prior_delegation_does_not_hide_current_unsaved_child_details(page):

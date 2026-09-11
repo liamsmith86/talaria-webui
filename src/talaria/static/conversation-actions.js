@@ -150,6 +150,7 @@ export function TranscriptDownload({ session, onClose }) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
+      // eslint-disable-next-line no-control-regex -- strip control characters from filenames
       link.download = `${(session.title || "Session").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").slice(0, 100)}.${format === "json" ? "json" : "md"}`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);

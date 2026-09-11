@@ -22,6 +22,8 @@ function useDetails(path, enabled, initial = null) {
     return () => {
       current = false;
     };
+    // Initial details seed this request; object identity changes on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, enabled]);
   return result;
 }

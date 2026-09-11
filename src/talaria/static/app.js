@@ -14,7 +14,6 @@ import {
   useStore,
   initialize,
   update,
-  fail,
   newConversation,
   supports,
   chooseModel,

@@ -76,7 +76,18 @@ Hermes configuration changes run as the selected home’s owner.
 The installer prints the actual paths and commands. Linux uses systemd where
 available; macOS uses a user LaunchAgent. Otherwise, start the app manually.
 Systemd user services follow the account's login/linger policy; LaunchAgents start
-at login. No updater services or timers are installed.
+at login. The service uses a small launcher to apply updates while keeping the web
+server unprivileged. No updater services or timers are installed.
+
+Open **Settings → Talaria** to check for updates and install them. The page reconnects
+after restarting; failed activation restores the previous release. Existing service
+installations can rerun `install.sh` once to enable this. For a user-owned manual installation,
+run `talaria supervise --directory /path/to/installation` to enable browser updates.
+
+**Uninstall:** run the printed launcher path with `uninstall` (use `sudo` for a
+system installation). It previews removal of Talaria's service, installation,
+configuration, and passwords, then asks for confirmation. Add `--yes` for headless
+use. Hermes, its plugin/sessions, and shared Python/Git/uv installations are kept.
 
 **Plugin only**, on the Hermes host:
 

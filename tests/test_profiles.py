@@ -259,7 +259,7 @@ def test_same_session_ids_and_images_are_isolated_and_responses_survive_switchin
 def test_browser_switching_separates_drafts_images_preferences_and_live_requests(
     page, live_app, research
 ):
-    profile_id, second = research
+    _profile_id, second = research
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.get_by_label("Message Hermes").fill("Production draft")
@@ -313,9 +313,7 @@ def test_browser_switching_separates_drafts_images_preferences_and_live_requests
 def test_missing_profile_shows_a_chooser_without_loading_default_sessions(page, live_app):
     page.goto(live_app[0] + "/?profile=" + "f" * 32)
     expect(page.get_by_role("dialog", name="Choose a profile")).to_be_visible()
-    expect(
-        page.get_by_text("This profile is no longer available. Choose another.")
-    ).to_be_visible()
+    expect(page.get_by_text("This profile is no longer available. Choose another.")).to_be_visible()
     expect(page.get_by_role("button", name="Close dialog")).to_have_count(0)
     page.get_by_role("link", name="Default profile default", exact=False).click()
     expect(page.locator(".topbar-title")).to_be_visible()

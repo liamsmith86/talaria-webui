@@ -24,13 +24,22 @@ def main():
     if (
         os.name == "nt"
         and len(sys.argv) > 1
-        and sys.argv[1] in {"setup", "install", "update", "rollback", "status"}
+        and sys.argv[1]
+        in {"setup", "install", "update", "rollback", "status", "uninstall", "supervise"}
     ):
         raise SystemExit("Managed installation requires Linux, macOS, or Ubuntu inside WSL2.")
+    if len(sys.argv) > 1 and sys.argv[1] == "supervise":
+        from .supervisor import main as supervise
+
+        return supervise(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "setup":
         from .setup import main as setup
 
         return setup(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "uninstall":
+        from .uninstall import main as uninstall
+
+        return uninstall(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "hermes-plugin":
         from .plugin_install import main as install_plugin
 
@@ -39,10 +48,14 @@ def main():
         from .deployment import main as manage
 
         return manage(sys.argv[1:])
+    serve()
+
+
+def serve():
     parser = argparse.ArgumentParser(description="Talaria — a web client for Hermes Agent")
     parser.epilog = (
         "Managed installations: talaria install, talaria update [--check], "
-        "talaria rollback, talaria status. Use COMMAND --help for details."
+        "talaria rollback, talaria status, talaria uninstall. Use COMMAND --help for details."
     )
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument(
@@ -102,4 +115,5 @@ def main():
         port=args.port or settings.port,
         proxy_headers=False,
         access_log=False,
+        timeout_graceful_shutdown=8,
     )

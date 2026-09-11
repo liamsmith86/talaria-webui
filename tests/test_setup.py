@@ -63,24 +63,24 @@ wizard.main([])
     transcript = b""
     try:
         for prompt, answer in [
-            (b'Service [auto]: ', b'none\n'),
-            (b'Password: ', b'test-private-password\n'),
-            (b'Continue? (yes/no) [yes]: ', b'\n'),
-            (b'Interactive setup passed', None),
+            (b"Service [auto]: ", b"none\n"),
+            (b"Password: ", b"test-private-password\n"),
+            (b"Continue? (yes/no) [yes]: ", b"\n"),
+            (b"Interactive setup passed", None),
         ]:
             while prompt not in re.sub(rb"\x1b\[[0-9;]*m", b"", transcript):
                 assert select.select([terminal], [], [], 10)[0], transcript.decode()
                 try:
                     chunk = os.read(terminal, 4096)
                 except OSError:
-                    pytest.fail(f'Terminal closed before prompt: {transcript.decode()}')
+                    pytest.fail(f"Terminal closed before prompt: {transcript.decode()}")
                 assert chunk, transcript.decode()
                 transcript += chunk
             if answer is not None:
                 os.write(terminal, answer)
         assert child.wait(timeout=10) == 0
-        assert b'test-private-password' not in transcript
-        assert (b'\x1b[' in transcript) == color
+        assert b"test-private-password" not in transcript
+        assert (b"\x1b[" in transcript) == color
     finally:
         os.close(terminal)
         if child.poll() is None:
@@ -124,8 +124,9 @@ def test_discovery_limits_directory_checks_to_32_homes(options, monkeypatch, tmp
     monkeypatch.delenv("HERMES_HOME", raising=False)
     monkeypatch.setattr(os, "geteuid", lambda: 0)
     accounts = [
-        SimpleNamespace(pw_dir=str(tmp_path / f"user{i}"), pw_name=f"user{i:04}",
-                        pw_shell="/bin/bash")
+        SimpleNamespace(
+            pw_dir=str(tmp_path / f"user{i}"), pw_name=f"user{i:04}", pw_shell="/bin/bash"
+        )
         for i in range(1000)
     ]
     monkeypatch.setattr(wizard.pwd, "getpwall", lambda: accounts)
@@ -275,9 +276,11 @@ def test_private_files_and_service_quoting(tmp_path, monkeypatch):
     launchd = service_plan("launchd", root, config)
     data = plistlib.loads(launchd["text"].encode())
     assert data["ProgramArguments"] == [
-        str(root / "current/venv/bin/talaria"),
-        "--config",
-        str(config),
+        str(root / "manager/venv/bin/python"),
+        "-m",
+        "talaria.supervisor",
+        "--directory",
+        str(root),
     ]
     assert "StartInterval" not in data
     with pytest.raises(ValueError):
@@ -336,6 +339,7 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
         "HOME": str(tmp_path / "home"),
         "HERMES_HOME": str(tmp_path / "absent"),
         "UV_PYTHON": sys._base_executable,
+        "UV_CACHE_DIR": str(tmp_path / "cold-cache"),
     }
     for name in ("VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "PYTHONPATH"):
         env.pop(name, None)
@@ -368,9 +372,13 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
                 occupied.listen()
             result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=180)
         assert result.returncode == 0, result.stdout + result.stderr
+        runtime = root / "current/venv"
+        packages = list(runtime.glob("lib/python*/site-packages/starlette/__init__.py"))
+        assert packages and all(package.stat().st_mode & 0o004 for package in packages)
         settings = load(config)
         assert settings.public_url == "https://example.com/telaria"
         assert "Update manually:" in result.stdout
+        assert "Uninstall:" in result.stdout
         assert not (root / ".setup-pending.json").exists()
         if attempt == 0:
             assert "Hermes: not configured" in result.stdout
@@ -405,6 +413,9 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
     )
     assert installed.startswith(str(root))
     assert json.loads((root / "deployment.json").read_text())["service"] is None
+    removed = run([root / "bin/talaria", "uninstall", "--yes"])
+    assert "Talaria uninstalled" in removed
+    assert not root.exists() and not config.parent.exists()
 
 
 @pytest.mark.hermes
@@ -431,9 +442,16 @@ bitwarden.fetch_bitwarden_secrets = lambda **kwargs: (
 runpy.run_path(sys.argv[1], run_name='__main__')
 """
     result = subprocess.run(
-        [str(source / "venv/bin/python"), "-c", script,
-         str(Path(wizard.__file__).with_name("setup_hermes.py"))],
-        input=json.dumps(setup_request), text=True, capture_output=True, check=True,
+        [
+            str(source / "venv/bin/python"),
+            "-c",
+            script,
+            str(Path(wizard.__file__).with_name("setup_hermes.py")),
+        ],
+        input=json.dumps(setup_request),
+        text=True,
+        capture_output=True,
+        check=True,
         cwd=tmp_path,
         env={"PATH": os.environ["PATH"], "HOME": str(tmp_path), "HERMES_HOME": str(tmp_path)},
         timeout=45,
@@ -495,6 +513,7 @@ def test_sudo_elevation_preserves_explicit_paths_and_hermes_identity(options, mo
     assert wizard.elevate_setup(options) == 0
     command = calls[0]
     assert command[:5] == ["sudo", "-n", "-H", "--", "env"]
+    assert "PYTHONDONTWRITEBYTECODE=1" in command[5 : command.index(sys.executable)]
     assert command[command.index("--service") + 1] == "systemd"
     assert command[command.index("--hermes-home") + 1] == str(options.hermes_home)
     assert command[command.index("--hermes-python") + 1] == str(options.hermes_python)
@@ -551,9 +570,7 @@ def test_root_shell_keeps_its_existing_git_credentials(tmp_path, monkeypatch):
     original = subprocess.Popen
     with request.open() as input_file:
         monkeypatch.setattr(
-            subprocess, "Popen", lambda *args, **kwargs: original(
-                *args, stdin=input_file, **kwargs
-            )
+            subprocess, "Popen", lambda *args, **kwargs: original(*args, stdin=input_file, **kwargs)
         )
         result = deployment.run(["git", "credential", "fill"], cwd=tmp_path)
     assert "username=test-owner" in result and "password=test-token" in result
@@ -628,6 +645,8 @@ def test_failed_service_setup_resumes_after_release_was_installed(options, monke
         "kind": "systemd",
         "service": "test.service",
         "scope": "user",
+        "path": options.directory.parent / "test.service",
+        "text": "test service",
         "start": ["systemctl", "--user", "start", "test.service"],
         "stop": ["systemctl", "--user", "stop", "test.service"],
         "restart": ["systemctl", "--user", "restart", "test.service"],
@@ -714,3 +733,78 @@ def test_resumed_setup_restarts_only_when_saved_credentials_changed(options, mon
     assert load(options.config).api_key == "new-key"
     wizard.setup(options, wizard.Prompts(None))
     assert calls == ["restart"]
+
+
+@pytest.mark.parametrize("kind", ["systemd", "launchd"])
+@pytest.mark.parametrize("fails", [False, True])
+def test_owned_service_migration_and_failed_migration_restore(tmp_path, monkeypatch, kind, fails):
+    import hashlib
+    from types import SimpleNamespace
+
+    from talaria import deployment as deploy
+    from talaria import setup_services as services
+
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    root = tmp_path / "app"
+    root.mkdir()
+    config = tmp_path / "private/config.json"
+    plan = services.service_plan(kind, root, config)
+    path = plan["path"]
+    path.parent.mkdir(parents=True)
+    previous = "Previous service contents\n"
+    path.write_text(previous)
+    metadata = {
+        "schema": 1,
+        "config": str(config),
+        "service": plan["service"],
+        "scope": "user",
+        "health_url": "http://127.0.0.1:8766",
+        "setup": {
+            "scope": "user",
+            "kind": kind,
+            "service_file": str(path),
+            "service_sha256": hashlib.sha256(previous.encode()).hexdigest(),
+        },
+    }
+    deploy.write_json(root / "deployment.json", metadata)
+    deployment = SimpleNamespace(
+        root=root, config=metadata, status=lambda: {"current": {"commit": "a" * 40}}
+    )
+    calls, loaded = [], True
+
+    def command(args, **_):
+        nonlocal loaded
+        calls.append(args)
+        if args[:2] == ["launchctl", "bootout"]:
+            loaded = False
+        if args[:2] == ["launchctl", "bootstrap"]:
+            loaded = True
+        if args[:2] == ["launchctl", "print"] and not loaded:
+            raise DeploymentError("Not loaded")
+        return ""
+
+    def health(*_):
+        if fails:
+            raise DeploymentError("New launcher failed")
+
+    monkeypatch.setattr(services, "run", command)
+    monkeypatch.setattr(deploy, "check_health", health)
+    if fails:
+        with pytest.raises(DeploymentError, match="New launcher failed"):
+            services.migrate_service(deployment)
+        assert path.read_text() == previous
+        assert deploy.read_json(root / "deployment.json") == metadata
+    else:
+        services.migrate_service(deployment)
+        assert path.read_text() == plan["text"]
+        assert deploy.read_json(root / "deployment.json")["supervised"]
+        assert (
+            deployment.config["setup"]["service_sha256"]
+            == hashlib.sha256(path.read_bytes()).hexdigest()
+        )
+    if kind == "launchd":
+        assert calls.index(plan["stop"]) < calls.index(plan["start"])
+    else:
+        assert ["systemctl", "--user", "daemon-reload"] in calls
+        assert plan["restart"] in calls

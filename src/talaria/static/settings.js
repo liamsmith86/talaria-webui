@@ -8,6 +8,7 @@ import {
   useMediaQuery,
 } from "./lib.js";
 import { api } from "./api.js";
+import { Installation } from "./installation.js";
 import { Dialog } from "./dialogs.js";
 import { ProfileConnections } from "./profiles.js";
 import { refreshAgentInfo, refreshModels, supports, fail } from "./store.js";
@@ -32,115 +33,6 @@ function Facts({ items }) {
         </div>`,
     )}
   </dl>`;
-}
-
-function Installation() {
-  const [info, setInfo] = useState(null);
-  const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    let active = true;
-    api("/installation")
-      .then((data) => {
-        if (active) setInfo(data);
-      })
-      .catch(() => {
-        if (active)
-          setError(
-            "Installation information could not be loaded. Reopen this section to try again.",
-          );
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-  const date = (value) =>
-    value && Number.isFinite(Date.parse(value))
-      ? new Date(value).toLocaleString([], {
-          dateStyle: "medium",
-          timeStyle: "short",
-        })
-      : "Not available";
-  if (!info)
-    return html`<h3>Talaria</h3>
-      <p class="field-help" role="status">
-        ${error || "Loading installation information…"}
-      </p>`;
-  const development = info.environment === "development";
-  return html`<div class="section-heading">
-      <h3>Talaria</h3>
-      <span class="${development ? "environment-badge" : "quiet-badge"}"
-        >${development ? "Development" : "Production"}</span
-      >
-    </div>
-    <${Facts}
-      items=${[
-        ["Version", info.version],
-        [
-          "Build",
-          development
-            ? "Working checkout"
-            : info.commit?.slice(0, 10) || "Installed package",
-        ],
-        ...(info.managed
-          ? [
-              ["Update branch", info.branch],
-              ["Installed", date(info.installed_at)],
-            ]
-          : []),
-      ]}
-    />
-    ${!development && info.managed
-        ? html`<section class="settings-section installation-update">
-            <div class="section-heading">
-              <h4>Updates</h4>
-              ${!info.update.error &&
-              info.update.checked_at &&
-              html`<span
-                class="${info.update.available
-                  ? "default-badge"
-                  : "quiet-badge"}"
-                >${info.update.available
-                  ? "Update available"
-                  : "Up to date at last check"}</span
-              >`}
-            </div>
-            <div class="update-command">
-              <code>${info.update_command}</code
-              ><button
-                class="icon-button"
-                aria-label="Copy update command"
-                title="Copy update command"
-                onClick=${async () => {
-                  try {
-                    await navigator.clipboard.writeText(info.update_command);
-                    setCopied(true);
-                    setError("");
-                  } catch {
-                    setError(
-                      "Could not copy. Select the command to copy it manually.",
-                    );
-                  }
-                }}
-              >
-                <${Icon} name=${copied ? "check" : "copy"} size=${16} />
-              </button>
-            </div>
-            <span class="sr-only" role="status"
-              >${copied ? "Update command copied" : ""}</span
-            >
-            <p class="field-help">
-              ${info.update.checked_at
-                ? `Last checked ${date(info.update.checked_at)}.`
-                : "Updates have not been checked yet."}
-            </p>
-            ${info.update.error &&
-            html`<p class="form-error" role="status">${info.update.error}</p>`}
-            ${error && html`<p class="form-error" role="status">${error}</p>`}
-          </section>`
-        : !development && html`<p class="field-help">
-            Update using your package manager.
-          </p>`}`;
 }
 
 function Overview({ app }) {
@@ -290,7 +182,10 @@ export function Settings({ app, onClose, initialSection = "agent" }) {
           aria-controls="settings-content"
           aria-selected=${section === id}
           tabindex=${section === id ? 0 : -1}
-          onClick=${() => setSection(id)}
+          onClick=${() => {
+            setSection(id);
+            if (id === "installation") setInstallationRefresh((value) => value + 1);
+          }}
           onKeyDown=${(e) => {
             const next =
               e.key === "Home"
@@ -324,11 +219,7 @@ export function Settings({ app, onClose, initialSection = "agent" }) {
         html`<${ProfileConnections} app=${app} onRefresh=${refresh} />`
       }
     </div></div>
-    <footer class="settings-footer"><span>Talaria ${app.version}</span><div><button disabled=${busy} onClick=${() => {
-      if (section === "installation")
-        setInstallationRefresh((value) => value + 1);
-      else refresh();
-    }}>${busy ? "Refreshing…" : "Refresh information"}</button><button onClick=${async () => {
+    <footer class="settings-footer"><span>Talaria ${app.version}</span><div>${section !== "installation" && html`<button disabled=${busy} onClick=${refresh}>${busy ? "Refreshing…" : "Refresh information"}</button>`}<button onClick=${async () => {
       try {
         await api("/logout", { method: "POST", body: {} });
         location.reload();
