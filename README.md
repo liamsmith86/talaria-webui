@@ -72,7 +72,7 @@ uv run --locked --no-dev talaria install
 The default URL is **http://127.0.0.1:8766**. The login password is saved in
 `~/.config/talaria/initial-password.txt`. Root installs with a system service use
 `/opt/talaria` and `/var/lib/talaria`, and run the app as an unprivileged account.
-Git authentication and local Hermes changes retain the invoking user’s identity.
+Hermes configuration changes run as the selected home’s owner.
 The installer prints the actual paths and commands. Linux uses systemd where
 available; macOS uses a user LaunchAgent. Otherwise, start the app manually.
 Systemd user services follow the account's login/linger policy; LaunchAgents start
