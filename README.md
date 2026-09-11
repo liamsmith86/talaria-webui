@@ -124,6 +124,21 @@ Run the Hermes commands in the same profile (use `hermes --profile NAME` for a
 named profile). A multiplexed gateway also needs the plugin in its primary profile.
 The plugin uses the same API key as Hermes; it does not require a separate key.
 
+For temporary prompt diagnostics (plugin 1.2.1+), on the Hermes host:
+
+```sh
+hermes config set plugins.entries.talaria.settings.debug_requests true
+```
+
+Logs go to `~/.hermes/talaria/request-debug.jsonl` (inside the selected profile).
+Talaria chat diagnostics include full assembled messages, system instructions,
+prefill, and user input, including subsequent turns and tool continuations.
+Generation parameters use Hermes's sanitized metadata and may be truncated.
+Authentication headers are excluded; prompts and tool results can still contain
+private information. Files are owner-only, with three rotated 16 MiB backups.
+Requests above 8 MiB produce an explicit omission record.
+Set the same flag to `false` to stop logging without restarting; existing logs remain.
+
 Type `/` in chat to browse Hermes commands (plugin 1.2.0+). `/compress` and
 `/compact` use Hermes's native compressor; `here 2`, a focus topic, and
 `--preview` are supported. Command status appears inline without becoming saved

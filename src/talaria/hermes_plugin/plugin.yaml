@@ -1,7 +1,12 @@
 name: talaria
-version: "1.2.0"
+version: "1.2.1"
 description: Profile instructions, ephemeral prefill, response details, and native session controls for Talaria.
 provides_hooks:
   - pre_api_request
   - post_api_request
   - on_session_end
+config_schema:
+  debug_requests:
+    type: bool
+    default: false
+    description: Log full Talaria model inputs in this profile's talaria/request-debug.jsonl.

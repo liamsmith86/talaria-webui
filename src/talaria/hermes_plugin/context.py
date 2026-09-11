@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .files import read_text
+from .request_log import scoped_run
 
 log = logging.getLogger(__name__)
 MAX_INSTRUCTIONS = 64 * 1024
@@ -105,6 +106,8 @@ class ProfileRunAdapter:
         # Prefer native support if a later Hermes version starts loading these itself.
         if hasattr(agent, "prefill_messages") and not agent.prefill_messages:
             agent.prefill_messages = deepcopy(self._context.prefill)
+        if callable(getattr(agent, "run_conversation", None)):
+            agent.run_conversation = scoped_run(agent.run_conversation)
         return agent
 
 

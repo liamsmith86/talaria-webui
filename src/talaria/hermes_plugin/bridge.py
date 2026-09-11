@@ -8,6 +8,7 @@ import logging
 
 from .observations import Observations
 from .release import LOADED_REVISION, PLUGIN_VERSION
+from .request_log import RequestLog
 
 log = logging.getLogger(__name__)
 PREFIX = "/talaria/v1"
@@ -156,6 +157,7 @@ def register(ctx):
     observations = Observations(get_hermes_home())
     ctx.register_platform_handler("api_server", wire)
     ctx.register_hook("pre_api_request", observations.before)
+    ctx.register_hook("pre_api_request", RequestLog(ctx).before)
     ctx.register_hook("post_api_request", observations.after)
     ctx.register_hook("on_session_end", observations.end)
 
