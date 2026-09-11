@@ -17,7 +17,7 @@ def test_repeated_default_branches_use_distinct_hermes_names(page, live_app):
         page.get_by_role("button", name="Original", exact=True).click()
         wait_for_store(page, "s => s.active === 'repeat-original' && !s.loading")
         page.get_by_role("button", name="Options for Original", exact=True).click()
-        page.get_by_role("button", name="Branch conversation", exact=True).click()
+        page.get_by_role("button", name="Branch session", exact=True).click()
         page.get_by_role("button", name="Create branch", exact=True).click()
         expect(page.get_by_role("dialog")).to_have_count(0)
         wait_for_store(page, "s => s.active !== 'repeat-original' && !s.loading")
@@ -34,8 +34,8 @@ def test_rejected_branch_can_close_and_open_context_usage(page, live_app):
     page.reload()
     page.get_by_role("button", name="Original", exact=True).click()
     page.get_by_role("button", name="Options for Original", exact=True).click()
-    page.get_by_role("button", name="Branch conversation", exact=True).click()
-    page.get_by_label("Conversation name", exact=True).fill("Original")
+    page.get_by_role("button", name="Branch session", exact=True).click()
+    page.get_by_label("Session name", exact=True).fill("Original")
     page.get_by_role("button", name="Create branch", exact=True).click()
     expect(page.get_by_role("alert")).to_contain_text("already in use")
     expect(page.get_by_role("button", name="Create branch", exact=True)).to_be_enabled()
@@ -58,8 +58,8 @@ def test_return_to_discord_original_after_branching(page, live_app):
     original.click()
     wait_for_store(page, "state => state.active === 'discord-original' && !state.loading")
     page.get_by_role("button", name="Options for Discord original", exact=True).click()
-    page.get_by_role("button", name="Branch conversation", exact=True).click()
-    page.get_by_label("Conversation name", exact=True).fill("Independent copy")
+    page.get_by_role("button", name="Branch session", exact=True).click()
+    page.get_by_label("Session name", exact=True).fill("Independent copy")
     page.get_by_role("button", name="Create branch", exact=True).click()
     wait_for_store(page, "state => state.active !== 'discord-original' && !state.loading")
     branch = next(s for s in peer.sessions.values() if s.get("parent_session_id") == sid)
@@ -115,7 +115,7 @@ def test_send_waits_for_the_selected_conversation_history(page, live_app):
     assert page.evaluate("""async () => {
       const {sendMessage}=await import('/static/runs.js');
       return sendMessage('No premature submission').then(()=>false,
-        error=>error.message.includes('conversation to load'));
+        error=>error.message.includes('session to load'));
     }""")
     assert not live_app[1].runs
     page.evaluate("""async () => (await import('/static/store.js')).update({loading:false})""")
@@ -503,7 +503,7 @@ def test_pending_run_restoration_preserves_drafts_and_explains_failed_recovery(p
         sid,
     )
     page.get_by_role("button", name="Send message", exact=True).click()
-    expect(page.get_by_text("This conversation is reconnecting.", exact=False)).to_be_visible()
+    expect(page.get_by_text("This session is reconnecting.", exact=False)).to_be_visible()
     expect(page.get_by_label("Message Hermes")).to_have_value(draft)
     assert len(live_app[1].runs) == 0
 

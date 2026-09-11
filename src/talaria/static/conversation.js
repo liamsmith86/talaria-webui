@@ -131,10 +131,10 @@ ${output || "No output"}</pre
             title:
               state.sessionDetails?.title ||
               state.sessions.find((s) => s.id === state.active)?.title ||
-              "Parent conversation",
+              "Parent session",
           })}
       >
-        Open child conversation<${Icon} name="link" size=${14} />
+        Open child session<${Icon} name="link" size=${14} />
       </button>`}
       ${isAgent &&
       tool.status !== "running" &&
@@ -614,7 +614,7 @@ export function Conversation({ app }) {
         html`<div class="history-loading" role="status">
           <span class="skeleton long" /><span class="skeleton" /><span
             class="skeleton medium"
-          /><span class="sr-only">Loading conversation</span>
+          /><span class="sr-only">Loading session</span>
         </div>`}
         ${history}
         ${showUser &&

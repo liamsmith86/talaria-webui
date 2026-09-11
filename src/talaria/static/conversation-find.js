@@ -168,18 +168,18 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
   function close() {
     update({ findOpen: false });
     requestAnimationFrame(() =>
-      document.querySelector('[aria-label="Find in conversation"]')?.focus(),
+      document.querySelector('[aria-label="Find in session"]')?.focus(),
     );
   }
   return html`<section
     class="conversation-find"
-    aria-label="Find in conversation"
+    aria-label="Find in session"
   >
     <div class="find-controls">
       <${Icon} name="search" size=${17} /><input
         ref=${input}
-        aria-label="Find text in conversation"
-        placeholder="Find in this conversation…"
+        aria-label="Find text in session"
+        placeholder="Find in this session…"
         value=${query}
         maxlength="200"
         onInput=${(e) => {
@@ -219,7 +219,7 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
       <span
         >${app.historyHasMore
           ? "Searching loaded messages. Earlier messages are not included yet."
-          : "Searching the full loaded conversation."}</span
+          : "Searching the full loaded session."}</span
       >
       ${app.historyHasMore &&
       html`<button

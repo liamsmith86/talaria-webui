@@ -27,10 +27,6 @@ export function ExtendedAccess({ onSaved }) {
       <h3>Extended access</h3>
       <span class="quiet-badge">Optional</span>
     </div>
-    <p class="dialog-intro">
-      The Talaria plugin extends your Hermes Agent API to return additional
-      information which Talaria uses to make your experience seamless.
-    </p>
     <div class="access-status" role="status">
       <${Icon} name=${available ? "check" : "info"} size=${16} /><span
         >${available

@@ -73,7 +73,7 @@ Open **http://127.0.0.1:8766** and connect to Hermes. The container runs as a no
 
 - Streaming chat, tool activity, approvals, and guidance during responses.
 - Conversation search, pinning, branching, and transcript downloads.
-- Per-conversation model and reasoning choices; image and text attachments.
+- Per-session model and reasoning choices; image and text attachments.
 - Multiple Hermes profiles, mobile layouts, and light/dark themes.
 - Optional plugin: context usage, response details, turn editing, and correct branch identity on affected Hermes versions.
 

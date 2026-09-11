@@ -73,7 +73,7 @@ class APIError(Exception):
 
 def identifier(value: str) -> str:
     if not isinstance(value, str) or not IDENTIFIER.fullmatch(value) or value in {".", ".."}:
-        raise APIError("Invalid conversation or run identifier.", 400, "invalid_id")
+        raise APIError("Invalid session or run identifier.", 400, "invalid_id")
     return value
 
 
@@ -83,13 +83,13 @@ def response_error(status: int, body: dict | None = None) -> APIError:
         401: "The Hermes API key was not accepted. Check Connection in Settings.",
         403: "Hermes did not allow this action.",
         404: "This item is no longer available in Hermes.",
-        409: "This action conflicts with the current conversation state. Refresh and try again.",
+        409: "This action conflicts with the current session state. Refresh and try again.",
         429: "Hermes is busy. Please wait a moment and try again.",
     }
     code = (body or {}).get("error", {})
     code = code.get("code") if isinstance(code, dict) else None
     if code == "invalid_title":
-        return APIError("That conversation name is already in use or is not valid.", status, code)
+        return APIError("That session name is already in use or is not valid.", status, code)
     return APIError(
         messages.get(status, "Hermes is temporarily unavailable. Try again shortly."),
         status if status in messages else 502,

@@ -68,7 +68,7 @@ function Login({ development }) {
       ${development && html`<small class="environment-badge">Dev</small>`}
     </div>
     <div class="login-card">
-      <h1>Welcome back.</h1>
+      <h1>Sign in</h1>
       <form onSubmit=${submit}>
         <label class="field"
           >Password<input
@@ -85,7 +85,7 @@ function Login({ development }) {
           class="button primary"
           disabled=${busy}
         >
-          ${busy ? "Opening your space…" : "Step inside"}<${Icon}
+          ${busy ? "Loading…" : "Sign in"}<${Icon}
             name="arrow"
             size=${17}
           />
@@ -98,13 +98,13 @@ function Login({ development }) {
 
 function Welcome({ onSuggestion }) {
   const suggestions = [
-    ["spark", "Make sense of something", "Help me think through "],
-    ["terminal", "Build something useful", "I’d like to build "],
-    ["file", "Find the right words", "Help me write "],
+    ["spark", "Plan", "Help me think through "],
+    ["terminal", "Code", "I’d like to build "],
+    ["file", "Write", "Help me write "],
   ];
   return html`<div class="welcome">
     <div class="welcome-mark"><${Mark} size=${49} /></div>
-    <h1>Where will your<br />curiosity take you?</h1>
+    <h1>New session</h1>
     <div class="suggestions">
       ${suggestions.map(
         ([icon, label, text]) =>
@@ -145,7 +145,7 @@ function App() {
         update({ findOpen: true });
         requestAnimationFrame(() =>
           document
-            .querySelector('[aria-label="Find text in conversation"]')
+            .querySelector('[aria-label="Find text in session"]')
             ?.focus(),
         );
       }
@@ -154,7 +154,7 @@ function App() {
         update({ sidebar: true });
         requestAnimationFrame(() =>
           document
-            .querySelector('[aria-label="Search conversations"]')
+            .querySelector('[aria-label="Search sessions"]')
             ?.focus(),
         );
       }
@@ -175,14 +175,14 @@ function App() {
   }, [app.connected]);
   const current = {
     id: app.active,
-    title: "Conversation",
+    title: "Session",
     ...app.sessionDetails,
     ...app.sessions.find((s) => s.id === app.active),
   };
   const close = () => update({ modal: null });
   if (app.auth === null)
     return html`<div class="initial-loader" role="status">
-      <${Mark} size=${40} /><span>Opening your space…</span>
+      <${Mark} size=${40} /><span>Loading…</span>
     </div>`;
   if (!app.auth)
     return html`<${Login} development=${app.environment === "development"} />`;
@@ -207,8 +207,8 @@ function App() {
             onClick=${() => update({ sidebar: true })}
           /><span class="topbar-title"
             >${app.active
-              ? current.title || "Untitled conversation"
-              : "New conversation"}</span
+              ? current.title || "Untitled session"
+              : "New session"}</span
           >
           ${mobile &&
           app.environment === "development" &&
@@ -219,19 +219,19 @@ function App() {
           <${ContextIndicator} key=${app.active} app=${app} />
           <${IconButton}
             name="search"
-            label="Find in conversation"
+            label="Find in session"
             aria-pressed=${app.findOpen}
             onClick=${() => update({ findOpen: !app.findOpen })}
           />
           <${IconButton}
             name="chart"
-            label="Conversation details"
+            label="Session details"
             onClick=${() =>
               update({ modal: { type: "details", session: current } })}
           />
           <${IconButton}
             name="more"
-            label="Conversation options"
+            label="Session options"
             onClick=${() =>
               update({ modal: { type: "session-menu", session: current } })}
           />
@@ -250,7 +250,7 @@ function App() {
       ${!app.connected &&
       !app.connecting &&
       html`<div class="connection-banner">
-        <span>Connect Hermes to start a conversation.</span
+        <span>Connect Hermes to start a session.</span
         ><button
           class="text-button"
           onClick=${() => update({ modal: "connection" })}
@@ -261,7 +261,7 @@ function App() {
       ${app.connected &&
       (!supports("session_resources") || !supports("run_submission")) &&
       html`<div class="connection-banner" role="status">
-        Update Hermes to a version that supports conversations and chat through
+        Update Hermes to a version that supports sessions and chat through
         its API.
       </div>`}
       ${app.active
@@ -269,12 +269,12 @@ function App() {
         : html`<${Welcome} onSuggestion=${setSuggestion} />`}
       ${app.readOnlyParent
         ? html`<div class="child-return">
-            <span>Viewing a child conversation</span
+            <span>Viewing a child session</span
             ><button
               class="text-button"
               onClick=${() => openSession(app.readOnlyParent.id)}
             >
-              <${Icon} name="back" size=${17} />Back to parent conversation
+              <${Icon} name="back" size=${17} />Back to parent session
             </button>
           </div>`
         : html`<div class="composer-area">

@@ -32,7 +32,6 @@ def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
             "managed": True,
             "branch": "main",
             "installed_at": "2026-09-08T20:00:00Z",
-            "previous": {"version": "0.1.0", "commit": "b" * 40},
             "update_command": "sudo talaria update",
             "update": {"error": None, "available": True, "checked_at": "2026-09-08T21:00:00Z"},
         },
@@ -60,7 +59,7 @@ def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
     expect(page.get_by_role("dialog", name="Choose a profile")).to_be_visible()
     audit("profile-picker")
     page.get_by_role("button", name="Close dialog").click()
-    page.get_by_role("button", name="Your space").click()
+    page.get_by_role("button", name="Settings").click()
     expect(page.get_by_role("dialog")).to_be_visible()
     audit("settings")
     for section in ("Appearance", "Connection", "Talaria"):
@@ -78,7 +77,7 @@ def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
     audit("approval")
     page.get_by_role("button", name="Allow once").click()
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
-    audit("conversation")
+    audit("session")
     page.get_by_role("button", name="Response details", exact=True).last.click()
     expect(page.get_by_role("dialog")).to_contain_text("actual-response-model")
     audit("response-details")
@@ -97,20 +96,20 @@ def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
     page.get_by_role("button", name="Choose reasoning", exact=True).click()
     audit("reasoning-picker")
     page.get_by_role("button", name="Close dialog").click()
-    page.get_by_role("button", name="Conversation options", exact=True).click()
+    page.get_by_role("button", name="Session options", exact=True).click()
     audit("conversation-menu")
     page.get_by_role("dialog").get_by_role(
-        "button", name="Conversation details", exact=True
+        "button", name="Session details", exact=True
     ).click()
     expect(page.locator(".details-refresh")).to_have_count(0)
     audit("conversation-usage")
     page.get_by_role("button", name="Close dialog").click()
-    page.get_by_role("button", name="Conversation options", exact=True).click()
+    page.get_by_role("button", name="Session options", exact=True).click()
     page.get_by_role("button", name="Download transcript", exact=True).click()
     audit("transcript-download")
     page.get_by_role("button", name="Close dialog").click()
-    page.get_by_role("button", name="Find in conversation", exact=True).click()
-    page.get_by_label("Find text in conversation").fill("thoughtful")
+    page.get_by_role("button", name="Find in session", exact=True).click()
+    page.get_by_label("Find text in session").fill("thoughtful")
     expect(page.locator(".find-count")).to_have_text("1 of 1")
     audit("conversation-find")
     page.get_by_role("button", name="Close find").click()
@@ -134,10 +133,10 @@ def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
     expect(page.get_by_role("button", name="Stop response")).to_have_count(0)
     card.locator("summary").click()
     audit("child-agent")
-    card.get_by_role("button", name="Open child conversation").click()
+    card.get_by_role("button", name="Open child session").click()
     expect(page.get_by_text("The child transcript is ready.", exact=True)).to_be_visible()
     audit("child-transcript")
-    page.get_by_role("button", name="Back to parent conversation").click()
+    page.get_by_role("button", name="Back to parent session").click()
     live_app[1].discovery_overrides["/health/detailed"] = (
         {
             "status": "degraded",
@@ -150,7 +149,7 @@ def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
     audit("connection-readiness")
     page.set_viewport_size({"width": 390, "height": 844})
     audit("mobile")
-    page.get_by_role("button", name="Conversation details", exact=True).click()
+    page.get_by_role("button", name="Session details", exact=True).click()
     audit("mobile-usage")
     page.get_by_role("button", name="Close dialog").click()
     page.get_by_role("button", name="Choose model", exact=True).click()

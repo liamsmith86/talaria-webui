@@ -89,7 +89,7 @@ function canRetry(live) {
   );
 }
 const receiptError =
-  "The submission confirmation was lost. Check the conversation before sending another message.";
+  "The submission confirmation was lost. Check the session before sending another message.";
 export const running = (sid, lives = state.lives) =>
   Object.hasOwn(lives, sid) && !!lives[sid] && !terminal.has(lives[sid].status);
 
@@ -265,16 +265,16 @@ export async function sendMessage(
   let sid = state.active;
   const generation = navigationVersion();
   if (state.loading)
-    throw new Error("Wait for this conversation to load before sending.");
+    throw new Error("Wait for this session to load before sending.");
   // Capture the originating transcript before image storage or submission can
-  // yield to navigation into another conversation.
+  // yield to navigation into another session.
   const history = sid ? state.history : [];
   const previousUser = history.findLast((message) => message.role === "user");
   if (state.readOnlyParent)
-    throw new Error("Return to the parent conversation to continue.");
+    throw new Error("Return to the parent session to continue.");
   if (Object.hasOwn(recoveryRecords, sid))
     throw new Error(
-      "This conversation is reconnecting. Wait a moment before sending.",
+      "This session is reconnecting. Wait a moment before sending.",
     );
   if (state.lives[sid]?.uncertain) {
     await retrySubmission(sid);
@@ -297,11 +297,11 @@ export async function sendMessage(
     const result = await api("/sessions", {
       method: "POST",
       body: {
-        title: text.replace(/\s+/g, " ").slice(0, 70) || "Image conversation",
+        title: text.replace(/\s+/g, " ").slice(0, 70) || "Image session",
       },
     });
     sid = result.id || result.session_id || result.session?.id;
-    if (!sid) throw new Error("Hermes did not return a conversation ID.");
+    if (!sid) throw new Error("Hermes did not return a session ID.");
     chooseModel(model, sid);
     chooseReasoning(reasoning, sid);
     writeStorage(`draft.${sid}`, text);
@@ -710,7 +710,7 @@ async function recoverRuns() {
           needsHistory: true,
           error:
             error.status === 404
-              ? "Live updates expired. Check the conversation for the response."
+              ? "Live updates expired. Check the session for the response."
               : "Could not check this response. Reload to reconnect before sending another message.",
         };
         publish(sid, live);
@@ -720,7 +720,7 @@ async function recoverRuns() {
       delete recoveryRecords[sid];
     }
   }
-  // Prioritize the open conversation and keep a small number of independent
+  // Prioritize the open session and keep a small number of independent
   // checks in flight. One slow status request must not stall every restored response.
   let cursor = 0;
   await Promise.all(

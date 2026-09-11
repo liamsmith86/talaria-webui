@@ -66,7 +66,7 @@ export function MessageAction({ action, session, message, onClose }) {
     try {
       if (session !== state.active || state.readOnlyParent || running(session))
         throw new Error(
-          "The conversation is busy or has changed. Reopen this action when it finishes.",
+          "The session is busy or has changed. Reopen this action when it finishes.",
         );
       if (!rewound) {
         await api(`/sessions/${encodeURIComponent(session)}/rewind`, {
@@ -92,14 +92,14 @@ export function MessageAction({ action, session, message, onClose }) {
       }
       if (session !== state.active || generation !== navigationVersion())
         throw new Error(
-          "The conversation changed. Reopen it before sending this message.",
+          "The session changed. Reopen it before sending this message.",
         );
       if (!deleting)
         await sendMessage(text, sessionModel(state), {
           images,
           reasoning: sessionReasoning(state),
         });
-      else toast("Turn removed from the conversation.");
+      else toast("Turn removed from the session.");
       onClose();
     } catch (e) {
       setError(e.message);
@@ -113,18 +113,17 @@ export function MessageAction({ action, session, message, onClose }) {
         preview
           ? html`<p class="dialog-intro">
               ${rewound
-                ? "The conversation has been rewound. Your message is ready to send."
+                ? "The session has been rewound. Your message is ready to send."
                 : `${deleting ? "Remove" : "Replace"} this turn${preview.turn_count > 1 ? ` and ${preview.turn_count - 1} later ${preview.turn_count === 2 ? "turn" : "turns"}` : ""}? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.`}
             </p>`
           : !error &&
             html`<p class="dialog-intro" role="status">
-              <span class="spinner" /> Checking the conversation…
+              <span class="spinner" /> Checking the session…
             </p>`
       }
       ${editing && preview && html`<label class="field">Message<textarea class="edit-message-input" aria-label="Edit message" value=${text} maxlength="50000" rows="6" disabled=${busy} onInput=${(e) => setText(e.target.value)} /></label>`}
       ${editing && images.length > 0 && html`<${Images} images=${images} />`}
-      ${!deleting && preview && html`<p class="field-help">Uses this session’s model and reasoning settings.</p>`}
-      ${missingImages && html`<p class="form-error" role="alert">The original images are not available to resend. Your conversation has not been changed.</p>`}
+      ${missingImages && html`<p class="form-error" role="alert">The original images are not available to resend. Your session has not been changed.</p>`}
       ${error && html`<p class="form-error" role="alert">${error}</p>`}
       <div class="dialog-actions"><button type="button" class="button secondary" disabled=${busy} onClick=${onClose}>${rewound ? "Close" : "Cancel"}</button>
         <button class=${`button ${deleting ? "danger" : "primary"}`} disabled=${busy || !preview || missingImages || (!deleting && !text.trim() && !images.length)}>${busy ? "Working…" : rewound && !deleting ? "Send message" : title}</button></div>

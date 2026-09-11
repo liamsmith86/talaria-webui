@@ -8,7 +8,7 @@ from .test_browser import screenshot
 def test_agent_settings_and_extended_access(page, live_app, tmp_path):
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.get_by_role("button", name="Your space").click()
+    page.get_by_role("button", name="Settings").click()
     expect(page.get_by_role("dialog")).to_be_visible()
     expect(page.get_by_text("1.2.3", exact=True)).to_be_visible()
     expect(page.locator(".default-model-card")).to_contain_text("hermes-test")
@@ -31,7 +31,7 @@ def test_agent_settings_and_extended_access(page, live_app, tmp_path):
     page.reload()
     expect(page.get_by_text("Connected to Juniper", exact=True)).to_be_visible()
     live_app[1].extension = None
-    page.get_by_role("button", name="Your space").click()
+    page.get_by_role("button", name="Settings").click()
     expect(page.get_by_role("heading", name="Hermes", exact=True)).to_be_visible()
     page.get_by_role("tab", name="Connection", exact=True).click()
     expect(page.get_by_text("Talaria plugin not detected", exact=True)).to_be_visible()
@@ -46,9 +46,6 @@ def test_models_are_scoped_to_each_session(page, live_app):
     expect(chooser).to_contain_text("hermes-test")
     expect(chooser).not_to_contain_text("Default")
     chooser.click()
-    expect(
-        page.get_by_text("Your model selection will only apply to this session.")
-    ).to_be_visible()
     page.get_by_role("button", name="Hermes Fast").click()
     expect(chooser).not_to_contain_text("Default")
 
@@ -62,7 +59,7 @@ def test_models_are_scoped_to_each_session(page, live_app):
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
     first = next(iter(live_app[1].runs.values()))
     assert (first["model"], first["provider"]) == ("hermes-fast", "test")
-    page.get_by_role("button", name=re.compile("^New conversation")).click()
+    page.get_by_role("button", name=re.compile("^New session")).click()
     expect(chooser).not_to_contain_text("Default")
     send("A default model")
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
@@ -81,7 +78,7 @@ def test_models_are_scoped_to_each_session(page, live_app):
     assert third["model"] is None and third["provider"] is None
     assert live_app[1].default_model == "hermes-test"
     live_app[1].default_model = "provider/new-default"
-    page.get_by_role("button", name="Your space").click()
+    page.get_by_role("button", name="Settings").click()
     expect(page.locator(".default-model-card")).to_contain_text("provider/new-default")
     page.get_by_role("button", name="Close dialog").click()
     expect(chooser).to_contain_text("provider/new-default")
@@ -112,7 +109,7 @@ def test_incomplete_discovery_keeps_settings_and_chat_usable(page, live_app):
         }
     )
     page.reload()
-    page.get_by_role("button", name="Your space").click()
+    page.get_by_role("button", name="Settings").click()
     expect(page.get_by_role("button", name="Refresh information")).to_be_enabled()
     expect(page.locator(".default-model-card")).to_contain_text("Not shared by Hermes")
     page.get_by_role("tab", name="Appearance", exact=True).click()

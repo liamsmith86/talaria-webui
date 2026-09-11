@@ -58,7 +58,7 @@ class Relay:
                 break
             self.channels.pop(finished)
         if len(self.channels) >= 32:
-            raise APIError("Too many live conversations. Close an active run and try again.", 429)
+            raise APIError("Too many live sessions. Close an active run and try again.", 429)
         channel = self.channels[run_id] = Channel(run_id)
         channel.task = asyncio.create_task(self.observe(channel))
         return channel
@@ -112,7 +112,7 @@ class Relay:
         await channel.publish(
             {
                 "event": "talaria.unavailable",
-                "message": "Live updates expired. Reopen this conversation to check it.",
+                "message": "Live updates expired. Reopen this session to check it.",
             }
         )
 

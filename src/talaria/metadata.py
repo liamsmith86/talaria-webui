@@ -31,8 +31,8 @@ def readiness_info(health):
     checks = value.get("checks")
     checks = checks if isinstance(checks, dict) else {}
     labels = {
-        "state_db": "Conversation storage",
-        "session_store": "Conversation access",
+        "state_db": "Session storage",
+        "session_store": "Session access",
         "config": "Configuration",
         "model": "Default model",
         "disk": "Storage space",

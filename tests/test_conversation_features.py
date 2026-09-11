@@ -1,4 +1,4 @@
-"""Conversation workflows across the browser, Talaria, and the Hermes protocol."""
+"""Session workflows across the browser, Talaria, and the Hermes protocol."""
 
 import base64
 import json
@@ -204,14 +204,14 @@ def test_pins_and_source_labels_across_pagination(page, live_app):
     expect(page.locator(".session-group").first).to_have_text("Pinned")
     expect(page.locator(".session-select").first).to_have_accessible_name("Saved note 0")
     expect(page.locator(".source-badge").first).to_have_text("CLI")
-    page.get_by_role("button", name="Load more conversations").click()
+    page.get_by_role("button", name="Load more sessions").click()
     expect(page.locator(".session-select")).to_have_count(115)
     page.get_by_role("button", name="Options for Saved note 0", exact=True).click()
-    page.get_by_role("button", name="Unpin conversation", exact=True).click()
+    page.get_by_role("button", name="Unpin session", exact=True).click()
     expect(page.get_by_text("Pinned", exact=True)).to_have_count(0)
     assert peer.sessions["saved-0"]["pinned"] is False
     page.get_by_role("button", name="Options for Saved note 114", exact=True).click()
-    page.get_by_role("button", name="Pin conversation", exact=True).click()
+    page.get_by_role("button", name="Pin session", exact=True).click()
     expect(page.locator(".session-select").first).to_have_accessible_name("Saved note 114")
     page.reload()
     expect(page.locator(".session-group").first).to_have_text("Pinned")
@@ -230,7 +230,7 @@ def test_usage_distinguishes_zero_unknown_and_estimate(page, live_app):
     )
     page.reload()
     page.get_by_role("button", name="Design notes", exact=True).click()
-    page.get_by_role("button", name="Conversation details", exact=True).click()
+    page.get_by_role("button", name="Session details", exact=True).click()
     expect(page.locator(".usage-total")).to_contain_text("Reported cost")
     expect(page.locator(".usage-total strong")).to_have_text("$0.00")
     expect(page.locator(".usage-grid > div").filter(has_text="Input tokens")).to_contain_text(
@@ -246,9 +246,6 @@ def test_usage_distinguishes_zero_unknown_and_estimate(page, live_app):
 def test_reasoning_is_session_scoped_and_catalog_is_inherited(page, live_app):
     chooser = page.get_by_role("button", name="Choose reasoning", exact=True)
     chooser.click()
-    expect(
-        page.get_by_text("Your reasoning selection will only apply to this session.")
-    ).to_be_visible()
     page.get_by_role("button", name="High", exact=True).click()
     send(page, "Reason carefully")
     assert next(iter(live_app[1].runs.values()))["model_options"]["reasoning"]["effort"] == "high"
@@ -258,7 +255,7 @@ def test_reasoning_is_session_scoped_and_catalog_is_inherited(page, live_app):
         "aria-pressed", "true"
     )
     page.get_by_role("button", name="Close dialog").click()
-    page.get_by_role("button", name=re.compile("^New conversation")).click()
+    page.get_by_role("button", name=re.compile("^New session")).click()
     expect(chooser).to_contain_text("Auto")
     send(page, "Use the default reasoning")
     assert list(live_app[1].runs.values())[-1]["model_options"] is None
@@ -325,7 +322,7 @@ def test_image_draft_history_display_and_download(page, live_app):
     expect(page.locator(".image-dialog img")).to_be_visible()
     screenshot(page, "image-preview")
     page.get_by_role("button", name="Close dialog").click()
-    page.get_by_role("button", name="Conversation options", exact=True).click()
+    page.get_by_role("button", name="Session options", exact=True).click()
     page.get_by_role("button", name="Download transcript", exact=True).click()
     with page.expect_download() as downloaded:
         page.get_by_role("button", name=re.compile("^JSON")).click()
@@ -371,7 +368,7 @@ def test_pasted_images_recover_an_ambiguous_submission_without_duplication(
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
     assert len(live_app[1].runs) == 1
     expect(page.locator(".message-image img")).to_have_count(1)
-    page.get_by_role("button", name=re.compile("^New conversation")).click()
+    page.get_by_role("button", name=re.compile("^New session")).click()
     expect(page.locator(".attachment-chip")).to_have_count(0)
     expect(page.get_by_label("Message Hermes")).to_have_value("")
 
@@ -397,7 +394,7 @@ def test_browser_images_survive_native_placeholders_and_export_without_changing_
     expect(page.locator(".image-retention-note")).to_have_text("Original kept in this browser")
     expect(page.locator(".image-unavailable")).to_have_count(1)
     assert peer.messages[sid][-2]["content"] == "Inspect this image\n[screenshot]"
-    page.get_by_role("button", name="Conversation options", exact=True).click()
+    page.get_by_role("button", name="Session options", exact=True).click()
     page.get_by_role("button", name="Download transcript", exact=True).click()
     with page.expect_download() as downloaded:
         page.get_by_role("button", name=re.compile("^JSON")).click()
@@ -410,15 +407,15 @@ def test_browser_images_survive_native_placeholders_and_export_without_changing_
     other = other_context.new_page()
     other.goto(live_app[0])
     other.get_by_label("Password", exact=True).fill("test-password")
-    other.get_by_role("button", name="Step inside").click()
+    other.get_by_role("button", name="Sign in").click()
     other.get_by_role("button", name="Design notes", exact=True).click()
     expect(other.locator(".message-image")).to_have_count(0)
     expect(other.locator(".image-unavailable")).to_have_count(2)
     other_context.close()
-    page.get_by_role("button", name="Conversation options", exact=True).click()
-    page.get_by_role("button", name="Delete conversation", exact=True).click()
-    page.get_by_role("dialog").get_by_role("button", name="Delete conversation", exact=True).click()
-    expect(page.locator(".topbar-title")).to_have_text("New conversation")
+    page.get_by_role("button", name="Session options", exact=True).click()
+    page.get_by_role("button", name="Delete session", exact=True).click()
+    page.get_by_role("dialog").get_by_role("button", name="Delete session", exact=True).click()
+    expect(page.locator(".topbar-title")).to_have_text("New session")
     assert (
         page.evaluate(
             "async sid => (await import('/static/attachments.js')).browserAttachments(sid)", sid
@@ -530,7 +527,7 @@ def test_image_resize_removal_and_image_only_message(page, live_app):
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
     expect(page.locator(".message-image")).to_have_count(1)
-    expect(page.locator(".topbar-title")).to_have_text("Image conversation")
+    expect(page.locator(".topbar-title")).to_have_text("Image session")
     run = next(iter(live_app[1].runs.values()))
     assert len(run["raw_input"][0]["content"]) == 1
     assert run["raw_input"][0]["content"][0]["image_url"]["url"].startswith("data:image/jpeg")
@@ -562,8 +559,8 @@ def test_find_includes_earlier_messages_and_literal_formatted_text(page, live_ap
     peer.messages[sid][-1]["content"] = "Latest **needle** (literal) and emoji 🌿"
     page.reload()
     page.get_by_role("button", name="Design notes", exact=True).click()
-    page.get_by_role("button", name="Find in conversation", exact=True).click()
-    field = page.get_by_label("Find text in conversation")
+    page.get_by_role("button", name="Find in session", exact=True).click()
+    field = page.get_by_label("Find text in session")
     field.fill("needle (literal)")
     expect(page.locator(".find-count")).to_have_text("1 of 1")
     expect(page.locator(".find-scope")).to_contain_text("Earlier messages are not included yet")
@@ -579,7 +576,7 @@ def test_find_includes_earlier_messages_and_literal_formatted_text(page, live_ap
     expect(page.locator(".find-focus")).to_be_in_viewport()
     screenshot(page, "conversation-find")
     field.press("Escape")
-    expect(page.get_by_role("button", name="Find in conversation", exact=True)).to_be_focused()
+    expect(page.get_by_role("button", name="Find in session", exact=True)).to_be_focused()
 
 
 def test_child_details_and_read_only_transcript(page):
@@ -592,16 +589,16 @@ def test_child_details_and_read_only_transcript(page):
     expect(card).to_contain_text("$0.0024")
     card.locator(".child-facts").scroll_into_view_if_needed()
     screenshot(page, "child-agent-details")
-    card.get_by_role("button", name="Open child conversation").click()
+    card.get_by_role("button", name="Open child session").click()
     expect(page.get_by_text("The child transcript is ready.", exact=True)).to_be_visible()
     expect(page.get_by_label("Message Hermes")).to_have_count(0)
-    page.get_by_role("button", name="Conversation options", exact=True).click()
-    expect(page.get_by_role("button", name="Pin conversation", exact=True)).to_have_count(0)
-    expect(page.get_by_role("button", name="Delete conversation", exact=True)).to_have_count(0)
+    page.get_by_role("button", name="Session options", exact=True).click()
+    expect(page.get_by_role("button", name="Pin session", exact=True)).to_have_count(0)
+    expect(page.get_by_role("button", name="Delete session", exact=True)).to_have_count(0)
     page.get_by_role("button", name="Close dialog").click()
     page.reload()
     expect(page.get_by_label("Message Hermes")).to_have_count(0)
-    page.get_by_role("button", name="Back to parent conversation").click()
+    page.get_by_role("button", name="Back to parent session").click()
     expect(page.get_by_label("Message Hermes")).to_be_visible()
     expect(page.locator(".topbar-title")).to_have_text("Delegate this review")
 
@@ -610,7 +607,9 @@ def test_saved_child_cards_use_native_tool_results_and_explain_missing_links(pag
     peer = live_app[1]
     sid = seed(peer, count=0)
     child = seed(peer, "saved-child", count=1)
-    peer.sessions[child].update(source="subagent", parent_session_id=sid)
+    peer.sessions[child].update(
+        source="subagent", parent_session_id=sid, model_config={"_delegate_from": sid}
+    )
     result = {
         "task_index": 0,
         "status": "completed",
@@ -650,10 +649,10 @@ def test_saved_child_cards_use_native_tool_results_and_explain_missing_links(pag
     expect(card).to_contain_text("child-model")
     expect(card).to_contain_text("1m 5s")
     expect(card).to_contain_text("$0.004")
-    card.get_by_role("button", name="Open child conversation").click()
+    card.get_by_role("button", name="Open child session").click()
     expect(page.get_by_text("Message 000", exact=True)).to_be_visible()
     expect(page.get_by_label("Message Hermes")).to_have_count(0)
-    page.get_by_role("button", name="Back to parent conversation").click()
+    page.get_by_role("button", name="Back to parent session").click()
     result.pop("child_session_id")
     result.update(cost_usd=0, cost_status="unknown")
     peer.messages[sid][2]["content"] = json.dumps({"results": [result]})
@@ -661,7 +660,7 @@ def test_saved_child_cards_use_native_tool_results_and_explain_missing_links(pag
     card.locator("summary").click()
     expect(card).to_contain_text("Hermes did not include a child transcript link")
     expect(card.locator(".child-facts")).not_to_contain_text("$")
-    expect(card.get_by_role("button", name="Open child conversation")).to_have_count(0)
+    expect(card.get_by_role("button", name="Open child session")).to_have_count(0)
 
 
 def test_readiness_explains_issues_and_recovers(page, live_app):

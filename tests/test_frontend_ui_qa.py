@@ -40,28 +40,28 @@ def hold_attachment_write(page):
 
 def test_dialog_shortcuts_leave_the_underlying_conversation_alone(page, live_app):
     open_notes(page, live_app)
-    page.get_by_role("button", name="Conversation options", exact=True).click()
+    page.get_by_role("button", name="Session options", exact=True).click()
     page.get_by_role("button", name="Rename", exact=True).click()
-    expect(page.get_by_label("Conversation name")).to_be_focused()
+    expect(page.get_by_label("Session name")).to_be_focused()
     page.keyboard.press("Control+k")
-    expect(page.get_by_label("Conversation name")).to_be_focused()
+    expect(page.get_by_label("Session name")).to_be_focused()
     page.keyboard.press("Control+n")
-    expect(page.get_by_role("dialog", name="Rename conversation")).to_be_visible()
+    expect(page.get_by_role("dialog", name="Rename session")).to_be_visible()
     expect(page.locator(".topbar-title")).to_have_text("Design notes")
     page.keyboard.press("Escape")
     expect(page.get_by_role("dialog")).to_have_count(0)
-    expect(page.get_by_role("button", name="Conversation options", exact=True)).to_be_focused()
+    expect(page.get_by_role("button", name="Session options", exact=True)).to_be_focused()
 
 
 def test_mobile_modal_escape_keeps_sidebar_and_restores_its_trigger(page):
     page.set_viewport_size({"width": 390, "height": 844})
     page.get_by_role("button", name="Open sidebar").click()
-    page.get_by_role("button", name="Your space").click()
+    page.get_by_role("button", name="Settings").click()
     expect(page.get_by_role("dialog", name="Settings", exact=True)).to_be_visible()
     page.keyboard.press("Escape")
     expect(page.get_by_role("dialog", name="Settings", exact=True)).to_have_count(0)
-    expect(page.get_by_role("dialog", name="Conversations", exact=True)).to_be_visible()
-    expect(page.get_by_role("button", name="Your space")).to_be_focused()
+    expect(page.get_by_role("dialog", name="Sessions", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Settings")).to_be_focused()
     page.keyboard.press("Escape")
     expect(page.get_by_role("button", name="Open sidebar")).to_be_focused()
 
@@ -70,12 +70,12 @@ def test_mobile_search_shortcut_keeps_focus_after_the_drawer_opens(page):
     page.set_viewport_size({"width": 390, "height": 844})
     page.get_by_label("Message Hermes").focus()
     page.keyboard.press("Control+k")
-    expect(page.get_by_label("Search conversations")).to_be_focused()
+    expect(page.get_by_label("Search sessions")).to_be_focused()
     # A frame after the drawer's entrance completes must not steal search focus.
     page.locator(".sidebar").evaluate(
         "async el => { await Promise.all(el.getAnimations().map(a => a.finished)); }"
     )
-    expect(page.get_by_label("Search conversations")).to_be_focused()
+    expect(page.get_by_label("Search sessions")).to_be_focused()
 
 
 def test_find_tracks_reasoning_and_tool_results_without_text_deltas(page, live_app):
@@ -88,7 +88,7 @@ def test_find_tracks_reasoning_and_tool_results_without_text_deltas(page, live_a
         }""",
         sid,
     )
-    page.get_by_role("button", name="Find in conversation", exact=True).click()
+    page.get_by_role("button", name="Find in session", exact=True).click()
     page.evaluate("""() => {
         const walker = document.createTreeWalker.bind(document);
         window.searchScans = 0;
@@ -97,7 +97,7 @@ def test_find_tracks_reasoning_and_tool_results_without_text_deltas(page, live_a
             return walker(...args);
         };
     }""")
-    page.get_by_label("Find text in conversation").fill("needle")
+    page.get_by_label("Find text in session").fill("needle")
     page.wait_for_function("() => window.searchScans > 0")
     expect(page.locator(".find-count")).to_have_text("No matches")
     page.evaluate(
@@ -125,8 +125,8 @@ def test_find_reveals_matches_inside_long_scrollable_message(page, live_app):
     page.keyboard.press("ArrowDown")
     expect(content).not_to_have_js_property("scrollTop", 0)
     content.evaluate("el => el.scrollTop = 0")
-    page.get_by_role("button", name="Find in conversation", exact=True).click()
-    page.get_by_label("Find text in conversation").fill("Hidden needle")
+    page.get_by_role("button", name="Find in session", exact=True).click()
+    page.get_by_label("Find text in session").fill("Hidden needle")
     expect(page.locator(".find-count")).to_have_text("1 of 1")
     page.wait_for_function("""() => {
         const el = document.querySelector('.user-content');
@@ -224,7 +224,8 @@ def test_jump_to_latest_stays_above_a_tall_composer(page, live_app):
         [{"id": 1, "role": "assistant", "content": "A long response\n\n" * 100}],
     )
     page.get_by_label("Message Hermes").fill("Draft line\n" * 20)
-    page.locator(".conversation-viewport").evaluate("el => el.scrollTop = 0")
+    page.locator(".conversation-viewport").hover()
+    page.mouse.wheel(0, -500)
     jump = page.get_by_role("button", name="Jump to latest message")
     expect(jump).to_be_visible()
     button_box = jump.bounding_box()
@@ -250,7 +251,7 @@ def test_short_viewport_keeps_large_draft_controls_reachable(page, width, height
 
 
 def test_welcome_suggestion_is_saved_as_a_draft(page):
-    page.get_by_role("button", name="Make sense of something").click()
+    page.get_by_role("button", name="Plan").click()
     expect(page.get_by_label("Message Hermes")).to_have_value("Help me think through ")
     page.reload()
     expect(page.get_by_label("Message Hermes")).to_have_value("Help me think through ")
@@ -315,7 +316,7 @@ def test_message_edit_does_not_submit_into_a_different_conversation(page, live_a
     page.evaluate("async id => (await import('/static/store.js')).openSession(id)", other)
     assert len(held) == 1
     held[0].continue_()
-    expect(page.get_by_role("dialog").get_by_role("alert")).to_contain_text("conversation changed")
+    expect(page.get_by_role("dialog").get_by_role("alert")).to_contain_text("session changed")
     assert peer.rewinds == 1
     assert not peer.runs
     assert peer.messages[other] == [{"id": 1, "role": "user", "content": "Message 000"}]
@@ -351,7 +352,7 @@ def test_sidebar_uses_calendar_days_at_midnight(page, live_app):
 
 def test_pending_pin_cannot_close_a_newly_opened_session_dialog(page, live_app):
     open_notes(page, live_app)
-    page.get_by_role("button", name="Conversation options", exact=True).click()
+    page.get_by_role("button", name="Session options", exact=True).click()
     held = []
 
     def hold_pin(route):
@@ -362,7 +363,7 @@ def test_pending_pin_cannot_close_a_newly_opened_session_dialog(page, live_app):
 
     page.route("**/api/sessions/notes", hold_pin)
     with page.expect_request(lambda request: request.method == "PATCH"):
-        page.get_by_role("button", name="Pin conversation", exact=True).click()
+        page.get_by_role("button", name="Pin session", exact=True).click()
     expect(page.get_by_role("button", name="Rename", exact=True)).to_be_disabled()
     page.keyboard.press("Escape")
     expect(page.get_by_role("dialog")).to_be_visible()

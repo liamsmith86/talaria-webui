@@ -102,8 +102,8 @@ def test_historical_code_highlights_on_approach_and_find_still_reaches_it(page):
     expect(last.locator(".token").first).to_be_attached()
     first = page.locator(".message.assistant").first
     assert "entry0" in first.locator("code").text_content()
-    page.get_by_role("button", name="Find in conversation", exact=True).click()
-    page.get_by_label("Find text in conversation").fill("entry0")
+    page.get_by_role("button", name="Find in session", exact=True).click()
+    page.get_by_label("Find text in session").fill("entry0")
     expect(first.locator(".token").first).to_be_attached()
     expect(first.locator("code")).to_be_in_viewport()
 
@@ -163,7 +163,7 @@ def test_text_deltas_reuse_sidebar_rows_and_tool_cards(page):
     assert result["tools"] == 0
     expect(page.locator(".tool-card").first).not_to_have_class("tool-card working")
     expect(page.locator(".session-dot.live")).to_have_count(0)
-    page.get_by_label("Search conversations").fill("Stable 12")
+    page.get_by_label("Search sessions").fill("Stable 12")
     expect(page.locator(".session-row")).to_have_count(11)
 
 
@@ -174,8 +174,8 @@ def test_find_reindexes_only_changed_dom_and_keeps_highlights_attached(page):
         history:Array.from({length:100},(_,i)=>({id:i+1,role:'assistant',
           content:'Saved **needle** in reply '+i}))});
     }""")
-    page.get_by_role("button", name="Find in conversation", exact=True).click()
-    page.get_by_label("Find text in conversation").fill("needle")
+    page.get_by_role("button", name="Find in session", exact=True).click()
+    page.get_by_label("Find text in session").fill("needle")
     expect(page.locator(".find-count")).to_have_text("1 of 100")
     page.evaluate("""() => {
       const original=document.createTreeWalker.bind(document);
@@ -190,7 +190,7 @@ def test_find_reindexes_only_changed_dom_and_keeps_highlights_attached(page):
     assert page.evaluate("findScans") == 1
     assert page.evaluate("""() => [...CSS.highlights.get('talaria-find')].every(range=>
       range.startContainer.isConnected && range.toString()==='needle')""")
-    page.get_by_label("Find text in conversation").fill("another")
+    page.get_by_label("Find text in session").fill("another")
     expect(page.locator(".find-count")).to_have_text("1 of 1")
     assert page.evaluate("findScans") == 1
 
@@ -201,8 +201,8 @@ def test_find_updates_before_a_continuous_stream_stops(page):
       update({active:'continuous',loading:false,caps:{features:{}},sessions:[],history:[],
         lives:{continuous:{id:'preview',status:'running',text:'Beginning',tools:[]}}});
     }""")
-    page.get_by_role("button", name="Find in conversation", exact=True).click()
-    page.get_by_label("Find text in conversation").fill("needle")
+    page.get_by_role("button", name="Find in session", exact=True).click()
+    page.get_by_label("Find text in session").fill("needle")
     expect(page.locator(".find-count")).to_have_text("No matches")
     result = page.evaluate("""async () => {
       const {state,update}=await import('/static/store.js');

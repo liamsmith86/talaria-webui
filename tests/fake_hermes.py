@@ -223,7 +223,11 @@ class FakeHermes:
                 # treated as continuations by Hermes's resume resolver.
                 children = [s for s in self.sessions.values()
                             if s.get("parent_session_id") == sid
-                            and not (s.get("model_config") or {}).get("_branched_from")]
+                            and not any(
+                                (s.get("model_config") or {}).get(key)
+                                for key in ("_branched_from", "_delegate_from", "_reset_from")
+                            )
+                            and s.get("source") != "tool"]
                 if children:
                     sid = children[-1]["id"]
                 offset = int(request.query_params.get("offset", "0"))
@@ -380,6 +384,7 @@ class FakeHermes:
                 "title": "Review the project notes",
                 "source": "subagent",
                 "parent_session_id": run["session_id"],
+                "model_config": {"_delegate_from": run["session_id"]},
             }
             self.messages[child] = [
                 {"role": "user", "content": "Review the notes"},

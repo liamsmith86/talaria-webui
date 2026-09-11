@@ -95,11 +95,6 @@
   width: 12px;
   height: 12px;
 }
-.usage-note {
-  margin-bottom: 0;
-  border-top: 1px solid var(--line);
-  padding-top: 17px;
-}
 .download-formats {
   display: flex;
   flex-direction: column;

@@ -298,7 +298,7 @@ export function Composer({
         aria-label="Message Hermes"
         placeholder=${active
           ? "Guide Hermes while it works…"
-          : "Where shall we begin?"}
+          : "Message Hermes"}
         value=${draft}
         rows="1"
         onInput=${(e) => {

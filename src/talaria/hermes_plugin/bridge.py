@@ -64,15 +64,15 @@ def rewind_preview(db, sid, message_id):
     from agent.memory_manager import sanitize_context
 
     if (db.get_session(sid) or {}).get("source") != "api_server":
-        raise ValueError("Only API conversations can be changed here.")
+        raise ValueError("Only API sessions can be changed here.")
 
     ids = db.get_active_message_ids(sid)
     if len(ids) > MAX_MESSAGES:
-        raise ValueError("This conversation is too large to rewind here.")
+        raise ValueError("This session is too large to rewind here.")
     rows = db.get_messages(sid, limit=MAX_MESSAGES + 1)
     # Active-id CAS detects messages arriving during the read as well as during confirmation.
     if [row["id"] for row in rows] != ids:
-        raise RuntimeError("The conversation changed. Reopen the action and try again.")
+        raise RuntimeError("The session changed. Reopen the action and try again.")
     index = next((i for i, row in enumerate(rows) if row["id"] == message_id), None)
     if index is None or rows[index].get("role") not in {"user", "assistant"}:
         raise ValueError("This message is no longer available to change.")
@@ -108,7 +108,7 @@ def rewind(db, sid, data):
     if data.get("preview") is True:
         return preview
     if data.get("revision") != preview["revision"]:
-        raise RuntimeError("The conversation changed. Reopen the action and try again.")
+        raise RuntimeError("The session changed. Reopen the action and try again.")
     result = db.rewind_to_message(
         sid,
         preview["target_id"],
@@ -180,7 +180,7 @@ def wire(app, adapter):
             sid = request.match_info["session_id"]
             session = await asyncio.to_thread(db.get_session, sid)
             if session is None:
-                return web.json_response({"error": "Conversation not found."}, status=404)
+                return web.json_response({"error": "Session not found."}, status=404)
             if action == "fork":
                 if not callable(getattr(db, "patch_session_model_config", None)):
                     return web.json_response({"error": "Branch metadata unavailable."}, status=404)
@@ -191,7 +191,7 @@ def wire(app, adapter):
                     try:
                         title = db.sanitize_title(str(data["title"]))
                         if title and await asyncio.to_thread(db.get_session_by_title, title):
-                            raise ValueError("That conversation name is already in use.")
+                            raise ValueError("That session name is already in use.")
                     except ValueError as exc:
                         return web.json_response(
                             {"error": {"code": "invalid_title", "message": str(exc)}},
@@ -214,7 +214,7 @@ def wire(app, adapter):
             if action == "rewind":
                 if not can_rewind:
                     return web.json_response(
-                        {"error": "Update Hermes to enable conversation changes."}, status=501
+                        {"error": "Update Hermes to enable session changes."}, status=501
                     )
                 data = await request.json()
                 if not isinstance(data, dict):
@@ -264,14 +264,14 @@ def wire(app, adapter):
             return web.json_response(
                 {
                     "error": "This message cannot be changed safely. "
-                    "Refresh the conversation and try again."
+                    "Refresh the session and try again."
                 },
                 status=400,
             )
         except RuntimeError:
             return web.json_response(
                 {
-                    "error": "The conversation changed or is busy. "
+                    "error": "The session changed or is busy. "
                     "Wait for it to finish, then reopen this action."
                 },
                 status=409,
@@ -281,7 +281,7 @@ def wire(app, adapter):
             return web.json_response(
                 {
                     "error": "Hermes could not complete this action. "
-                    "Your conversation is still available."
+                    "Your session is still available."
                 },
                 status=503,
             )

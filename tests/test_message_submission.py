@@ -1,4 +1,4 @@
-"""Regressions for repeated send gestures and tool-only conversation turns."""
+"""Regressions for repeated send gestures and tool-only session turns."""
 
 import pytest
 from playwright.sync_api import expect
