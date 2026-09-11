@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -129,3 +130,19 @@ def test_run_scope_restores_context_on_success_and_error():
     with pytest.raises(RuntimeError, match="original failure"):
         fail()
     assert request_log.active_run.get() is False
+
+
+def test_named_profile_hook_recognizes_the_primary_plugins_run_scope(recorder, tmp_path):
+    _, state = recorder
+    spec = importlib.util.spec_from_file_location("named_profile_request_log", request_log.__file__)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.active_run is not request_log.active_run
+    ctx = SimpleNamespace(get_config=lambda *args: state.enabled)
+    logger = module.RequestLog(ctx)
+    emit(logger)  # Admission belongs to the primary module; the hook belongs to the profile.
+    path = tmp_path / "talaria/request-debug.jsonl"
+    assert json.loads(path.read_text())["messages"][0]["content"] == "PRIVATE_QUERY"
+    before = path.read_bytes()
+    logger.before(platform="api_server", request_messages=[{"content": "UNRELATED_CLIENT"}])
+    assert path.read_bytes() == before

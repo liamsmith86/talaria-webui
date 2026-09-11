@@ -1,6 +1,7 @@
 """Native API + agent + persistence against a loopback-only model simulator."""
 
 import asyncio
+import importlib.util
 import json
 import os
 import socket
@@ -129,7 +130,16 @@ async def main():
     planned_replies = []
     manager = get_plugin_manager()
     manager.discover_and_load()
-    register(PluginContext(PluginManifest(name="talaria"), manager))
+    # Named-profile hooks and the primary listener are separate module copies in
+    # multiplexed Hermes. Exercise that boundary through native hook workers too.
+    spec = importlib.util.spec_from_file_location(
+        "named_profile_request_log",
+        Path(__file__).parents[1] / "src/talaria/hermes_plugin/request_log.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with patch("talaria.hermes_plugin.bridge.RequestLog", module.RequestLog):
+        register(PluginContext(PluginManifest(name="talaria"), manager))
 
     async def complete(request):
         payload = await request.json()

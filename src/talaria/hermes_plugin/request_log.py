@@ -5,7 +5,7 @@ import logging
 import os
 import stat
 import threading
-from contextvars import ContextVar
+from contextvars import ContextVar, copy_context
 from datetime import UTC, datetime
 from functools import wraps
 
@@ -102,7 +102,13 @@ class RequestLog:
         try:
             from hermes_constants import get_hermes_home
 
-            if platform != "api_server" or not active_run.get():
+            # Multiplexed Hermes loads a separate plugin module per profile. The
+            # primary listener marks admission; the named profile observes it.
+            # Match our marker by name across those module-local ContextVars.
+            if platform != "api_server" or not any(
+                variable.name == active_run.name and value is True
+                for variable, value in copy_context().items()
+            ):
                 return
             if self.ctx.get_config("debug_requests", False) is not True:
                 return
