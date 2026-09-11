@@ -131,17 +131,7 @@ def preflight(plan, root, config, *, resuming=False):
         )
     if not plan["account"]:
         return
-    # Do not repurpose an existing interactive or privileged account.
-    try:
-        account = pwd.getpwnam(plan["account"])
-    except KeyError:
-        if not shutil.which("useradd"):
-            raise DeploymentError(
-                "System service setup needs useradd; use --service none."
-            ) from None
-    else:
-        if account.pw_uid == 0 or account.pw_shell.rsplit("/", 1)[-1] not in {"nologin", "false"}:
-            raise DeploymentError("The talaria-webui account is unsuitable for a service.")
+    check_service_account(plan)
     # A user service must be able to traverse its interpreter and release parents.
     for target in (Path(sys._base_executable).resolve(), root):
         for parent in [target, *target.parents]:
@@ -213,3 +203,17 @@ def describe(plan):
         else []
     )
     return {action: shlex.join([*prefix, *plan[action]]) for action in ("start", "stop", "restart")}
+
+
+def check_service_account(plan):
+    # Do not repurpose an existing interactive or privileged account.
+    try:
+        account = pwd.getpwnam(plan["account"])
+    except KeyError:
+        if not shutil.which("useradd"):
+            raise DeploymentError(
+                "System service setup needs useradd; use --service none."
+            ) from None
+    else:
+        if account.pw_uid == 0 or account.pw_shell.rsplit("/", 1)[-1] not in {"nologin", "false"}:
+            raise DeploymentError("The talaria-webui account is unsuitable for a service.")

@@ -109,6 +109,7 @@ export async function initialize() {
     });
     if (data.authenticated) await connect(data.connected);
   } catch (error) {
+    let reported = error;
     if (error.code === "profile_missing") {
       try {
         const data = await api("/profiles");
@@ -122,10 +123,10 @@ export async function initialize() {
         });
         return;
       } catch (failure) {
-        error = failure;
+        reported = failure;
       }
     }
-    fail(error);
+    fail(reported);
     update({ auth: false });
   }
 }

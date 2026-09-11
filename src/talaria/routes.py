@@ -128,13 +128,7 @@ async def connection(request: Request):
             raise APIError("This address did not return Hermes capabilities.", 400)
         if request.method == "PUT":
             async with state.connection_lock:
-                if state.profiles.inflight.get(state.profile_id, 0) > 1 or any(
-                    not c.finished for c in state.relay.channels.values()
-                ):
-                    raise APIError(
-                        "Wait for active requests and responses to finish before changing Hermes.",
-                        409,
-                    )
+                check_connection_idle(state)
                 state.profiles.changing.add(state.profile_id)
                 try:
 
@@ -295,17 +289,7 @@ async def start_run(request: Request):
     if images:
         content = ([{"type": "text", "text": prompt}] if prompt else []) + images
         payload["input"] = [{"role": "user", "content": content}]
-    reasoning = data.get("reasoning", "auto")
-    if reasoning != "auto":
-        if not isinstance(reasoning, str) or reasoning not in REASONING:
-            raise APIError("Choose a supported reasoning level.", 400, "invalid_reasoning")
-        payload["model_options"] = {"reasoning": {"enabled": reasoning != "none"}}
-        if reasoning != "none":
-            payload["model_options"]["reasoning"]["effort"] = reasoning
-    for key in ("model", "provider"):
-        value = text_field(data, key, 256)
-        if value:
-            payload[key] = value
+    run_model_options(data, payload)
     idem = text_field(data, "request_id", 128) or secrets.token_hex(16)
     identifier(idem)
     state = request.app.state
@@ -375,3 +359,27 @@ async def events(request: Request):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
+
+
+def run_model_options(data, payload):
+    reasoning = data.get("reasoning", "auto")
+    if reasoning != "auto":
+        if not isinstance(reasoning, str) or reasoning not in REASONING:
+            raise APIError("Choose a supported reasoning level.", 400, "invalid_reasoning")
+        payload["model_options"] = {"reasoning": {"enabled": reasoning != "none"}}
+        if reasoning != "none":
+            payload["model_options"]["reasoning"]["effort"] = reasoning
+    for key in ("model", "provider"):
+        value = text_field(data, key, 256)
+        if value:
+            payload[key] = value
+
+
+def check_connection_idle(state):
+    if state.profiles.inflight.get(state.profile_id, 0) > 1 or any(
+        not c.finished for c in state.relay.channels.values()
+    ):
+        raise APIError(
+            "Wait for active requests and responses to finish before changing Hermes.",
+            409,
+        )

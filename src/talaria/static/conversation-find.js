@@ -1,4 +1,4 @@
-import { html, useEffect, useRef, useState, Icon, IconButton } from "./lib.js";
+import { html, useCallback, useEffect, useRef, useState, Icon, IconButton } from "./lib.js";
 import { update } from "./store.js";
 
 const searchable = ".message-text, .tool-content pre, .reasoning .markdown";
@@ -77,7 +77,7 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
   const move = useRef(false);
   const search = useRef({ query: "", timer: 0, cache: new WeakMap() });
   search.current.query = query;
-  function schedule() {
+  const schedule = useCallback(() => {
     const pending = search.current;
     if (pending.timer) return;
     pending.timer = setTimeout(() => {
@@ -91,7 +91,7 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
       );
       searchedQuery.current = pending.query;
     }, 120);
-  }
+  }, [root]);
   useEffect(() => {
     input.current?.focus();
   }, []);
@@ -99,7 +99,8 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
     // Index visible DOM, not network text: reveal pacing and deferred code
     // highlighting can update text nodes independently of the store. Retain
     // unchanged containers and invalidate only where content actually changed.
-    const cache = search.current.cache;
+    const pending = search.current;
+    const cache = pending.cache;
     const observer = new MutationObserver((records) => {
       for (const record of records) {
         const target =
@@ -127,15 +128,15 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
     });
     return () => {
       observer.disconnect();
-      clearTimeout(search.current.timer);
-      search.current.timer = 0;
+      clearTimeout(pending.timer);
+      pending.timer = 0;
     };
-  }, [root]);
+  }, [root, schedule]);
   useEffect(() => {
     clearTimeout(search.current.timer);
     search.current.timer = 0;
     schedule();
-  }, [query]);
+  }, [query, schedule]);
   useEffect(() => {
     if (globalThis.CSS?.highlights && globalThis.Highlight) {
       CSS.highlights.set("talaria-find", new Highlight(...ranges));
@@ -157,7 +158,7 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
       CSS.highlights?.delete("talaria-current");
       article?.classList.remove("find-focus");
     };
-  }, [ranges, index]);
+  }, [ranges, index, root]);
   function navigate(delta) {
     if (ranges.length) {
       move.current = true;

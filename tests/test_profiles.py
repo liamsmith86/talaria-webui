@@ -259,7 +259,7 @@ def test_same_session_ids_and_images_are_isolated_and_responses_survive_switchin
 def test_browser_switching_separates_drafts_images_preferences_and_live_requests(
     page, live_app, research
 ):
-    profile_id, second = research
+    _profile_id, second = research
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.get_by_label("Message Hermes").fill("Production draft")

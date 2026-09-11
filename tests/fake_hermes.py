@@ -127,9 +127,8 @@ class FakeHermes:
                             "durable": True,
                             "retention_seconds": 86400,
                         },
-                        **{
-                            key: True
-                            for key in [
+                        **dict.fromkeys(
+                            [
                                 "run_submission",
                                 "run_stop",
                                 "run_steer",
@@ -140,8 +139,9 @@ class FakeHermes:
                                 "session_fork",
                                 "model_options",
                                 "skills_api",
-                            ]
-                        },
+                            ],
+                            True,
+                        ),
                     },
                 }
             )

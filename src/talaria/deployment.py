@@ -503,9 +503,8 @@ class Deployment:
                 path.is_dir()
                 and not path.is_symlink()
                 and re.fullmatch(r"[0-9a-f]{7,64}", path.name)
-            ):
-                if f"releases/{path.name}" not in keep:
-                    shutil.rmtree(path)
+            ) and f"releases/{path.name}" not in keep:
+                shutil.rmtree(path)
 
     def launcher(self):
         """Keep management commands usable after rolling back to a pre-updater release."""
@@ -603,11 +602,64 @@ class Deployment:
         }
 
 
-def main(argv):
-    def interrupted(signum, frame):
-        raise KeyboardInterrupt
+def install_command(args, root):
+    if args.expect and not COMMIT.fullmatch(args.expect):
+        raise DeploymentError("--expect needs a full commit SHA.")
+    with locked(root):
+        if (root / "deployment.json").exists():
+            raise DeploymentError("This installation is already initialized. Use talaria update.")
+        if args.repository.startswith("-") or any(c in args.repository for c in "\n\r\x00"):
+            raise DeploymentError("Invalid repository address.")
+        run(["git", "check-ref-format", f"refs/heads/{args.branch}"])
+        if args.service and not re.fullmatch(r"[a-zA-Z0-9_.@-]+\.service", args.service):
+            raise DeploymentError("Use a complete systemd unit name, such as talaria.service.")
+        path = args.config.expanduser().resolve()
+        settings = load(path)
+        host = settings.host
+        if host in {"0.0.0.0", "::"}:
+            host = "127.0.0.1" if host == "0.0.0.0" else "[::1]"
+        elif ":" in host:
+            host = f"[{host}]"
+        write_json(
+            root / "deployment.json",
+            {
+                "schema": 1,
+                "repository": args.repository,
+                "branch": args.branch,
+                "config": str(path),
+                "service": args.service,
+                "scope": args.scope,
+                "health_url": f"http://{host}:{settings.port}",
+            },
+        )
+    deployment = Deployment(root)
+    deployment.update(expect=args.expect)
+    print(f"Launcher: {root / 'bin/talaria'}")
 
-    signal.signal(signal.SIGTERM, interrupted)
+
+def print_status(deployment, as_json):
+    data = deployment.status()
+    if as_json:
+        print(json.dumps(data, indent=2))
+    else:
+        for key in ("current", "previous"):
+            item = data[key]
+            print(
+                f"{key.capitalize()}: {item['version']} · {item['commit'][:10]}"
+                if item
+                else f"{key.capitalize()}: none"
+            )
+        print(f"Branch: {data['branch']}")
+        if data["recovery_pending"]:
+            print(
+                "An activation was interrupted. The next update will restore "
+                "the previous release first."
+            )
+        if data["update"].get("error"):
+            print(data["update"]["error"])
+
+
+def management_parser():
     parser = argparse.ArgumentParser(description="Install and update isolated Talaria releases.")
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("install", "update", "rollback", "status"):
@@ -638,46 +690,20 @@ def main(argv):
             command.add_argument(
                 "--json", action="store_true", help="Print machine-readable installation status"
             )
+    return parser
+
+
+def main(argv):
+    def interrupted(_signum, _frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, interrupted)
+    parser = management_parser()
     args = parser.parse_args(argv)
     try:
         root = args.directory.expanduser().resolve()
         if args.command == "install":
-            if args.expect and not COMMIT.fullmatch(args.expect):
-                raise DeploymentError("--expect needs a full commit SHA.")
-            with locked(root):
-                if (root / "deployment.json").exists():
-                    raise DeploymentError(
-                        "This installation is already initialized. Use talaria update."
-                    )
-                if args.repository.startswith("-") or any(c in args.repository for c in "\n\r\x00"):
-                    raise DeploymentError("Invalid repository address.")
-                run(["git", "check-ref-format", f"refs/heads/{args.branch}"])
-                if args.service and not re.fullmatch(r"[a-zA-Z0-9_.@-]+\.service", args.service):
-                    raise DeploymentError(
-                        "Use a complete systemd unit name, such as talaria.service."
-                    )
-                path = args.config.expanduser().resolve()
-                settings = load(path)
-                host = settings.host
-                if host in {"0.0.0.0", "::"}:
-                    host = "127.0.0.1" if host == "0.0.0.0" else "[::1]"
-                elif ":" in host:
-                    host = f"[{host}]"
-                write_json(
-                    root / "deployment.json",
-                    {
-                        "schema": 1,
-                        "repository": args.repository,
-                        "branch": args.branch,
-                        "config": str(path),
-                        "service": args.service,
-                        "scope": args.scope,
-                        "health_url": f"http://{host}:{settings.port}",
-                    },
-                )
-            deployment = Deployment(root)
-            deployment.update(expect=args.expect)
-            print(f"Launcher: {root / 'bin/talaria'}")
+            install_command(args, root)
         else:
             deployment = Deployment(root)
             if args.command == "update":
@@ -687,25 +713,7 @@ def main(argv):
             elif args.command == "rollback":
                 deployment.rollback()
             else:
-                data = deployment.status()
-                if args.json:
-                    print(json.dumps(data, indent=2))
-                else:
-                    for key in ("current", "previous"):
-                        item = data[key]
-                        print(
-                            f"{key.capitalize()}: {item['version']} · {item['commit'][:10]}"
-                            if item
-                            else f"{key.capitalize()}: none"
-                        )
-                    print(f"Branch: {data['branch']}")
-                    if data["recovery_pending"]:
-                        print(
-                            "An activation was interrupted. The next update will restore "
-                            "the previous release first."
-                        )
-                    if data["update"].get("error"):
-                        print(data["update"]["error"])
+                print_status(deployment, args.json)
     except (DeploymentError, OSError, KeyError, ValueError) as exc:
         parser.exit(1, f"Talaria: {exc}\n")
     except KeyboardInterrupt:

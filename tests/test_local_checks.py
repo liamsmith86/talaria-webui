@@ -26,14 +26,21 @@ def commit():
     return check.git("rev-parse", "HEAD")
 
 
-def test_pre_commit_checks_staged_content_not_the_corrected_working_file(repo):
-    source = repo / "example.py"
-    source.write_text("def broken(:\n")
-    subprocess.run(["git", "add", "example.py"], check=True)
-    source.write_text("answer = 42\n")
+@pytest.mark.parametrize(
+    "broken", ["def broken(:\n", "print( 42 )\n", "def abandoned_function():\n    return 42\n"]
+)
+def test_pre_commit_checks_staged_content_not_the_corrected_working_file(repo, broken):
+    from tests.test_quality import prepare_gate_repo
+
+    prepare_gate_repo(repo)
+    subprocess.run(["git", "add", "."], check=True)
+    source = repo / "src/talaria/example.py"
+    source.write_text(broken)
+    subprocess.run(["git", "add", "src/talaria/example.py"], check=True)
+    source.write_text("print(42)\n")
     with pytest.raises(subprocess.CalledProcessError):
         check.pre_commit()
-    subprocess.run(["git", "add", "example.py"], check=True)
+    subprocess.run(["git", "add", "src/talaria/example.py"], check=True)
     check.pre_commit()
 
 
@@ -127,7 +134,7 @@ def test_docs_only_ref_cannot_skip_a_code_update_to_another_ref(repo, monkeypatc
             False,
             ["tests/test_setup.py"],
         ),
-        (["contrib/check.py"], ["tests/test_local_checks.py"], False, []),
+        (["contrib/check.py"], ["tests/test_local_checks.py", "tests/test_quality.py"], False, []),
         (["src/talaria/static/markdown.js"], None, True, []),
         (["src/talaria/routes.py"], [], True, []),
         (["uv.lock"], [], True, ["tests"]),

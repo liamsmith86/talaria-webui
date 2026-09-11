@@ -63,13 +63,14 @@ class BrowserBoundary:
             public = path in {"/api/bootstrap", "/api/login"}
             if not public and not auth.authenticated(request):
                 error = (401, "Please sign in to continue.", "unauthenticated")
-            elif request.method not in {"GET", "HEAD", "OPTIONS"}:
-                if not auth.browser_request_valid(request, login=path == "/api/login"):
-                    error = (
-                        403,
-                        "Your session needs refreshing. Reload the page and try again.",
-                        "csrf",
-                    )
+            elif request.method not in {"GET", "HEAD", "OPTIONS"} and not (
+                auth.browser_request_valid(request, login=path == "/api/login")
+            ):
+                error = (
+                    403,
+                    "Your session needs refreshing. Reload the page and try again.",
+                    "csrf",
+                )
         if error:
             status, message, code = error
             return await JSONResponse({"error": message, "code": code}, status_code=status)(

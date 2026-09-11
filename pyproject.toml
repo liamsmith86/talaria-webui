@@ -17,7 +17,13 @@ dependencies = [
 talaria = "talaria.cli:main"
 
 [dependency-groups]
-lint = ["ruff>=0.16.6,<1"]
+lint = [
+    "actionlint-py>=1.7,<2",
+    "pre-commit-hooks>=6,<7",
+    "ruff>=0.16.6,<1",
+    "shellcheck-py>=0.11,<1",
+    "vulture>=2.14,<3",
+]
 dev = [
     "pytest>=9.1,<10",
     "pytest-asyncio>=1.4,<2",
@@ -42,4 +48,23 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "ASYNC"]
+# Typographic apostrophes are intentional in user-facing prose.
+allowed-confusables = ["’"]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "C4", "PIE", "SIM", "RUF", "C90", "PLR0912", "PLR0915", "T10"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-branches = 12
+max-statements = 50
+
+[tool.ruff.lint.per-file-ignores]
+# Test scenarios and development orchestration are not production functions.
+"tests/**" = ["C901", "PLR0912", "PLR0915"]
+"contrib/**" = ["C901", "PLR0912", "PLR0915"]
+".github/scripts/**" = ["C901", "PLR0912", "PLR0915"]
+
+[tool.vulture]
+paths = ["src", "contrib", ".github/scripts"]
+min_confidence = 60

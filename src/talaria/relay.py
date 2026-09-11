@@ -1,6 +1,7 @@
 """Bounded presentation replay; execution and transcripts remain in Hermes."""
 
 import asyncio
+import contextlib
 import json
 import time
 from collections import deque
@@ -127,20 +128,10 @@ class Relay:
                 if channel.events and cursor < channel.events[0][0] - 1:
                     reconcile = True
                     cursor = channel.events[0][0] - 1
-                # Connected subscribers usually need just the newest event.
-                # Walk back only through unseen entries, including full replay
-                # when reconnecting, rather than rescanning the retained ring.
-                events = []
-                for entry in reversed(channel.events):
-                    if entry[0] <= cursor:
-                        break
-                    events.append(entry)
-                events.reverse()
+                events = events_after(channel, cursor)
                 if not events and not channel.finished:
-                    try:
+                    with contextlib.suppress(TimeoutError):
                         await asyncio.wait_for(channel.condition.wait(), 15)
-                    except TimeoutError:
-                        pass
             if reconcile:
                 yield 'data: {"event":"talaria.reconcile"}\n\n'
             for sequence, payload in events:
@@ -156,3 +147,16 @@ class Relay:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+def events_after(channel, cursor):
+    # Connected subscribers usually need just the newest event.
+    # Walk back only through unseen entries, including full replay
+    # when reconnecting, rather than rescanning the retained ring.
+    events = []
+    for entry in reversed(channel.events):
+        if entry[0] <= cursor:
+            break
+        events.append(entry)
+    events.reverse()
+    return events

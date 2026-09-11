@@ -1,6 +1,7 @@
 """Local checks and regression evidence. No services or production credentials needed."""
 
 import argparse
+import contextlib
 import hashlib
 import io
 import json
@@ -19,10 +20,7 @@ STREAMING = [
     "tests/test_response_turns.py",
     "tests/test_stream_reveal.py",
 ]
-FOCUSED = STREAMING + [
-    "tests/test_frontend_state_qa.py",
-    "tests/test_message_submission.py",
-]
+FOCUSED = [*STREAMING, "tests/test_frontend_state_qa.py", "tests/test_message_submission.py"]
 INSTALL_TESTS = [
     "tests/test_setup.py",
     "tests/test_install.py",
@@ -48,7 +46,17 @@ INSTALL_FILES = {
     "tests/test_deployment.py",
     "tests/test_operations_qa.py",
 }
-CHECK_FILES = {"contrib/check.py", "tests/test_local_checks.py"}
+CHECK_FILES = {
+    "contrib/check.py",
+    "contrib/quality.py",
+    "contrib/vulture_whitelist.py",
+    "tests/test_local_checks.py",
+    "tests/test_quality.py",
+    "eslint.config.js",
+    "package.json",
+    "package-lock.json",
+    ".npmrc",
+}
 
 
 def plan(paths=None):
@@ -77,11 +85,11 @@ def plan(paths=None):
     )
     backend = None if frontend else []
     if local:
-        backend = ["tests/test_local_checks.py"]
+        backend = ["tests/test_local_checks.py", "tests/test_quality.py"]
     elif installer:
         backend = list(INSTALL_TESTS)
         if any(p in CHECK_FILES for p in paths):
-            backend.append("tests/test_local_checks.py")
+            backend.extend(["tests/test_local_checks.py", "tests/test_quality.py"])
     return {
         "backend": backend,
         "browsers": not (local or installer),
@@ -128,14 +136,8 @@ def environment():
 
 
 def lint(paths=None):
-    run("ruff", "check", ".", ".github/scripts")
-    scripts = (
-        Path("src/talaria/static").glob("*.js")
-        if paths is None
-        else (Path(path) for path in paths if path.endswith(".js") and Path(path).is_file())
-    )
-    for path in scripts:
-        run("node", "--check", str(path))
+    # Whole-project static checks are cheap and detect newly orphaned code.
+    run(sys.executable, "contrib/quality.py")
 
 
 def pytest(*args, env=None):
@@ -188,13 +190,29 @@ def check(full=False, native=False, paths=None):
 
 
 def pre_commit():
-    paths = git("diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z").split("\0")
-    for path in filter(None, paths):
-        data = subprocess.check_output(["git", "show", f":{path}"])
-        if path.endswith(".py"):
-            run("ruff", "check", "--stdin-filename", path, "-", input=data)
-        elif path.endswith(".js") and "/vendor/" not in path:
-            run("node", "--input-type=module", "--check", input=data)
+    # Export the index, not HEAD or the working tree: partial staging must not
+    # hide violations, and deleting the last reference must reach Vulture.
+    if __package__:
+        from .quality import reuse_javascript
+    else:
+        from quality import reuse_javascript
+
+    tree = git("write-tree")
+    with tempfile.TemporaryDirectory(prefix="talaria-commit-") as directory:
+        root = Path(directory)
+        export(tree, root)
+        reuse_javascript(root)
+        run(
+            "uv",
+            "run",
+            "--locked",
+            "--only-group",
+            "lint",
+            "python",
+            "contrib/quality.py",
+            cwd=root,
+            env=environment(),
+        )
     run("git", "diff", "--cached", "--check")
 
 
@@ -248,6 +266,7 @@ def verify_revision(commit, paths, *, fresh=False, native=False):
             workers(),
             subprocess.check_output(["node", "--version"]).decode().strip(),
             subprocess.check_output(["uv", "--version"]).decode().strip(),
+            subprocess.check_output(["npm", "--version"]).decode().strip(),
             {
                 k: v
                 for k, v in env.items()
@@ -255,14 +274,12 @@ def verify_revision(commit, paths, *, fresh=False, native=False):
             },
         ]
         key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
-        try:
+        with contextlib.suppress(OSError, ValueError, AttributeError):
             records = {
                 k: v
                 for k, v in json.loads(cache.read_text()).items()
                 if isinstance(v, (int, float)) and 0 <= time.time() - v < 3600
             }
-        except (OSError, ValueError, AttributeError):
-            pass
         if not fresh and key in records:
             print(f"Reusing successful local checks for {commit[:10]} (under one hour old).")
             return

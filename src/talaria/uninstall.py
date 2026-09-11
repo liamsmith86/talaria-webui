@@ -67,20 +67,7 @@ def uninstall(root, *, yes=False, prompts=None):
         print(f"Already removed: {root}")
         return
     metadata = Deployment(root).config
-    system = metadata.get("scope") == "system" or metadata.get("setup", {}).get("scope") == "system"
-    if system and os.geteuid() != 0:
-        raise DeploymentError("Use sudo to uninstall this system installation.")
-    if not system and root.stat().st_uid != os.geteuid():
-        raise DeploymentError("Run uninstall as the installation owner.")
-    if (root / ".git").exists() or root in {Path("/"), Path.home()}:
-        raise DeploymentError("This is not an isolated installation directory; preserved.")
-    if not (root / "repository.git/HEAD").is_file() or not (root / "releases").is_dir():
-        raise DeploymentError("Managed runtime files are missing; installation preserved.")
-    if any((root / name).is_symlink() for name in ("releases", "repository.git", "bin")):
-        raise DeploymentError("Managed runtime directories cannot be symbolic links.")
-    config = Path(metadata["config"])
-    if not config.is_absolute():
-        raise DeploymentError("Invalid configuration path; installation preserved.")
+    config = validate_uninstall(root, metadata)
     files = [
         config,
         *(
@@ -93,33 +80,10 @@ def uninstall(root, *, yes=False, prompts=None):
         ),
     ]
     plan = service_to_remove(root, metadata, config)
-    account = None
-    if metadata.get("setup", {}).get("account_created"):
-        with suppress(KeyError):
-            account = pwd.getpwnam("talaria-webui")
-        if account and (
-            account.pw_uid == 0
-            or Path(account.pw_dir) != config.parent
-            or Path(account.pw_shell).name not in {"nologin", "false"}
-        ):
-            raise DeploymentError("Service account has changed; installation preserved.")
+    account = account_to_remove(metadata, config)
     if not plan:
-        running = False
-        with suppress(OSError, ValueError):
-            opener = build_opener(ProxyHandler({}))
-            with opener.open(metadata["health_url"].rstrip("/") + "/health", timeout=1) as response:
-                running = json.loads(response.read(4096)).get("status") == "ok"
-        if running:
-            raise DeploymentError("Stop the manually started Talaria process before uninstalling.")
-    print(f"Remove installation: {root}")
-    if plan:
-        print(f"Remove service: {plan['path']}")
-    for path in files:
-        if path.exists() or path.is_symlink():
-            if path.is_dir() and not path.is_symlink():
-                raise DeploymentError(f"Expected a configuration file at {path}; preserved.")
-            print(f"Remove configuration file: {path}")
-    print("Hermes, its sessions/plugin, and shared Python/Git/uv installations are kept.")
+        check_stopped(metadata)
+    preview_removal(root, plan, files)
     if not yes and (prompts is None or prompts.terminal is None):
         raise DeploymentError("Use --yes for non-interactive removal.")
     if not yes and not prompts.yes("Uninstall Talaria?", False):
@@ -136,38 +100,96 @@ def uninstall(root, *, yes=False, prompts=None):
         service_to_remove(root, metadata, config)
         if plan:
             stop_service(plan)
-        for path in files:
-            path.unlink(missing_ok=True)
-        with suppress(OSError):
-            config.parent.rmdir()
-        # Only remove an account we created, once its private directory is gone.
-        if account and not config.parent.exists():
-            run(["userdel", "talaria-webui"])
-            with suppress(KeyError):
-                grp.getgrnam("talaria-webui")
-                run(["groupdel", "talaria-webui"])
-        for name in ("releases", "repository.git"):
-            shutil.rmtree(root / name)
-        for name in (
-            "current",
-            "previous",
-            "manager",
-            "deployment.json",
-            "update.json",
-            "activation.json",
-            ".setup-pending.json",
-            ".setup.lock",
-            ".update.lock",
-        ):
-            (root / name).unlink(missing_ok=True)
-        (root / "bin/talaria").unlink(missing_ok=True)
-        with suppress(OSError):
-            (root / "bin").rmdir()
-        with suppress(OSError):
-            root.rmdir()
+        remove_runtime(root, config, files, account)
     print("Talaria uninstalled.")
     if root.exists():
         print(f"Unrelated files preserved in {root}")
+
+
+def validate_uninstall(root, metadata):
+    system = metadata.get("scope") == "system" or metadata.get("setup", {}).get("scope") == "system"
+    if system and os.geteuid() != 0:
+        raise DeploymentError("Use sudo to uninstall this system installation.")
+    if not system and root.stat().st_uid != os.geteuid():
+        raise DeploymentError("Run uninstall as the installation owner.")
+    if (root / ".git").exists() or root in {Path("/"), Path.home()}:
+        raise DeploymentError("This is not an isolated installation directory; preserved.")
+    if not (root / "repository.git/HEAD").is_file() or not (root / "releases").is_dir():
+        raise DeploymentError("Managed runtime files are missing; installation preserved.")
+    if any((root / name).is_symlink() for name in ("releases", "repository.git", "bin")):
+        raise DeploymentError("Managed runtime directories cannot be symbolic links.")
+    config = Path(metadata["config"])
+    if not config.is_absolute():
+        raise DeploymentError("Invalid configuration path; installation preserved.")
+    return config
+
+
+def account_to_remove(metadata, config):
+    account = None
+    if metadata.get("setup", {}).get("account_created"):
+        with suppress(KeyError):
+            account = pwd.getpwnam("talaria-webui")
+        if account and (
+            account.pw_uid == 0
+            or Path(account.pw_dir) != config.parent
+            or Path(account.pw_shell).name not in {"nologin", "false"}
+        ):
+            raise DeploymentError("Service account has changed; installation preserved.")
+    return account
+
+
+def check_stopped(metadata):
+    running = False
+    with suppress(OSError, ValueError):
+        opener = build_opener(ProxyHandler({}))
+        with opener.open(metadata["health_url"].rstrip("/") + "/health", timeout=1) as response:
+            running = json.loads(response.read(4096)).get("status") == "ok"
+    if running:
+        raise DeploymentError("Stop the manually started Talaria process before uninstalling.")
+
+
+def remove_runtime(root, config, files, account):
+    for path in files:
+        path.unlink(missing_ok=True)
+    with suppress(OSError):
+        config.parent.rmdir()
+    # Only remove an account we created, once its private directory is gone.
+    if account and not config.parent.exists():
+        run(["userdel", "talaria-webui"])
+        with suppress(KeyError):
+            grp.getgrnam("talaria-webui")
+            run(["groupdel", "talaria-webui"])
+    for name in ("releases", "repository.git"):
+        shutil.rmtree(root / name)
+    for name in (
+        "current",
+        "previous",
+        "manager",
+        "deployment.json",
+        "update.json",
+        "activation.json",
+        ".setup-pending.json",
+        ".setup.lock",
+        ".update.lock",
+    ):
+        (root / name).unlink(missing_ok=True)
+    (root / "bin/talaria").unlink(missing_ok=True)
+    with suppress(OSError):
+        (root / "bin").rmdir()
+    with suppress(OSError):
+        root.rmdir()
+
+
+def preview_removal(root, plan, files):
+    print(f"Remove installation: {root}")
+    if plan:
+        print(f"Remove service: {plan['path']}")
+    for path in files:
+        if path.exists() or path.is_symlink():
+            if path.is_dir() and not path.is_symlink():
+                raise DeploymentError(f"Expected a configuration file at {path}; preserved.")
+            print(f"Remove configuration file: {path}")
+    print("Hermes, its sessions/plugin, and shared Python/Git/uv installations are kept.")
 
 
 def main(argv):

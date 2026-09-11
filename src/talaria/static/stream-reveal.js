@@ -53,6 +53,8 @@ export function useStreamReveal(text, active) {
     )
       catchUp();
     else schedule();
+    // These closures only use the stable control ref and the state setter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, active]);
   useLayoutEffect(() => {
     if (!active) return;
@@ -75,6 +77,8 @@ export function useStreamReveal(text, active) {
       document.removeEventListener("visibilitychange", visibility);
       media.removeEventListener("change", motion);
     };
+    // Subscribe for this active lifetime; callbacks read the stable control ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
   return !active || state.reduced || !text.startsWith(shown) ? text : shown;
 }

@@ -43,6 +43,10 @@ def main():
         from .deployment import main as manage
 
         return manage(sys.argv[1:])
+    serve()
+
+
+def serve():
     parser = argparse.ArgumentParser(description="Talaria — a web client for Hermes Agent")
     parser.epilog = (
         "Managed installations: talaria install, talaria update [--check], "

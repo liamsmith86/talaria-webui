@@ -37,8 +37,14 @@ jobs:
           version: '0.12.9'
           checksum: &uv-checksum ${{ runner.os == 'macOS' && '301f72afaf54060f92da7016cb0115bd077f43a9c8e39c1d8170a0bac80fd398' || runner.arch == 'ARM64' && 'c36fe17937ff6bd16dc42fc13854b5465999fcab2efe0af559381e945e3c6001' || 'ec7a99cd05e0cd7f80243f135ce1361c76835cb0ee60055d14d20eba8eba1460' }}
           python-version: '3.14'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm install --global npm@12.0.1 --ignore-scripts
+        working-directory: ${{ runner.temp }}
       - run: uv sync --locked --only-group lint
-      - run: uv run --locked --only-group lint ruff check . .github/scripts
+      - run: uv run --locked --only-group lint python contrib/quality.py
       - name: Select test coverage
         id: scope
         env:

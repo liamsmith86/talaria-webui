@@ -94,7 +94,8 @@ async def download(request):
         raise APIError("Hermes did not return readable session details.")
     title = str(session.get("title") or "Session")
     # Finish fetching before sending headers: a failed page must never look like a complete export.
-    spool = SpooledTemporaryFile(max_size=2 * 1024 * 1024, mode="w+b")
+    # Ownership transfers to TranscriptResponse; its ASGI finally closes the spool.
+    spool = SpooledTemporaryFile(max_size=2 * 1024 * 1024, mode="w+b")  # noqa: SIM115
 
     def write(text):
         data = text.encode("utf-8")
@@ -104,43 +105,7 @@ async def download(request):
 
     try:
         async with asyncio.timeout(180):
-            stamp = datetime.now(UTC).isoformat()
-            if format_ == "json":
-                meta = {
-                    "format": "talaria-transcript",
-                    "version": 1,
-                    "exported_at": stamp,
-                    "session": session,
-                }
-                write(json.dumps(meta, ensure_ascii=False, indent=2)[:-2] + ',\n  "messages": [\n')
-            else:
-                write(f"# {title.replace(chr(10), ' ')}\n\nExported {stamp}\n\n")
-            offset, first = 0, True
-            while True:
-                if await request.is_disconnected():
-                    raise asyncio.CancelledError
-                page = await message_page(client, sid, offset, order="oldest")
-                canonical = page.get("session_id") or sid
-                if canonical != sid and offset:
-                    raise APIError("The session changed during download. Please try again.", 409)
-                sid = identifier(canonical)
-                for message in page["data"]:
-                    if format_ == "json":
-                        write(
-                            ("" if first else ",\n")
-                            + json.dumps(message, ensure_ascii=False, indent=2)
-                        )
-                    else:
-                        write(markdown_message(message))
-                    first = False
-                    # Formatting a large page must not monopolize the server
-                    # while other tabs are submitting messages or streaming.
-                    await asyncio.sleep(0)
-                offset = page["next_offset"]
-                if not page["has_more"]:
-                    break
-            if format_ == "json":
-                write("\n  ]\n}\n")
+            await write_transcript(request, client, sid, session, title, format_, write)
     except BaseException as exc:
         spool.close()
         if isinstance(exc, TimeoutError):
@@ -159,3 +124,40 @@ async def download(request):
             "Content-Length": str(size),
         },
     )
+
+
+async def write_transcript(request, client, sid, session, title, format_, write):
+    stamp = datetime.now(UTC).isoformat()
+    if format_ == "json":
+        meta = {
+            "format": "talaria-transcript",
+            "version": 1,
+            "exported_at": stamp,
+            "session": session,
+        }
+        write(json.dumps(meta, ensure_ascii=False, indent=2)[:-2] + ',\n  "messages": [\n')
+    else:
+        write(f"# {title.replace(chr(10), ' ')}\n\nExported {stamp}\n\n")
+    offset, first = 0, True
+    while True:
+        if await request.is_disconnected():
+            raise asyncio.CancelledError
+        page = await message_page(client, sid, offset, order="oldest")
+        canonical = page.get("session_id") or sid
+        if canonical != sid and offset:
+            raise APIError("The session changed during download. Please try again.", 409)
+        sid = identifier(canonical)
+        for message in page["data"]:
+            if format_ == "json":
+                write(("" if first else ",\n") + json.dumps(message, ensure_ascii=False, indent=2))
+            else:
+                write(markdown_message(message))
+            first = False
+            # Formatting a large page must not monopolize the server
+            # while other tabs are submitting messages or streaming.
+            await asyncio.sleep(0)
+        offset = page["next_offset"]
+        if not page["has_more"]:
+            break
+    if format_ == "json":
+        write("\n  ]\n}\n")
