@@ -44,8 +44,11 @@ bash install.sh
 After the repository becomes public, the same installer can be launched with:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/liamsmith86/talaria-webui/main/install.sh | bash
+bash -c 'set -eu; f=$(mktemp); cleanup() { rm -f -- "$f"; }; trap cleanup EXIT; curl -qfsSL --proto "=https" --proto-redir "=https" --connect-timeout 20 --max-time 300 https://raw.githubusercontent.com/liamsmith86/talaria-webui/500fc5e91ae44d1930e4e66921d34ff25671b258/install.sh -o "$f"; if command -v sha256sum >/dev/null; then sum=$(sha256sum "$f"); else sum=$(shasum -a 256 "$f"); fi; [ "${sum%% *}" = 44f11ce129bd4b4021d1a27a3e6c63632f8319b2c06c215f7efbecda28e01683 ] || { echo "Installer checksum mismatch; nothing executed." >&2; exit 1; }; bash "$f"'
 ```
+
+The pinned SHA-256 verifies the bootstrap script before execution (Linux/macOS).
+The verified bootstrap then installs the latest `main` using its dependency lockfile.
 
 Setup offers local/LAN/all-interface binding, a generated or chosen WebUI password,
 local Hermes connectivity, the optional plugin, and an app service. It reuses existing
@@ -244,11 +247,24 @@ restart the host's Hermes automatically.
 
 - `~/.config/talaria/config.json`: connection, web login, bind address, port, and `public_url`.
 - `~/.config/talaria/profiles.json`: additional Hermes connections. API keys are stored in plaintext in private files with owner-only permissions.
+- `TALARIA_HERMES_API_KEY`: runtime override for the initial Hermes connection only; additional profiles keep separate keys. The value is never saved to configuration or returned to the browser. Empty or malformed values are rejected.
 - `--config PATH`: choose another configuration file. Docker stores configuration under `/data/talaria/`.
 - Remote access: configure an HTTPS reverse proxy and set `public_url` to the exact browser URL, including any nonstandard port and subpath (see below).
 - Change the web password with `~/.local/share/talaria/bin/talaria --set-password`, then restart Talaria.
 
 Managed installations support `update`, `status`, and `rollback` through `~/.local/share/talaria/bin/talaria`. Linked local plugins follow updates and rollbacks; remote plugins remain manually managed.
+
+### Secrets managers
+
+Inject `TALARIA_HERMES_API_KEY` into the process running `talaria` (or `talaria supervise`)
+using your secrets manager. Configure `hermes_url` in `config.json`; use `--skip-hermes`
+during setup if you will supply connectivity this way. Restart Talaria after key rotation.
+An existing saved key remains unchanged and is used again if the variable is unset.
+
+For Docker, pass `-e TALARIA_HERMES_API_KEY` to forward the variable from your shell.
+For systemd/launchd, configure the service's environment or secrets-manager wrapper;
+an export in your terminal does not configure a separately launched service.
+The managed launcher forwards this one credential to its unprivileged web process.
 
 ### Reverse proxy
 

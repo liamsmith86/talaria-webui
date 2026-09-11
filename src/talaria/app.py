@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import html
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from starlette.staticfiles import StaticFiles
 
 from . import auth, extensions, installation, metadata, routes, transcripts, updates
 from .config import Settings
-from .hermes import APIError, Hermes
+from .hermes import APIError, Hermes, valid_api_key
 from .profiles import ProfileRouter, Profiles
 from .profiles import listing as profile_listing
 from .profiles import remove as profile_remove
@@ -103,6 +104,18 @@ async def health(request):
     return JSONResponse({"status": "ok", **installation.build_info()})
 
 
+async def unexpected_error(request, exc):
+    # Starlette re-raises for Uvicorn's traceback logging after sending this.
+    return JSONResponse(
+        {
+            "error": "Talaria could not complete this request. Please try again.",
+            "code": "internal_error",
+        },
+        status_code=500,
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 async def api_error(request, exc: APIError):
     return JSONResponse({"error": exc.message, "code": exc.code}, status_code=exc.status)
 
@@ -125,7 +138,7 @@ def create_app(
 
     app = Starlette(
         lifespan=lifespan,
-        exception_handlers={APIError: api_error},
+        exception_handlers={APIError: api_error, Exception: unexpected_error},
         routes=[
             Route("/", index),
             Route("/robots.txt", robots),
@@ -172,7 +185,15 @@ def create_app(
     if settings.base_path:
         app.state.cookie_name += "_" + hashlib.sha256(settings.base_path.encode()).hexdigest()[:10]
     app.state.index_html = (STATIC / "index.html").read_text()
-    app.state.hermes = Hermes(settings.hermes_url, settings.api_key, transport=transport)
+    # Resolve runtime secrets separately from settings so saves never persist them.
+    key = os.environ.get("TALARIA_HERMES_API_KEY") if profile_id == "default" else None
+    if key is not None and (not valid_api_key(key) or len(key) > 4096):
+        raise ValueError(
+            "TALARIA_HERMES_API_KEY must contain 1-4096 printable ASCII characters without spaces."
+        )
+    app.state.key_from_env = key is not None
+    app.state.hermes_key = settings.api_key if key is None else key
+    app.state.hermes = Hermes(settings.hermes_url, app.state.hermes_key, transport=transport)
     app.state.relay = Relay(app.state.hermes)
     app.state.limiter = auth.LoginLimiter(settings.trusted_proxies)
     app.state.connection_lock = asyncio.Lock()

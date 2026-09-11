@@ -38,7 +38,11 @@ def web_identity(root, config):
     if account.pw_uid == 0 or Path(account.pw_shell).name not in {"nologin", "false"}:
         raise DeploymentError("A dedicated talaria-webui service account is required.")
     check_system_directory(root)
-    env = {key: os.environ[key] for key in ("LANG", "TZ", "SSL_CERT_FILE") if key in os.environ}
+    env = {
+        key: os.environ[key]
+        for key in ("LANG", "TZ", "SSL_CERT_FILE", "TALARIA_HERMES_API_KEY")
+        if key in os.environ
+    }
     env.update(
         PATH=os.defpath,
         PYTHONDONTWRITEBYTECODE="1",

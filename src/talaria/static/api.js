@@ -1,4 +1,10 @@
 import { apiURL } from "./profile-context.js";
+
+export function errorMessage(value, fallback = "Something went wrong. Please try again.") {
+  const text = typeof value === "string" ? value : value?.message;
+  return typeof text === "string" && text.trim() ? text.slice(0, 4096) : fallback;
+}
+
 let csrf = "";
 export const setCSRF = (value) => {
   csrf = value;
@@ -50,7 +56,7 @@ export async function api(path, options = {}) {
   }
   if (!response.ok)
     throw new RequestError(
-      data?.error || "Something went wrong. Please try again.",
+      errorMessage(data?.error),
       response.status,
       data?.code,
     );
