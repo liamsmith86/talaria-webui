@@ -437,7 +437,7 @@ def discover_hermes_home(args, prompts):
             "Hermes found under another user; select one with --hermes-home: "
             + ", ".join(map(str, paths))
         )
-    print(prompts.highlight("Hermes installations:"))
+    print(Prompts(sys.stdout).highlight("Hermes installations:"))
     for number, path in enumerate(paths, 1):
         print(f"  {number}. {candidates[path]} — {path}")
     print("  0. Connect manually later")
