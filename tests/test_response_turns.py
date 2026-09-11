@@ -126,6 +126,8 @@ def test_tool_rounds_settle_to_one_ordered_response(page, live_app, monkeypatch,
     expect(response.get_by_role("button", name="Response details", exact=True)).to_have_count(1)
     expect(response.get_by_role("button", name="Regenerate response", exact=True)).to_have_count(1)
     expect(response.get_by_role("button", name="Delete turn", exact=True)).to_have_count(1)
+    for summary in response.locator(".tool-card summary").all():
+        summary.click()
     text = response.inner_text()
     assert text.index("Before the first") < text.index("date") < text.index("Between the tools")
     assert text.index("Between the tools") < text.index("uname")

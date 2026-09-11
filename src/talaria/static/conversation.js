@@ -30,6 +30,7 @@ import {
 import { Images } from "./images.js";
 import { ConversationFind } from "./conversation-find.js";
 import { responseParts } from "./response-parts.js";
+import { useReplyJump, scrollBehavior } from "./reply-jump.js";
 
 function toolText(value, input = false) {
   if (typeof value !== "string") return "";
@@ -77,12 +78,8 @@ function ToolCard({ tool }) {
       ><span class="tool-label"
         >${isAgent
           ? "Subagent"
-          : (tool.name || "Tool").replace(/_/g, " ")}<small
-          >${isAgent
-            ? tool.name
-            : preview.split("\n")[0]?.slice(0, 110) ||
-              (tool.status === "running" ? "Working…" : "Finished")}</small
-        ></span
+          : (tool.name || "Tool").replace(/_/g, " ")}${isAgent &&
+          html`<small>${tool.name}</small>`}</span
       ><span class="tool-status"
         >${tool.status === "running"
           ? html`<span class="spinner" />`
@@ -211,6 +208,7 @@ function Message({
   }
   return html`<article
     class=${`message ${role}`}
+    tabindex=${role === "assistant" ? -1 : undefined}
     aria-label=${role === "user" ? "Your message" : `${agentName} response`}
   >
     ${role !== "user" &&
@@ -490,6 +488,7 @@ function historyItems(history, live) {
 
 export function Conversation({ app, command, onDismissCommand }) {
   const scroll = useRef();
+  const replyStart = useReplyJump(scroll, app.active);
   const bottom = useRef();
   const sticky = useRef(true);
   const scrollTop = useRef(0);
@@ -700,16 +699,34 @@ export function Conversation({ app, command, onDismissCommand }) {
         <div ref=${bottom} class="scroll-anchor" />
       </div>
     </div>
+      ${(away || replyStart) && html`<div class="conversation-jumps">
+      ${replyStart && html`<button
+        class="jump-reply"
+        aria-label="Jump to start of reply"
+        onClick=${() => {
+          if (!replyStart.isConnected) return;
+          sticky.current = false;
+          setAway(true);
+          replyStart.focus({ preventScroll: true });
+          const viewport = scroll.current;
+          viewport.scrollTo({
+            // Layout coordinates exclude the reply's entrance animation.
+            top: replyStart.offsetTop - 16,
+            behavior: scrollBehavior(),
+          });
+        }}
+      ><${Icon} name="arrow" size=${16} />Reply start</button>`}
       ${away &&
       html`<button
         class="jump-bottom"
         aria-label="Jump to latest message"
         onClick=${() => {
           sticky.current = true;
-          bottom.current?.scrollIntoView({ behavior: "smooth" });
+          bottom.current?.scrollIntoView({ behavior: scrollBehavior() });
         }}
       >
         <${Icon} name="down" size=${18} />
       </button>`}
+      </div>`}
     </div>`;
 }

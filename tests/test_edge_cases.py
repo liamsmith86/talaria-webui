@@ -105,8 +105,9 @@ def test_tool_history_retains_command_and_readable_output(page, live_app):
     page.reload()
     page.get_by_role("button", name="A tool session", exact=True).click()
     card = page.locator(".tool-card")
-    expect(card.locator("summary")).to_contain_text("printf hello")
+    expect(card.locator(".tool-label")).to_have_text("terminal")
     card.locator("summary").click()
+    expect(card.get_by_role("region", name="Tool details")).to_have_text("printf hello")
     expect(card.get_by_text("hello", exact=True)).to_be_visible()
     expect(card).not_to_contain_text('"exit_code"')
 
