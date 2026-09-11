@@ -9,6 +9,7 @@ import {
   IconButton,
   humanTime,
 } from "./lib.js";
+import { CommandCard, commandRunning } from "./command-activity.js";
 import { Markdown } from "./markdown.js";
 import { approve, retrySubmission, running } from "./runs.js";
 import {
@@ -487,7 +488,7 @@ function historyItems(history, live) {
   return turns.filter((item) => item.role === "user" || item.parts.length);
 }
 
-export function Conversation({ app }) {
+export function Conversation({ app, command, onDismissCommand }) {
   const scroll = useRef();
   const bottom = useRef();
   const sticky = useRef(true);
@@ -584,6 +585,14 @@ export function Conversation({ app }) {
       setOlderBusy(false);
     }
   }
+  const transcript = command ? [...(history || [])] : history;
+  if (command) {
+    const next = commandRunning(command) || command.afterId == null ? -1 : items.findIndex(
+      (item) => item.role === "user" && Number(item.record?.id) > command.afterId,
+    );
+    transcript.splice(next < 0 ? transcript.length : next, 0,
+      html`<${CommandCard} key=${`command:${command.id}`} activity=${command} onDismiss=${onDismissCommand} />`);
+  }
   return html`${app.findOpen &&
     html`<${ConversationFind}
       key=${app.active}
@@ -629,7 +638,7 @@ export function Conversation({ app }) {
             class="skeleton medium"
           /><span class="sr-only">Loading session</span>
         </div>`}
-        ${history}
+        ${transcript}
         ${showUser &&
         html`<${Message}
           role="user"
