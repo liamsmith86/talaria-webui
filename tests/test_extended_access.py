@@ -249,3 +249,7 @@ def test_native_hermes_contract(tmp_path, contract, provider):
         timeout=90,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+    if contract == "hermes_context_contract.py":
+        expected = Path(__file__).with_name("fixtures") / "hermes-completed.json"
+        captured = json.loads((tmp_path / "stream.json").read_text())
+        assert captured == json.loads(expected.read_text())

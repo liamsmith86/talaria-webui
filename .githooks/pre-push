@@ -1,0 +1,2 @@
+#!/bin/sh
+exec uv run --locked python contrib/check.py pre-push

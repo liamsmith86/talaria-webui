@@ -1,7 +1,11 @@
 import os
+import re
 import socket
 import threading
 import time
+from contextlib import ExitStack
+from functools import wraps
+from unittest.mock import patch
 
 import pytest
 import uvicorn
@@ -74,9 +78,20 @@ def live_app(tmp_path):
 
 @pytest.fixture(scope="session")
 def playwright_runtime():
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import Frame, Page, sync_playwright
 
-    with sync_playwright() as runtime:
+    def checked_wait(original):
+        @wraps(original)
+        def wait(self, expression, **kwargs):
+            if re.match(r"\s*\(*\s*async\b", expression):
+                raise ValueError("Use a synchronous polling predicate or wait_for_store().")
+            return original(self, expression, **kwargs)
+        return wait
+
+    with ExitStack() as stack, sync_playwright() as runtime:
+        for cls in (Page, Frame):
+            stack.enter_context(patch.object(cls, "wait_for_function",
+                                            checked_wait(cls.wait_for_function)))
         yield runtime
 
 
