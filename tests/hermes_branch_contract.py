@@ -3,7 +3,9 @@
 import asyncio
 import json
 import sys
+import threading
 from pathlib import Path
+from unittest.mock import patch
 
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
@@ -84,8 +86,128 @@ async def main():
             assert response.status == 400, await response.text()
             assert db._read_one("SELECT count(*) AS n FROM sessions")["n"] == before
             assert db.resolve_resume_session_id("named-original") == "named-original"
+        await verify_failed_branches(client, adapter, db, headers)
+        await verify_failed_copy(client, db, headers)
+        await verify_command_heads(client, headers)
     await adapter.disconnect()
     db.close()
+
+
+async def verify_failed_branches(client, adapter, db, headers):
+    # Default naming must be validated before closing or copying the source.
+    db.create_session("long-title", "discord")
+    db.set_session_title("long-title", "X" * db.MAX_TITLE_LENGTH)
+    before = db.get_session("long-title")
+    count = db._read_one("SELECT count(*) AS n FROM sessions")["n"]
+    response = await client.post("/talaria/v1/sessions/long-title/fork", headers=headers, json={})
+    assert response.status == 400, await response.text()
+    assert db.get_session("long-title") == before
+    assert db._read_one("SELECT count(*) AS n FROM sessions")["n"] == count
+
+    # Synchronize only title preflight reads, reproducing two real clients that
+    # both saw the same available title before either submitted the final write.
+    db.create_session("racing-parent", "discord")
+    db.append_message("racing-parent", "user", "Synthetic original")
+    db.append_message("racing-parent", "assistant", "Synthetic reply")
+    barrier = threading.Barrier(2)
+    lookup, create = db.get_session_by_title, db.create_session
+    created = []
+
+    def simultaneous_lookup(title):
+        result = lookup(title)
+        if title == "Contended branch title":
+            barrier.wait(timeout=5)
+        return result
+
+    def observed_create(session_id, source, **kwargs):
+        result = create(session_id, source, **kwargs)
+        if kwargs.get("parent_session_id") == "racing-parent":
+            # The native INSERT itself must mark the child, not a later patch.
+            assert (
+                db.get_session_model_config_value(session_id, "_branched_from") == "racing-parent"
+            )
+            assert db.resolve_resume_session_id("racing-parent") == "racing-parent"
+            created.append(session_id)
+        return result
+
+    async def branch():
+        response = await client.post(
+            "/talaria/v1/sessions/racing-parent/fork",
+            headers=headers,
+            json={"title": "Contended branch title"},
+        )
+        return response.status, await response.json()
+
+    with (
+        patch.object(db, "get_session_by_title", simultaneous_lookup),
+        patch.object(db, "create_session", observed_create),
+    ):
+        results = await asyncio.gather(branch(), branch())
+    assert sorted(status for status, _ in results) == [201, 400], results
+    assert len(created) == 2
+    surviving = [sid for sid in created if db.get_session(sid)]
+    assert len(surviving) == 1  # The rejected operation's child was rolled back.
+    assert db.resolve_resume_session_id("racing-parent") == "racing-parent"
+    assert adapter._session_db is db
+    assert db.get_session_by_title == lookup and db.create_session == create
+    assert db.get_session("racing-parent")["end_reason"] == "branched"
+
+
+async def verify_failed_copy(client, db, headers):
+    db.create_session("copy-failure-parent", "discord")
+    db.append_message("copy-failure-parent", "user", "Keep this source untouched")
+    source = db.get_session("copy-failure-parent")
+    count = db._read_one("SELECT count(*) AS n FROM sessions")["n"]
+    with patch.object(db, "replace_messages", side_effect=ValueError("Synthetic copy failure")):
+        response = await client.post(
+            "/talaria/v1/sessions/copy-failure-parent/fork",
+            headers=headers,
+            json={"title": "Copy failure fixture"},
+        )
+    assert response.status == 400
+    assert db.get_session("copy-failure-parent") == source
+    assert db._read_one("SELECT count(*) AS n FROM sessions")["n"] == count
+    assert db.resolve_resume_session_id("copy-failure-parent") == "copy-failure-parent"
+
+    # A caller-supplied existing ID must never be treated as our failed child.
+    db.create_session("existing-session", "api_server")
+    db.append_message("existing-session", "user", "Keep this unrelated session")
+    existing = db.get_session("existing-session")
+    response = await client.post(
+        "/talaria/v1/sessions/copy-failure-parent/fork",
+        headers=headers,
+        json={"id": "existing-session", "title": "Collision fixture"},
+    )
+    assert response.status == 409
+    assert db.get_session("existing-session") == existing
+    assert db.get_session("copy-failure-parent") == source
+
+
+async def verify_command_heads(client, headers):
+    from talaria.hermes_plugin import commands
+
+    called = []
+
+    def execute(*args):
+        called.append(args)
+        return {"text": "Unexpected HEAD execution"}
+
+    with patch.object(commands, "execute", execute):
+        for path, status in (
+            ("/talaria/v1/commands", 200),
+            ("/talaria/v1/commands/missing-command", 404),
+        ):
+            response = await client.head(
+                path,
+                headers=headers,
+                json={
+                    "request_id": "head-must-not-run-1234",
+                    "command": "version",
+                },
+            )
+            assert response.status == status
+        await asyncio.sleep(0)
+        assert not called
 
 
 asyncio.run(main())

@@ -1,6 +1,7 @@
 """Native API + agent + persistence against a loopback-only model simulator."""
 
 import asyncio
+import importlib.util
 import json
 import os
 import socket
@@ -18,10 +19,12 @@ from gateway.config import PlatformConfig
 from gateway.platforms import api_server_runs
 from gateway.platforms.api_server import APIServerAdapter
 from gateway.run import _profile_runtime_scope
+from hermes_cli.plugins import PluginContext, get_plugin_manager
+from hermes_cli.plugins_manifest import PluginManifest
 from hermes_state import SessionDB
 from run_agent import AIAgent
 
-from talaria.hermes_plugin.bridge import wire
+from talaria.hermes_plugin.bridge import register, wire
 from talaria.hermes_plugin.context import MAX_PREFILL, load_context, supports_context_runs
 
 home = Path(sys.argv[1])
@@ -30,16 +33,19 @@ provider_name = sys.argv[2] if len(sys.argv) > 2 else "openai"
 model_name = "z-ai/glm-5.2" if provider_name == "openrouter" else "gpt-4.1-mini"
 prefill = [
     {"role": "user", "content": "PREFILL_EXAMPLE_QUESTION"},
-    {"role": "assistant", "content": "PREFILL_EXAMPLE_ANSWER"},
+    {"role": "assistant", "content": "PREFILL_EXAMPLE_ANSWER" + " long example" * 1000},
 ]
 
 
-def configure(prompt="PROFILE_INSTRUCTION", **extras):
+def configure(prompt="PROFILE_INSTRUCTION", *, debug_requests=True, **extras):
     # JSON is valid YAML; avoids any quoting interpolation in fixture prompts.
     (home / "config.yaml").write_text(
         json.dumps(
             {
-                "plugins": {"enabled": ["talaria"]},
+                "plugins": {
+                    "enabled": ["talaria"],
+                    "entries": {"talaria": {"settings": {"debug_requests": debug_requests}}},
+                },
                 "model": {
                     "default": model_name,
                     "provider": provider_name,
@@ -120,6 +126,20 @@ def local_connect(sock, address):
 async def main():
     seen = []
     agents = []
+    tool_round = [False]
+    planned_replies = []
+    manager = get_plugin_manager()
+    manager.discover_and_load()
+    # Named-profile hooks and the primary listener are separate module copies in
+    # multiplexed Hermes. Exercise that boundary through native hook workers too.
+    spec = importlib.util.spec_from_file_location(
+        "named_profile_request_log",
+        Path(__file__).parents[1] / "src/talaria/hermes_plugin/request_log.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with patch("talaria.hermes_plugin.bridge.RequestLog", module.RequestLog):
+        register(PluginContext(PluginManifest(name="talaria"), manager))
 
     async def complete(request):
         payload = await request.json()
@@ -138,6 +158,25 @@ async def main():
             ],
             "usage": {"prompt_tokens": 123, "completion_tokens": 3, "total_tokens": 126},
         }
+        if tool_round[0]:
+            tool_round[0] = False
+            response["choices"][0].update(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "context-probe",
+                            "type": "function",
+                            "function": {"name": "context_probe", "arguments": "{}"},
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+            )
+        if planned_replies:
+            response["choices"][0].update(planned_replies.pop(0))
         if payload.get("stream"):
             response["object"] = "chat.completion.chunk"
             response["choices"][0]["delta"] = response["choices"][0].pop("message")
@@ -159,6 +198,8 @@ async def main():
         app = web.Application(middlewares=[adapter._make_profile_prefix_middleware()])
         app.router.add_post("/v1/runs", adapter._handle_runs)
         app.router.add_get("/v1/runs/{run_id}/events", adapter._handle_run_events)
+        app.router.add_get("/v1/runs/{run_id}", adapter._handle_get_run)
+        app.router.add_post("/v1/runs/{run_id}/stop", adapter._handle_stop_run)
         wire(app, adapter)
 
         class ContractAgent(AIAgent):
@@ -167,9 +208,36 @@ async def main():
                     skip_memory=True, skip_background_review=True, skip_context_files=True
                 )
                 super().__init__(**kwargs)
+                if planned_replies:
+                    from tools.clarify_tool import CLARIFY_SCHEMA
+
+                    self.tools = [{"type": "function", "function": CLARIFY_SCHEMA}]
+                    self.valid_tool_names = {"clarify"}
+                if tool_round[0]:
+                    self.tools = [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "context_probe",
+                                "description": "Return a fixture value",
+                                "parameters": {"type": "object", "properties": {}},
+                            },
+                        }
+                    ]
+                    self.valid_tool_names = {"context_probe"}
                 agents.append(self)
 
         with (
+            patch.object(
+                adapter,
+                "_resolve_provider_runtime",
+                return_value={
+                    "provider": provider_name,
+                    "base_url": str(server.make_url("/v1")),
+                    "api_key": "fixture-only",
+                    "api_mode": "chat_completions",
+                },
+            ),
             patch(
                 "gateway.run._resolve_runtime_agent_kwargs",
                 return_value={
@@ -188,7 +256,11 @@ async def main():
                 assert (
                     await client.post("/talaria/v1/runs", json={"input": "unauthorized"})
                 ).status == 401
-                headers = {"Authorization": "Bearer fixture-key", "Idempotency-Key": "first"}
+                headers = {
+                    "Authorization": "Bearer fixture-key",
+                    "Idempotency-Key": "first",
+                    "X-Hermes-Session-Key": "talaria:context-test",
+                }
                 caps = await (await client.get("/talaria/v1/capabilities", headers=headers)).json()
                 assert caps["context_runs"] and caps["profile_context"]["instructions"] == "ready"
                 db.create_session("context-test", "api_server")
@@ -199,6 +271,7 @@ async def main():
                         json={
                             "session_id": "context-test",
                             "input": text,
+                            "live_interactions": True,
                             **extras,
                         },
                         headers={**headers, "Idempotency-Key": key},
@@ -230,7 +303,9 @@ async def main():
                         }
                         trace = {
                             "events": [
-                                {k: v for k, v in event.items() if k in fields} for event in frames
+                                {k: v for k, v in event.items() if k in fields}
+                                for event in frames
+                                if event.get("event") != "talaria.status"
                             ],
                             "messages": [
                                 {k: row[k] for k in ("role", "content")}
@@ -305,6 +380,62 @@ async def main():
                 assert "EXPLICIT_INSTRUCTION" in json.dumps(seen[-1])
                 assert "UPDATED_PROFILE_INSTRUCTION" not in json.dumps(seen[-1])
                 assert adapter.active_agent_work_count() == 0
+                # A single turn can call the model again after tools. Inspect both
+                # actual provider requests, not just the AIAgent constructor fields.
+                before_tool_round = len(seen)
+                tool_round[0] = True
+                with patch(
+                    "model_tools.handle_function_call", return_value="CONTEXT_TOOL_RESULT"
+                ) as tool:
+                    await run("Verify instructions across a tool round", "tool-round")
+                assert tool.call_count == 1
+                assert len(seen) == before_tool_round + 2
+                for request in seen[before_tool_round:]:
+                    serialized = json.dumps(request)
+                    for marker in (
+                        "UPDATED_PROFILE_INSTRUCTION",
+                        "PREFILL_EXAMPLE_QUESTION",
+                        "PREFILL_EXAMPLE_ANSWER",
+                    ):
+                        assert serialized.count(marker) == 1, marker
+                assert "CONTEXT_TOOL_RESULT" in json.dumps(seen[-1])
+                saved = json.dumps(db.get_messages("context-test", include_inactive=True))
+                assert "PROFILE_INSTRUCTION" not in saved and "PREFILL_EXAMPLE" not in saved
+                log_path = home / "talaria/request-debug.jsonl"
+                captured = [json.loads(line) for line in log_path.read_text().splitlines()]
+                assert len(captured) == len(seen)
+                for recorded, sent in zip(captured, seen, strict=True):
+                    assert recorded["prompt_available"] is True
+                    assert recorded["messages"] == sent["messages"]
+                    assert prefill[1]["content"] in json.dumps(recorded)
+                    assert recorded["session_id"] == "context-test"
+                    assert recorded["api_request_id"] and recorded["turn_id"]
+                assert "fixture-key" not in log_path.read_text()
+                assert "fixture-only" not in log_path.read_text()
+                # The ordinary Hermes API can resume the same session, but must
+                # not inherit the Talaria diagnostic scope from its previous run.
+                response = await client.post(
+                    "/v1/runs",
+                    json={"session_id": "context-test", "input": "Other API client"},
+                    headers={"Authorization": "Bearer fixture-key"},
+                )
+                assert response.status == 202
+                other_run = await response.json()
+                other_task = adapter._active_run_tasks.get(other_run["run_id"])
+                if other_task:
+                    await asyncio.wait_for(other_task, 30)
+                assert adapter._run_statuses[other_run["run_id"]]["status"] == "completed"
+                assert len(log_path.read_text().splitlines()) == len(captured)
+                # Toggle without a reload/restart: the next real model call is unlogged.
+                configure(debug_requests=False)
+                await run("Logging disabled", "debug-off")
+                assert len(log_path.read_text().splitlines()) == len(captured)
+                from hermes_parity_contract import verify_parity
+
+                await verify_parity(run, db, seen, agents, configure, model_name, provider_name)
+                from hermes_live_contract import verify_live
+
+                await verify_live(client, adapter, db, planned_replies, seen)
                 from hermes_commands_contract import verify_commands
 
                 # Session-persisted models resolve provider credentials separately from

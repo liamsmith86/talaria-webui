@@ -56,6 +56,15 @@ class FakeHermes:
             if not (self.extension or {}).get("context_runs"):
                 return JSONResponse({"error": "Not installed"}, 404)
             path = "/v1/runs"  # Both entry points share Hermes's run/event lifecycle.
+        if path.startswith("/talaria/v1/runs/") and path.endswith("/clarification"):
+            run = self.runs.get(path.split("/")[4], {})
+            if not run.get("clarification") or run["clarification"].get("request_id") != body.get(
+                "request_id"
+            ):
+                return JSONResponse({"error": "Question expired"}, 409)
+            run.setdefault("answers", []).append(body["answer"])
+            run.update(clarification=None, status="running")
+            return JSONResponse({"ok": True})
         if path.startswith("/talaria/v1/"):
             if self.extension is None:
                 return JSONResponse({"error": "Not installed"}, 404)

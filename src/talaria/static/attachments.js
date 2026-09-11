@@ -72,6 +72,93 @@ export async function pendingStorage(key, value) {
   });
 }
 
+export async function consumePendingImages(key, images) {
+  const ids = new Set(images.map((image) => image.id));
+  if (!ids.size) return;
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction("pending", "readwrite");
+    const records = transaction.objectStore("pending");
+    const request = records.get(key);
+    request.onsuccess = () => {
+      if (!Array.isArray(request.result)) return;
+      const remaining = request.result.filter((image) => !ids.has(image.id));
+      if (remaining.length) records.put(remaining, key);
+      else records.delete(key);
+    };
+    transaction.oncomplete = resolve;
+    transaction.onabort = transaction.onerror = () =>
+      reject(new Error("The image draft could not be updated in this browser."));
+  });
+}
+
+const draftWork = new Map();
+export function beginPendingImages(key) {
+  const work = draftWork.get(key) || new Set();
+  let finish;
+  const pending = new Promise((resolve) => {
+    finish = resolve;
+  });
+  work.add(pending);
+  draftWork.set(key, work);
+  return () => {
+    work.delete(pending);
+    if (!work.size) draftWork.delete(key);
+    finish();
+  };
+}
+
+export async function migratePendingImages(from, to) {
+  if (from === to) return;
+  while (draftWork.has(from) || draftWork.has(to))
+    await Promise.all([...(draftWork.get(from) || []), ...(draftWork.get(to) || [])]);
+  // Text-only sessions remain usable when the browser disables IndexedDB.
+  const db = await openDatabase().catch(() => null);
+  if (!db) return;
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction("pending", "readwrite");
+    const records = transaction.objectStore("pending");
+    const source = records.get(from);
+    const target = records.get(to);
+    let failure;
+    target.onsuccess = () => {
+      try {
+        if (!Array.isArray(source.result) || !source.result.length) return;
+        const combined = Array.isArray(target.result) ? [...target.result] : [];
+        const ids = new Set(combined.map((image) => image.id));
+        for (const image of source.result) {
+          if (!ids.has(image.id)) combined.push(image);
+          ids.add(image.id);
+        }
+        if (
+          combined.length > 4 ||
+          combined.reduce((size, image) => size + image.size, 0) > MAX_IMAGES_TOTAL
+        )
+          throw Object.assign(
+            new Error(
+              "Both sessions have image drafts. Remove some attachments before reopening the continued session (four images, 6 MB maximum).",
+            ),
+            { code: "draft_conflict" },
+          );
+        records.put(combined, to);
+        records.delete(from);
+      } catch (error) {
+        failure = error;
+        try {
+          transaction.abort();
+        } catch {
+          // An already-aborted transaction will reject through onabort.
+        }
+      }
+    };
+    transaction.oncomplete = resolve;
+    transaction.onabort = transaction.onerror = () =>
+      reject(
+        failure || new Error("The image draft could not be moved in this browser."),
+      );
+  });
+}
+
 const CACHE_LIMIT = 32 * 1024 * 1024;
 const cacheError =
   "This browser could not retain the image. Download a copy to keep it.";

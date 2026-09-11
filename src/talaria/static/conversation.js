@@ -10,6 +10,7 @@ import {
   humanTime,
 } from "./lib.js";
 import { CommandCard, commandRunning } from "./command-activity.js";
+import { Clarification } from "./clarification.js";
 import { Markdown } from "./markdown.js";
 import { approve, retrySubmission, running } from "./runs.js";
 import {
@@ -177,7 +178,8 @@ function Message({
     if (part.kind === "reasoning")
       return html`<details class="reasoning" key=${index}>
         <summary>Thinking<${Icon} name="chevron" size=${14} /></summary>
-        <${Markdown} text=${part.text} deferHighlight=${!!record} />
+        <${Markdown} text=${part.text} streaming=${streaming && index === all.length - 1}
+          deferHighlight=${!!record} />
       </details>`;
     if (part.kind === "tool")
       return html`<div class="tool-stack" key=${index}>
@@ -514,7 +516,7 @@ export function Conversation({ app, command, onDismissCommand }) {
   }, [app.active, follow]);
   useEffect(() => {
     if (sticky.current) follow();
-  }, [app.history, live?.text, live?.tools.length, live?.approval, follow]);
+  }, [app.history, live?.text, live?.tools.length, live?.approval, live?.clarification, follow]);
   useEffect(() => {
     // Revealed text can grow between network updates. Follow its actual size,
     // including code highlighting, while respecting a reader scrolling up.
@@ -664,7 +666,7 @@ export function Conversation({ app, command, onDismissCommand }) {
           agentName=${agentName}
           text=${live.text}
           tools=${live.tools}
-          streaming=${streaming}
+          streaming=${streaming && !live.clarification}
           reasoning=${live.reasoning}
           parts=${live.parts}
         />`}
@@ -674,6 +676,10 @@ export function Conversation({ app, command, onDismissCommand }) {
           sid=${app.active}
           request=${live.approval}
         />`}
+        ${live?.clarification && html`<${Clarification}
+          key=${live.clarification.request_id} sid=${app.active} request=${live.clarification} />`}
+        ${live?.statusText && !live.clarification && html`<div class="run-notice" role="status">
+          ${live.statusText}</div>`}
         ${live?.reconnecting &&
         html`<div class="run-notice" role="status">
           <span class="spinner" /> Reconnecting to live updates. Hermes is still

@@ -1,7 +1,6 @@
 {
   "events": [
     {"event": "message.delta", "delta": "Fixture reply."},
-    {"event": "reasoning.available", "text": "Fixture reply."},
     {"event": "run.completed", "output": "Fixture reply."}
   ],
   "messages": [

@@ -96,7 +96,7 @@ async def logout(request: Request):
 
 async def connection(request: Request):
     state = request.app.state
-    if request.method == "GET":
+    if request.method in {"GET", "HEAD"}:
         return JSONResponse(
             {
                 "url": state.settings.hermes_url,
@@ -199,7 +199,7 @@ async def model_options(request: Request):
 
 async def sessions(request: Request):
     client = request.app.state.hermes
-    if request.method == "GET":
+    if request.method in {"GET", "HEAD"}:
         try:
             offset = min(max(int(request.query_params.get("offset", "0")), 0), 1_000_000)
         except ValueError as exc:
@@ -246,7 +246,11 @@ async def session(request: Request):
             fields["pinned"] = data["pinned"]
         payload["json"] = fields
     return JSONResponse(
-        await request.app.state.hermes.request(request.method, f"/api/sessions/{sid}", **payload)
+        await request.app.state.hermes.request(
+            "GET" if request.method == "HEAD" else request.method,
+            f"/api/sessions/{sid}",
+            **payload,
+        )
     )
 
 
@@ -286,6 +290,10 @@ async def start_run(request: Request):
     if not prompt and not images:
         raise APIError("Write a message first.", 400)
     payload = {"session_id": sid, "input": prompt}
+    if data.get("live_interactions") is True:
+        payload["live_interactions"] = True
+    if data.get("use_default_model") is True:
+        payload["use_default_model"] = True
     if images:
         content = ([{"type": "text", "text": prompt}] if prompt else []) + images
         payload["input"] = [{"role": "user", "content": content}]
@@ -326,6 +334,21 @@ async def run(request: Request):
 async def control(request: Request):
     rid, action = identifier(request.path_params["run_id"]), request.path_params["action"]
     data = await body(request)
+    if action == "clarification":
+        from .extensions import PREFIX
+
+        if "answer" not in data:
+            raise APIError("Provide an answer or explicitly skip the question.", 400)
+        return JSONResponse(
+            await request.app.state.hermes.request(
+                "POST",
+                f"{PREFIX}/runs/{rid}/clarification",
+                json={
+                    "request_id": identifier(text_field(data, "request_id", 256)),
+                    "answer": text_field(data, "answer", 16000),
+                },
+            )
+        )
     if action == "stop":
         payload = {}
     elif action == "steer":

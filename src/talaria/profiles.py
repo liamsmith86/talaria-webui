@@ -261,7 +261,7 @@ class ProfileRouter:
 
 async def listing(request):
     profiles = request.app.state.profiles
-    if request.method == "GET":
+    if request.method in {"GET", "HEAD"}:
         return JSONResponse({**profiles.public(), "csrf": auth.csrf_token(request)})
     from .routes import body, text_field
 

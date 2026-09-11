@@ -96,14 +96,7 @@ class Relay:
                 if state in TERMINAL:
                     await channel.publish({**status, "event": f"run.{state}"})
                     return
-                approval = status.get("approval")
-                if (
-                    state == "waiting_for_approval"
-                    and isinstance(approval, dict)
-                    and approval
-                    and status != last
-                ):
-                    await channel.publish({**approval, "event": "approval.request"})
+                await publish_pending(channel, status, last)
                 last = status
             except APIError as exc:
                 if exc.status in {401, 403, 404}:
@@ -147,6 +140,29 @@ class Relay:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def publish_pending(channel, status, previous):
+    for key, waiting, requested, resolved in (
+        ("approval", "waiting_for_approval", "approval.request", "approval.responded"),
+        (
+            "clarification",
+            "waiting_for_input",
+            "talaria.clarification.request",
+            "talaria.clarification.resolved",
+        ),
+    ):
+        current = status.get(key)
+        prior = (previous or {}).get(key)
+        if (
+            status.get("status") == waiting
+            and isinstance(current, dict)
+            and current
+            and status != previous
+        ):
+            await channel.publish({**current, "event": requested})
+        elif isinstance(prior, dict) and prior and not current:
+            await channel.publish({"event": resolved, "request_id": prior.get("request_id")})
 
 
 def events_after(channel, cursor):

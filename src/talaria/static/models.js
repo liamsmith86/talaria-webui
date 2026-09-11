@@ -188,12 +188,16 @@ export function saveModelChoice(choices, id, model) {
 }
 
 export function sessionModel(app) {
-  const selected = app.active ? app.modelChoices[app.active] : app.draftModel;
+  let selected = app.active ? app.modelChoices[app.active] : app.draftModel;
+  if (app.active && !Object.hasOwn(app.modelChoices, app.active) && app.sessionDetails?.id === app.active) {
+    const id = text(app.sessionDetails.model);
+    if (id && id !== "hermes-agent") selected = { id, provider: "", inherited: true };
+  }
   if (!selected) return null;
   return (
-    app.models.find(
+    (!selected.inherited && app.models.find(
       (m) => m.id === selected.id && m.provider === selected.provider,
-    ) || {
+    )) || {
       ...selected,
       label: selected.id,
       providerLabel:

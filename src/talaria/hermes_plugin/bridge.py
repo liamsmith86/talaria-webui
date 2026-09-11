@@ -8,6 +8,7 @@ import logging
 
 from .observations import Observations
 from .release import LOADED_REVISION, PLUGIN_VERSION
+from .request_log import RequestLog
 
 log = logging.getLogger(__name__)
 PREFIX = "/talaria/v1"
@@ -142,6 +143,7 @@ def wire(app, adapter, **kwargs):
         app.router.add_get(f"{prefix}/{{action:commands}}/{{command_id}}", dispatch_request)
         app.router.add_get(f"{prefix}/{{action:models}}", dispatch_request)
         app.router.add_post(f"{prefix}/{{action:runs}}", dispatch_request)
+        app.router.add_post(f"{prefix}/runs/{{run_id}}/{{action:clarification}}", dispatch_request)
         app.router.add_get(
             f"{prefix}/sessions/{{session_id}}/{{action:context|response}}", dispatch_request
         )
@@ -156,6 +158,7 @@ def register(ctx):
     observations = Observations(get_hermes_home())
     ctx.register_platform_handler("api_server", wire)
     ctx.register_hook("pre_api_request", observations.before)
+    ctx.register_hook("pre_api_request", RequestLog(ctx).before)
     ctx.register_hook("post_api_request", observations.after)
     ctx.register_hook("on_session_end", observations.end)
 
@@ -201,6 +204,7 @@ async def capabilities(adapter, db):
     from .commands import available
     from .context import load_context, supports_context_runs
     from .identity import inspect_home
+    from .live import supported as live_supported
 
     identity = await asyncio.to_thread(inspect_home, str(get_hermes_home()))
     context_runs = supports_context_runs(adapter)
@@ -215,42 +219,12 @@ async def capabilities(adapter, db):
             "context_usage": True,
             "model_details": True,
             "context_runs": context_runs,
+            "live_interactions": context_runs and live_supported(adapter),
             "profile_context": context.public() if context else {},
             "rewind": supports_rewind(db),
             "agent": {"name": identity.name},
         }
     )
-
-
-async def fork_session(adapter, request, db, sid):
-    from aiohttp import web
-
-    if not callable(getattr(db, "patch_session_model_config", None)):
-        return web.json_response({"error": "Branch metadata unavailable."}, status=404)
-    # Native fork validates titles only after copying the session.
-    # Reject known conflicts before it can leave an unmarked child.
-    data = await request.json()
-    if isinstance(data, dict) and data.get("title") is not None:
-        try:
-            title = db.sanitize_title(str(data["title"]))
-            if title and await asyncio.to_thread(db.get_session_by_title, title):
-                raise ValueError("That session name is already in use.")
-        except ValueError as exc:
-            return web.json_response(
-                {"error": {"code": "invalid_title", "message": str(exc)}},
-                status=400,
-            )
-    # Hermes's API fork omits the marker its CLI writes. Without
-    # it, resume resolution can redirect the original into the copy.
-    # Delegate the operation, then attach the native lineage marker
-    # before returning the new session to the client.
-    response = await adapter._handle_fork_session(request)
-    if response.status == 201:
-        fork = json.loads(response.body)["session"]
-        if fork.get("parent_session_id") != sid or fork.get("id") == sid:
-            raise ValueError("Unexpected branch identity")
-        await asyncio.to_thread(db.patch_session_model_config, fork["id"], {"_branched_from": sid})
-    return response
 
 
 async def session_details(request, db, sid, action):
@@ -312,6 +286,10 @@ async def dispatch_action(request, adapter, commands=None):
     from aiohttp import web
 
     action = request.match_info.get("action", "capabilities")
+    if action == "clarification":
+        from .live import answer
+
+        return await answer(request, adapter)
     if action == "runs":
         from .context import start_run, supports_context_runs
 
@@ -336,5 +314,7 @@ async def dispatch_action(request, adapter, commands=None):
     if session is None:
         return web.json_response({"error": "Session not found."}, status=404)
     if action == "fork":
+        from .forks import fork_session
+
         return await fork_session(adapter, request, db, sid)
     return await session_details(request, db, sid, action)

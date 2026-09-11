@@ -89,6 +89,7 @@ async def discover(client):
                         "context_usage",
                         "model_details",
                         "context_runs",
+                        "live_interactions",
                         "rewind",
                     )
                 },
@@ -131,7 +132,9 @@ async def session_extension(request: Request):
             raise APIError("Choose a saved response.", 400) from exc
         payload["params"] = {"message_id": str(mid)}
     result = await request.app.state.hermes.request(
-        request.method, f"{PREFIX}/sessions/{sid}/{action}", **payload
+        "GET" if request.method == "HEAD" else request.method,
+        f"{PREFIX}/sessions/{sid}/{action}",
+        **payload,
     )
     return JSONResponse(project_details(action, result))
 
@@ -154,4 +157,8 @@ async def commands(request: Request):
                 ("request_id", 128),
             )
         }
-    return JSONResponse(await request.app.state.hermes.request(request.method, path, **options))
+    return JSONResponse(
+        await request.app.state.hermes.request(
+            "GET" if request.method == "HEAD" else request.method, path, **options
+        )
+    )

@@ -601,3 +601,59 @@
     max-width: 25vw;
   }
 }
+/* Native clarify prompts are temporary controls; Hermes owns the saved tool result. */
+.clarification-card {
+  width: min(100%, 44rem);
+  margin: 1rem auto;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+.clarification-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.clarification-question {
+  margin: 0.8rem 0 1rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-weight: 550;
+}
+.clarification-choices {
+  display: grid;
+  gap: 0.5rem;
+}
+.clarification-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 44px;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.clarification-choice:hover { background: var(--surface-hover); }
+.clarification-choice input { flex: 0 0 auto; }
+.clarification-answer { display: grid; gap: 0.45rem; margin-top: 1rem; }
+.clarification-answer > span { color: var(--muted); font-size: 0.8rem; }
+.clarification-answer textarea {
+  width: 100%;
+  min-height: 5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.65rem;
+  background: var(--canvas);
+  color: var(--text);
+  resize: vertical;
+}
+.clarification-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }

@@ -5,7 +5,6 @@ Releases are never edited in place. Configuration stays outside the installation
 """
 
 import argparse
-import fcntl
 import json
 import os
 import pwd
@@ -19,7 +18,7 @@ import sys
 import tarfile
 import tempfile
 import time
-from contextlib import contextmanager, suppress
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.error import URLError
@@ -27,6 +26,7 @@ from urllib.request import ProxyHandler, build_opener
 
 from .config import default_path, load
 from .installation import managed_root, read_json, release_info
+from .maintenance import DeploymentError, locked
 
 REPOSITORY = "https://github.com/liamsmith86/talaria-webui.git"
 COMMIT = re.compile(r"[0-9a-f]{40,64}")
@@ -43,10 +43,6 @@ sock.bind(('127.0.0.1', 0))
 print(sock.getsockname()[1], flush=True)
 uvicorn.Server(uvicorn.Config(app, log_level='error', access_log=False)).run(sockets=[sock])
 """
-
-
-class DeploymentError(Exception):
-    pass
 
 
 def now() -> str:
@@ -168,17 +164,6 @@ def run(command, *, cwd=None, timeout=180) -> str:
         if process.returncode:
             raise DeploymentError(f"{command[0]} failed:\n{result}")
         return result
-
-
-@contextmanager
-def locked(root: Path):
-    root.mkdir(parents=True, exist_ok=True)
-    with (root / ".update.lock").open("a") as file:
-        try:
-            fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise DeploymentError("Another update is running. Try again when it finishes.") from exc
-        yield
 
 
 def select(root: Path, name: str, release: str | None):

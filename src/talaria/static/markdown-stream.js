@@ -105,6 +105,9 @@ export class MarkdownStream {
         text: raw.slice(header[0].length).replace(/\n$/, ""),
       };
     } else if (last.type === "table" && last.rows.length > 1) {
+      // Whitespace after the final newline belongs to an unfinished blank
+      // line, not the last data row. Reparse before replacing any rows.
+      if (/\n[ \t]+$/.test(last.raw)) return false;
       const headerEnd = last.raw.indexOf("\n", last.raw.indexOf("\n") + 1) + 1;
       const rowStart = last.raw.lastIndexOf("\n", last.raw.length - 2) + 1;
       const tail = marked.lexer(

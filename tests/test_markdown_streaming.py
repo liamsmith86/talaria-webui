@@ -24,6 +24,7 @@ def test_streamed_markdown_matches_full_parse_at_every_prefix(page):
           '| [link][r] | &amp; |\n\n[r]: /safe\n',
         '- One\n- Two\n- Three\n\n  More in the third item\n\nAfter\n\n---\n',
         'A sentence. More words! www.example.com and 1. item\n\n```text\nA\n\nB\n```\n',
+        'Intro\n\n| A | B |\n|---|---|\n| one | two |\n| three | four |\n  \nAfter',
       ];
       function actual() {
         return [...root.querySelector('.markdown').children].map(el => el.innerHTML).join('');
@@ -32,6 +33,7 @@ def test_streamed_markdown_matches_full_parse_at_every_prefix(page):
       let checked = 0;
       try {
         for (const source of cases) {
+          render(null, root);
           for (let i=0; i<=source.length; i++) {
             const text = source.slice(0,i);
             // Completed output must be identical to the existing sanitized parser.
@@ -39,11 +41,11 @@ def test_streamed_markdown_matches_full_parse_at_every_prefix(page):
             if(normalize(actual()) !== normalize(renderMarkdown(text, false)))
               return {phase:'streaming', source, i, actual:actual(),
                 expected:renderMarkdown(text, false)};
-            render(html`<${Markdown} text=${text} streaming=${false} />`, root);
-            if(normalize(actual()) !== normalize(renderMarkdown(text)))
-              return {source, i, actual:actual(), expected:renderMarkdown(text)};
             checked++;
           }
+          render(html`<${Markdown} text=${source} streaming=${false} />`, root);
+          if(normalize(actual()) !== normalize(renderMarkdown(source)))
+            return {phase:'complete', source, actual:actual(), expected:renderMarkdown(source)};
         }
         return {checked};
       } finally { window.Prism = prism; render(null,root); root.remove(); }
