@@ -452,3 +452,43 @@ def test_failed_service_setup_resumes_after_release_was_installed(options, monke
     assert (
         json.loads((options.directory / "deployment.json").read_text())["service"] == "test.service"
     )
+
+
+def test_resumed_setup_restarts_only_when_saved_credentials_changed(options, monkeypatch):
+    from talaria.config import Settings, save
+    from talaria.deployment import Deployment, select, write_json
+
+    from .test_deployment import A, release
+
+    root = options.directory
+    root.mkdir()
+    save(options.config, Settings(password_hash="saved", api_key="previous-key"))
+    select(root, "current", release(root, A))
+    write_json(
+        root / "deployment.json",
+        {
+            "schema": 1,
+            "repository": options.repository,
+            "branch": options.branch,
+            "config": str(options.config),
+            "service": "test.service",
+            "scope": "user",
+        },
+    )
+    write_json(root / ".setup-pending.json", {"service": "none", "config": str(options.config)})
+    calls = []
+    monkeypatch.setattr(Deployment, "update", lambda self, **kw: None)
+    monkeypatch.setattr(Deployment, "restart", lambda self: calls.append("restart"))
+    monkeypatch.setattr(wizard, "check_health", lambda *a: None)
+    monkeypatch.setattr(wizard, "verify_hermes", lambda *a: "connected")
+
+    def credentials(args, prompts, settings, *rest):
+        settings.api_key = "new-key"
+        return False
+
+    monkeypatch.setattr(wizard, "configure_hermes", credentials)
+    wizard.setup(options, wizard.Prompts(None))
+    assert calls == ["restart"]
+    assert load(options.config).api_key == "new-key"
+    wizard.setup(options, wizard.Prompts(None))
+    assert calls == ["restart"]

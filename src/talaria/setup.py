@@ -585,15 +585,25 @@ def _setup(args, prompts, stack):
         settings.password_hash = hash_password(password)
     write_json(pending_setup, {"service": kind, "config": str(config)})
     pending = configure_hermes(args, prompts, settings, home, python, info)
+    settings_changed = settings != load(config)
     password_path = initialize_password(config, settings)
     # Shared runtime files must be readable by the optional dedicated service user.
     old_mask = os.umask(0o022)
     try:
         if metadata:
             deployment = Deployment(root)
+            before = deployment.status()["current"]["commit"]
             deployment.config["health_url"] = local_url(settings.host, settings.port)
             write_json(root / "deployment.json", deployment.config)
             deployment.update(expect=args.expect)
+            if (
+                existing_service
+                and settings_changed
+                and deployment.status()["current"]["commit"] == before
+            ):
+                # Resuming a failed setup can change credentials without changing releases.
+                deployment.restart()
+                check_health(deployment.config["health_url"], before)
         else:
             command = [
                 "install",
