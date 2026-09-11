@@ -11,7 +11,7 @@ def open_notes(page, live_app, messages=None):
     if messages is not None:
         live_app[1].messages[sid] = messages
     page.reload()
-    page.get_by_role("button", name="Design notes", exact=True).click()
+    page.get_by_role("link", name="Design notes", exact=True).click()
     expect(page.locator(".topbar-title")).to_have_text("Design notes")
     expect(page.locator(".history-loading")).to_have_count(0)
     return sid
@@ -307,7 +307,7 @@ def test_message_edit_does_not_submit_into_a_different_conversation(page, live_a
     other = seed(peer, "other")
     peer.sessions[other]["title"] = "Other notes"
     page.reload()
-    page.get_by_role("button", name="Design notes", exact=True).click()
+    page.get_by_role("link", name="Design notes", exact=True).click()
     page.get_by_role("button", name="Edit and resend", exact=True).click()
     expect(page.get_by_label("Edit message")).to_have_value("Message 000")
     held = []
@@ -340,12 +340,12 @@ def test_sidebar_uses_calendar_days_at_midnight(page, live_app):
         peer.sessions[sid].update(title=title, last_active=stamp)
     page.reload()
     expect(
-        page.get_by_role("button", name="Midnight today", exact=True)
+        page.get_by_role("link", name="Midnight today", exact=True)
         .locator("../..")
         .locator(".session-group")
     ).to_have_text("Today")
     expect(
-        page.get_by_role("button", name="Midnight yesterday", exact=True)
+        page.get_by_role("link", name="Midnight yesterday", exact=True)
         .locator("../..")
         .locator(".session-group")
     ).to_have_text("Yesterday")

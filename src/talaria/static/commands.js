@@ -59,7 +59,7 @@ export function useCommands(app, draft, choose, controls, activity) {
     return true;
   }
   function keyDown(event) {
-    if (!matches.length || event.isComposing) return false;
+    if (!matches.length) return false;
     if (["ArrowDown", "ArrowUp"].includes(event.key)) {
       setSelected((index + (event.key === "ArrowDown" ? 1 : matches.length - 1)) % matches.length);
     } else if (event.key === "Escape") setDismissed(true);

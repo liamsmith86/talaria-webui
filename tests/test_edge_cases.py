@@ -103,13 +103,13 @@ def test_tool_history_retains_command_and_readable_output(page, live_app):
         },
     ]
     page.reload()
-    page.get_by_role("button", name="A tool session", exact=True).click()
+    page.get_by_role("link", name="A tool session", exact=True).click()
     card = page.locator(".tool-card")
     expect(card.locator(".tool-label")).to_have_text("terminal")
     card.locator("summary").click()
     expect(card.get_by_role("region", name="Tool details")).to_have_text("printf hello")
-    expect(card.get_by_text("hello", exact=True)).to_be_visible()
-    expect(card).not_to_contain_text('"exit_code"')
+    result = card.get_by_role("region", name="Tool result")
+    assert json.loads(result.text_content()) == {"output": "hello", "exit_code": 0}
 
 
 def test_missing_required_capability_explains_unavailable_chat(page):
@@ -137,7 +137,7 @@ def test_wide_code_is_keyboard_scrollable(page, live_app):
         }
     ]
     page.reload()
-    page.get_by_role("button", name="A wide code sample", exact=True).click()
+    page.get_by_role("link", name="A wide code sample", exact=True).click()
     code = page.get_by_role("region", name="python code")
     code.focus()
     page.keyboard.press("ArrowRight")

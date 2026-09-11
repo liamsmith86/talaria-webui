@@ -124,7 +124,7 @@ def test_saved_model_label_and_explicit_default(page, live_app):
     }
     peer.messages["notes"] = []
     page.reload()
-    page.get_by_role("button", name="Remembered session", exact=True).click()
+    page.get_by_role("link", name="Remembered session", exact=True).click()
     wait_for_store(
         page,
         "state => state.active === 'notes' && state.sessionDetails?.model === 'remembered-model'",

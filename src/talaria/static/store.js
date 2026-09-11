@@ -1,6 +1,8 @@
 import { useEffect, useState, readStorage, writeStorage } from "./lib.js";
 import { api, setCSRF } from "./api.js";
 import { migratePendingImages, withCachedImages } from "./attachments.js";
+import { selectedSession, rememberSession } from "./session-navigation.js";
+import { historyWindow } from "./history-page.js";
 import {
   modelInventory,
   readModelChoices,
@@ -10,6 +12,11 @@ import {
 } from "./models.js";
 
 const listeners = new Set();
+const historyListeners = new Set();
+export function beforeHistoryUpdate(listener) {
+  historyListeners.add(listener);
+  return () => historyListeners.delete(listener);
+}
 export const state = {
   auth: null,
   connected: false,
@@ -50,6 +57,8 @@ export const state = {
 };
 let frame = 0;
 export function update(changes, defer = false) {
+  if (Object.hasOwn(changes, "history") && changes.history !== state.history)
+    for (const listener of historyListeners) listener();
   Object.assign(state, changes);
   if (defer) {
     if (!frame)
@@ -141,6 +150,8 @@ export async function refreshProfiles() {
   return data;
 }
 export async function connect(configured = true) {
+  // Connection edits can replace Hermes while its previous discovery is pending.
+  modelsPending = null;
   if (!configured) {
     update({ connected: false, modal: "connection" });
     return;
@@ -160,16 +171,15 @@ export async function connect(configured = true) {
       ? refreshSessions()
       : Promise.resolve(update({ sessions: [], hasMore: false, history: [] }));
     if (caps.features?.model_options) {
-      refreshModels().catch(() =>
-        update({ models: [], providers: [], defaultModel: null }),
-      );
+      refreshModels().catch(() => {});
     } else update({ models: [], providers: [], defaultModel: null });
     refreshReadiness();
-    const last = readStorage("last-session");
+    const last = selectedSession();
+    if (!last && !state.active) rememberSession(null, true);
     await Promise.all([
       sessions,
       last && !state.active && caps.features?.session_resources
-        ? openSession(last)
+        ? openSession(last, null, true)
         : undefined,
     ]);
   } catch (error) {
@@ -177,8 +187,23 @@ export async function connect(configured = true) {
     fail(error);
   }
 }
-export async function refreshModels(force = false) {
-  update(modelInventory(await api(force ? "/models?refresh=1" : "/models")));
+let modelsPending;
+export function refreshModels(force = false) {
+  if (modelsPending && (!force || modelsPending.force)) return modelsPending.promise;
+  const request = { force };
+  modelsPending = request;
+  request.promise = api(force ? "/models?refresh=1" : "/models")
+    .then((data) => {
+      if (modelsPending === request) update(modelInventory(data));
+    })
+    .catch((error) => {
+      // A superseded failure must not erase a newer catalog or show a stale error.
+      if (modelsPending === request) throw error;
+    })
+    .finally(() => {
+      if (modelsPending === request) modelsPending = null;
+    });
+  return request.promise;
 }
 let readinessPending;
 export function refreshReadiness() {
@@ -217,11 +242,11 @@ export function chooseReasoning(value, id = state.active) {
   else update({ draftReasoning: value });
 }
 let detailsRequest = 0;
-export async function refreshSessionDetails(id = state.active) {
+export async function refreshSessionDetails(id = state.active, signal) {
   if (!id) return;
   const generation = navigation;
   const request = id === state.active ? ++detailsRequest : detailsRequest;
-  const result = await api(`/sessions/${encodeURIComponent(id)}`);
+  const result = await api(`/sessions/${encodeURIComponent(id)}`, { signal });
   const session = result?.session || result;
   if (!session || typeof session !== "object" || Array.isArray(session)) return;
   if (
@@ -251,7 +276,7 @@ export async function pinSession(session) {
 }
 let sessionsRequest = 0;
 let sessionsPending;
-export function refreshSessions(more = false) {
+export function refreshSessions(more = false, signal) {
   if (more && sessionsPending)
     return sessionsPending.more
       ? sessionsPending.promise
@@ -260,9 +285,19 @@ export function refreshSessions(more = false) {
         });
   const generation = ++sessionsRequest;
   const offset = more ? state.sessionsOffset : 0;
-  const promise = api(`/sessions?offset=${offset}`)
+  const end = more ? offset + 100 : Math.max(100, state.sessionsOffset);
+  const promise = (async () => {
+    let next = offset, result, incoming = [];
+    do {
+      result = await api(`/sessions?offset=${next}`, { signal });
+      if (generation !== sessionsRequest) return null;
+      incoming.push(...(result.data || result.sessions || []));
+      next += result.limit || 100;
+    } while (result.has_more && next < end);
+    return { ...result, data: incoming, next_offset: next };
+  })()
     .then((result) => {
-      if (generation !== sessionsRequest) return;
+      if (!result || generation !== sessionsRequest) return;
       const incoming = result.data || result.sessions || [];
       const rows = more ? [...state.sessions, ...incoming] : incoming;
       const unique = [
@@ -276,7 +311,7 @@ export function refreshSessions(more = false) {
       update({
         sessions: unique,
         hasMore: !!result.has_more,
-        sessionsOffset: offset + (result.limit || 100),
+        sessionsOffset: result.next_offset,
       });
     })
     .finally(() => {
@@ -290,8 +325,37 @@ let historyRequest = 0;
 let historyCommitted = 0;
 let olderPending;
 let opening;
+let navigationController = new AbortController();
 export const navigationVersion = () => navigation;
-export async function openSession(id, parent = null) {
+export const navigationSignal = () => navigationController.signal;
+function advanceNavigation() {
+  navigation++;
+  navigationController.abort();
+  navigationController = new AbortController();
+}
+async function migrateCanonical(id, canonical, parent, current) {
+  if (id === canonical) return true;
+  await migratePendingImages(`draft.${id}`, `draft.${canonical}`);
+  if (!current()) return false;
+  // Compaction can rotate the transcript ID. Carry unsent text with it,
+  // retaining both drafts if another tab already wrote to the continuation.
+  const from = `draft.${id}`, to = `draft.${canonical}`;
+  const draft = readStorage(from), existing = readStorage(to);
+  if (draft) {
+    const combined = existing && existing !== draft ? `${existing}\n\n${draft}` : draft;
+    writeStorage(to, combined);
+    if (readStorage(to) === combined) writeStorage(from, "");
+  }
+  if (id in state.modelChoices)
+    chooseModel(state.modelChoices[id], canonical);
+  if (id in state.reasoningChoices)
+    chooseReasoning(state.reasoningChoices[id], canonical);
+  rememberSession(canonical, true);
+  if (parent)
+    writeStorage("child-view", JSON.stringify({ id: canonical, parent }));
+  return true;
+}
+export async function openSession(id, parent = null, replace = false) {
   try {
     const saved = JSON.parse(readStorage("child-view", "null"));
     if (!parent && saved?.id === id) parent = saved.parent;
@@ -299,7 +363,8 @@ export async function openSession(id, parent = null) {
     /* An invalid presentation hint does not affect the session. */
   }
   writeStorage("child-view", JSON.stringify(parent ? { id, parent } : null));
-  const generation = ++navigation;
+  advanceNavigation();
+  const generation = navigation;
   const request = ++historyRequest;
   opening?.abort();
   const controller = (opening = new AbortController());
@@ -315,7 +380,7 @@ export async function openSession(id, parent = null) {
     readOnlyParent: parent,
     findOpen: false,
   });
-  writeStorage("last-session", id);
+  rememberSession(id, replace);
   try {
     const result = await api(`/sessions/${encodeURIComponent(id)}/messages`, {
       signal: controller.signal,
@@ -326,26 +391,9 @@ export async function openSession(id, parent = null) {
     );
     if (generation === navigation && request >= historyCommitted) {
       const canonical = result.session_id || id;
-      if (canonical !== id) {
-        await migratePendingImages(`draft.${id}`, `draft.${canonical}`);
-        if (generation !== navigation || request < historyCommitted) return;
-        // Compaction can rotate the transcript ID. Carry unsent text with it,
-        // retaining both drafts if another tab already wrote to the continuation.
-        const from = `draft.${id}`, to = `draft.${canonical}`;
-        const draft = readStorage(from), existing = readStorage(to);
-        if (draft) {
-          const combined = existing && existing !== draft ? `${existing}\n\n${draft}` : draft;
-          writeStorage(to, combined);
-          if (readStorage(to) === combined) writeStorage(from, "");
-        }
-        if (id in state.modelChoices)
-          chooseModel(state.modelChoices[id], canonical);
-        if (id in state.reasoningChoices)
-          chooseReasoning(state.reasoningChoices[id], canonical);
-        writeStorage("last-session", canonical);
-        if (parent)
-          writeStorage("child-view", JSON.stringify({ id: canonical, parent }));
-      }
+      if (!await migrateCanonical(id, canonical, parent,
+        () => generation === navigation && request >= historyCommitted)) return;
+      if (generation !== navigation || request < historyCommitted) return;
       historyCommitted = request;
       update({
         active: canonical,
@@ -365,24 +413,28 @@ export async function openSession(id, parent = null) {
     if (opening === controller) opening = null;
   }
 }
-export async function refreshHistory(id, commit = true, additionalState = null) {
+export async function refreshHistory(id, commit = true, additionalState = null, signal) {
   const generation = navigation;
+  // A focus refresh must not invalidate an older page the reader just requested.
+  if (id === state.active && olderPending?.generation === navigation)
+    await olderPending.promise;
+  const previous = id === state.active && generation === navigation ? state.history : [];
   const request =
     commit && state.active === id ? ++historyRequest : historyRequest;
-  const result = await api(`/sessions/${encodeURIComponent(id)}/messages`);
+  const result = await historyWindow(id, previous, signal);
+  const canCommit = () => commit && !signal?.aborted && state.active === id &&
+    generation === navigation && request >= historyCommitted &&
+    (typeof commit !== "function" || commit());
   const history = await withCachedImages(
     result.session_id || id,
     result.data || [],
   );
-  if (
-    commit &&
-    state.active === id &&
-    generation === navigation &&
-    request >= historyCommitted &&
-    (typeof commit !== "function" || commit())
-  ) {
+  if (canCommit()) {
+    const canonical = result.canonical || id;
+    if (!await migrateCanonical(id, canonical, state.readOnlyParent, canCommit) || !canCommit()) return history;
     historyCommitted = request;
     update({
+      ...(canonical !== id ? { active: canonical, sessionDetails: null } : {}),
       history,
       loading: false,
       historyHasMore: !!result.has_more,
@@ -390,6 +442,7 @@ export async function refreshHistory(id, commit = true, additionalState = null) 
       // Retire a saved live reply in the same snapshot as its history appears.
       ...additionalState?.(history),
     });
+    if (canonical !== id) refreshSessionDetails(canonical).catch(() => {});
   }
   return history;
 }
@@ -438,8 +491,8 @@ export function loadOlderMessages() {
   olderPending = pending;
   return pending.promise;
 }
-export function newConversation() {
-  navigation++;
+export function newConversation(replace = false) {
+  advanceNavigation();
   historyRequest++;
   opening?.abort();
   opening = null;
@@ -457,7 +510,7 @@ export function newConversation() {
     readOnlyParent: null,
     findOpen: false,
   });
-  writeStorage("last-session", "");
+  rememberSession(null, replace === true);
   writeStorage("child-view", "null");
 }
 export function supports(feature) {

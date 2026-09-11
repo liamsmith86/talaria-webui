@@ -134,12 +134,15 @@ def test_browser_behind_subpath_proxy(browser, tmp_path, strip):
         values = page.evaluate(
             """async prefix => {
           const paths = await import(prefix + '/static/profile-context.js');
+          const navigation = await import(prefix + '/static/session-navigation.js');
           return {api: paths.apiURL('/sessions'),
-                  storage: paths.storagePrefix, db: paths.databaseName};
+                  storage: paths.storagePrefix, db: paths.databaseName,
+                  session: navigation.sessionURL('linked')};
         }""",
             prefix,
         )
         assert values["api"] == prefix + "/api/sessions"
+        assert values["session"] == prefix + "/?session=linked"
         page.evaluate(
             "async prefix => (await import(prefix + '/static/store.js'))"
             ".update({modal:'profiles'})",

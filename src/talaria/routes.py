@@ -278,9 +278,10 @@ async def messages(request: Request):
     sid = identifier(request.path_params["session_id"])
     try:
         offset = max(0, min(int(request.query_params.get("offset", "0")), 1_000_000))
+        limit = max(1, min(int(request.query_params.get("limit", "100")), 500))
     except ValueError as exc:
         raise APIError("Invalid message page.", 400) from exc
-    return JSONResponse(await message_page(request.app.state.hermes, sid, offset))
+    return JSONResponse(await message_page(request.app.state.hermes, sid, offset, limit=limit))
 
 
 async def fork(request: Request):

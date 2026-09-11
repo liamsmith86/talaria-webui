@@ -1,5 +1,6 @@
 import {
   html,
+  isIMEKey,
   render,
   useEffect,
   useState,
@@ -45,6 +46,7 @@ import { ContextIndicator, ResponseDetails } from "./message-insights.js";
 import { MessageAction } from "./message-actions.js";
 import { sessionModel, sessionReasoning } from "./models.js";
 import { restoreRuns, running } from "./runs.js";
+import { observePage } from "./page-lifecycle.js";
 
 function Login({ development }) {
   const [password, setPassword] = useState("");
@@ -130,12 +132,13 @@ function App() {
   const [reasoningOpen, setReasoningOpen] = useState(false);
   const [suggestion, setSuggestion] = useState(null);
   const restored = useRef(false);
+  useEffect(observePage, []);
   useEffect(() => {
     initialize();
     const keydown = (e) => {
       if (
         e.defaultPrevented ||
-        e.isComposing ||
+        isIMEKey(e) ||
         document.querySelector("dialog[open]")
       )
         return;

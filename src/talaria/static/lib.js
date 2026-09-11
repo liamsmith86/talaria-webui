@@ -7,6 +7,10 @@ export { useRef, useMemo, useCallback, useLayoutEffect } from "./vendor/hooks.js
 export const html = htm.bind(h);
 export { render };
 
+// Some IMEs dispatch their final keydown after compositionend (MDN keydown).
+// Do not add a timer: the next ordinary Enter must remain immediately usable.
+export const isIMEKey = (event) => event.isComposing || event.keyCode === 229;
+
 export function useMediaQuery(query) {
   const [matches, setMatches] = useState(() => matchMedia(query).matches);
   useEffect(() => {

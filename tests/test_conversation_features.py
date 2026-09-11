@@ -229,7 +229,7 @@ def test_usage_distinguishes_zero_unknown_and_estimate(page, live_app):
         reasoning_tokens=123,
     )
     page.reload()
-    page.get_by_role("button", name="Design notes", exact=True).click()
+    page.get_by_role("link", name="Design notes", exact=True).click()
     page.get_by_role("button", name="Session details", exact=True).click()
     expect(page.locator(".usage-total")).to_contain_text("Reported cost")
     expect(page.locator(".usage-total strong")).to_have_text("$0.00")
@@ -381,7 +381,7 @@ def test_browser_images_survive_native_placeholders_and_export_without_changing_
     sid = seed(peer, count=2)
     peer.messages[sid][0]["content"] = "Inspect this image\n[screenshot]"
     page.reload()
-    page.get_by_role("button", name="Design notes", exact=True).click()
+    page.get_by_role("link", name="Design notes", exact=True).click()
     expect(page.locator(".image-unavailable")).to_have_count(1)
     page.get_by_label("File attachment").set_input_files(
         {"name": "saved.png", "mimeType": "image/png", "buffer": png()}
@@ -408,7 +408,7 @@ def test_browser_images_survive_native_placeholders_and_export_without_changing_
     other.goto(live_app[0])
     other.get_by_label("Password", exact=True).fill("test-password")
     other.get_by_role("button", name="Sign in").click()
-    other.get_by_role("button", name="Design notes", exact=True).click()
+    other.get_by_role("link", name="Design notes", exact=True).click()
     expect(other.locator(".message-image")).to_have_count(0)
     expect(other.locator(".image-unavailable")).to_have_count(2)
     other_context.close()
@@ -558,7 +558,7 @@ def test_find_includes_earlier_messages_and_literal_formatted_text(page, live_ap
     peer.messages[sid][0]["content"] = "Earlier needle (literal)"
     peer.messages[sid][-1]["content"] = "Latest **needle** (literal) and emoji 🌿"
     page.reload()
-    page.get_by_role("button", name="Design notes", exact=True).click()
+    page.get_by_role("link", name="Design notes", exact=True).click()
     page.get_by_role("button", name="Find in session", exact=True).click()
     field = page.get_by_label("Find text in session")
     field.fill("needle (literal)")
@@ -643,7 +643,7 @@ def test_saved_child_cards_use_native_tool_results_and_explain_missing_links(pag
         {"role": "assistant", "content": "The review is ready."},
     ]
     page.reload()
-    page.get_by_role("button", name="Design notes", exact=True).click()
+    page.get_by_role("link", name="Design notes", exact=True).click()
     card = page.locator(".tool-card").filter(has_text="Subagent")
     card.locator("summary").click()
     expect(card).to_contain_text("child-model")

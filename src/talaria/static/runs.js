@@ -1,5 +1,6 @@
 import { api, RequestError, errorMessage } from "./api.js";
 import { apiURL } from "./profile-context.js";
+import { rememberSession } from "./session-navigation.js";
 import {
   state,
   update,
@@ -357,7 +358,7 @@ export async function sendMessage(
         draftModel: null,
         draftReasoning: "auto",
       });
-      writeStorage("last-session", sid);
+      rememberSession(sid, true);
     }
     refreshSessions().catch(fail);
   }

@@ -72,7 +72,7 @@ def test_repeated_default_branches_use_distinct_hermes_names(page, live_app):
     peer.sessions[sid]["title"] = "Original"
     page.reload()
     for _ in range(3):
-        page.get_by_role("button", name="Original", exact=True).click()
+        page.get_by_role("link", name="Original", exact=True).click()
         wait_for_store(page, "s => s.active === 'repeat-original' && !s.loading")
         page.get_by_role("button", name="Options for Original", exact=True).click()
         page.get_by_role("button", name="Branch session", exact=True).click()
@@ -90,7 +90,7 @@ def test_rejected_branch_can_close_and_open_context_usage(page, live_app):
     sid = seed(peer, "rejected-original", count=2)
     peer.sessions[sid]["title"] = "Original"
     page.reload()
-    page.get_by_role("button", name="Original", exact=True).click()
+    page.get_by_role("link", name="Original", exact=True).click()
     page.get_by_role("button", name="Options for Original", exact=True).click()
     page.get_by_role("button", name="Branch session", exact=True).click()
     page.get_by_label("Session name", exact=True).fill("Original")
@@ -112,7 +112,7 @@ def test_return_to_discord_original_after_branching(page, live_app):
     sid = seed(peer, "discord-original", count=2)
     peer.sessions[sid].update(source="discord", title="Discord original")
     page.reload()
-    original = page.get_by_role("button", name="Discord original", exact=True)
+    original = page.get_by_role("link", name="Discord original", exact=True)
     original.click()
     wait_for_store(page, "state => state.active === 'discord-original' && !state.loading")
     page.get_by_role("button", name="Options for Discord original", exact=True).click()
@@ -131,7 +131,7 @@ def test_return_to_discord_original_after_branching(page, live_app):
     expect(original).to_have_attribute("aria-current", "page")
     expect(page.locator(".message")).to_have_count(2)
     expect(page.locator(".conversation-content")).not_to_contain_text("Only in the copy")
-    page.get_by_role("button", name="Independent copy", exact=True).click()
+    page.get_by_role("link", name="Independent copy", exact=True).click()
     expect(page.locator(".message.assistant").last).to_contain_text("Only in the copy")
 
 
@@ -708,7 +708,7 @@ def test_settled_run_keeps_history_pagination_consistent(page, live_app):
         await store.loadOlderMessages();
         return {pageSize, offset, total:store.state.history.length};
     }""")
-    assert result == {"pageSize": 100, "offset": 100, "total": 132}
+    assert result == {"pageSize": 132, "offset": 132, "total": 132}
 
 
 def test_cached_images_are_read_in_one_transaction(page):
