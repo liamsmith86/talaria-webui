@@ -30,3 +30,22 @@ def test_cli_help_is_available_without_setup():
         check=True,
     )
     assert "--config" in result.stdout and "--set-password" in result.stdout
+
+
+def test_public_url_flag_configures_runtime_and_first_start(tmp_path, monkeypatch):
+    from talaria import cli
+
+    path = tmp_path / "config.json"
+    captured = []
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["talaria", "--config", str(path), "--public-url", "https://EXAMPLE.com:443/telaria/"],
+    )
+    monkeypatch.setattr("uvicorn.run", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        "talaria.app.create_app", lambda settings, _: captured.append(settings.public_url)
+    )
+    cli.main()
+    assert captured == ["https://example.com/telaria"]
+    assert load(path).public_url == captured[0]

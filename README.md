@@ -50,7 +50,12 @@ curl -fsSL https://raw.githubusercontent.com/liamsmith86/talaria-webui/main/inst
 Setup offers local/LAN/all-interface binding, a generated or chosen WebUI password,
 local Hermes connectivity, the optional plugin, and an app service. It reuses existing
 credentials and saves private backups before changing Hermes configuration.
-Run `bash install.sh --help` for headless flags. Re-run the same command to resume.
+Run `bash install.sh --help` for headless flags. An interrupted setup can be resumed
+with the same options. Once installed, rerunning the script updates Talaria using the
+saved configuration; it does not repeat password, binding, service, or Hermes setup.
+Custom installation paths still need `--directory`; ambiguous installations are rejected.
+`talaria update` is the faster routine update command and uses the same deployment code.
+The Hermes plugin is updated separately using the plugin command below.
 
 For an existing Python 3.12+, Git, and uv installation, the wizard is also available
 as `uv run --locked --no-dev talaria setup`. For configuration entirely by hand:
@@ -93,7 +98,39 @@ docker run -d --name talaria --restart unless-stopped \
 docker exec talaria cat /data/talaria/initial-password.txt
 ```
 
-Open **http://127.0.0.1:8766** and connect to Hermes. The container runs as a non-root user; the named volume preserves configuration. For updates, rebuild and recreate the container using the same volume.
+Open **http://127.0.0.1:8766** and connect to Hermes. The container runs as a non-root
+user; `talaria-data` preserves its password and configuration across replacements.
+For updates, pull this checkout, rebuild the image, stop/remove the old container,
+and repeat the run command with the same volume. Do not run `install.sh`,
+`talaria install`, or `talaria update` inside a container.
+
+Behind an HTTPS proxy, append `--public-url https://hermes.example.com/telaria`
+to the run command above. The same subpath support applies to Docker. Keep the
+internal port at 8766; on bridge networks, bind with `--host 0.0.0.0` and choose
+the external port using `-p 127.0.0.1:8766:8766`. Docker Desktop can reach host
+Hermes through `host.docker.internal`; localhost inside a bridged container is
+the container itself.
+
+To choose a password, stop the running container and use:
+
+```sh
+docker run --rm -it -v talaria-data:/data talaria-webui --set-password
+```
+
+Restart the container afterward. To export the plugin on the Hermes host without
+installing Python or uv there (replace the profile path as needed):
+
+```sh
+mkdir -p "$HOME/.hermes/plugins"
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$HOME/.hermes/plugins:/export/plugins" \
+  talaria-webui hermes-plugin --home /export
+hermes plugins enable talaria
+hermes gateway restart
+```
+
+Run those Hermes commands in the same profile. The container does not enable or
+restart the host's Hermes automatically.
 
 ## Features
 

@@ -397,6 +397,60 @@ def setup(args, prompts):
         return _setup(args, prompts, stack)
 
 
+def existing_installation(args):
+    if args.directory:
+        candidates = [args.directory.expanduser().resolve()]
+    else:
+        candidates = [default_directory(), Path("/opt/talaria")]
+    found = {
+        path.resolve()
+        for path in candidates
+        if (path / "deployment.json").is_file() or (path / ".setup-pending.json").is_file()
+    }
+    if len(found) > 1:
+        raise ValueError("Multiple installations found; select one with --directory.")
+    return next(iter(found), None)
+
+
+def setup_lock(root, stack):
+    lock = stack.enter_context((root / ".setup.lock").open("a"))
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as exc:
+        raise ValueError("Another setup is running for this installation.") from exc
+
+
+def print_update_command(root):
+    prefix = "sudo -n " if os.geteuid() == 0 and os.environ.get("SUDO_UID", "0") != "0" else ""
+    print(f"Update manually: {prefix}{shlex.quote(str(root / 'bin/talaria'))} update")
+
+
+def update_existing(root, args, stack):
+    deployment = Deployment(root)
+    config = deployment.config
+    if args.config and str(args.config.expanduser().resolve()) != config["config"]:
+        raise ValueError("This installation already uses another config; use its existing path.")
+    if config["repository"] != args.repository or config["branch"] != args.branch:
+        raise ValueError(
+            "This installation has another source; pass its existing repository/branch."
+        )
+    if os.geteuid() != 0 and (config.get("scope") == "system" or not os.access(root, os.W_OK)):
+        if not passwordless_sudo():
+            raise ValueError("This installation requires sudo to update.")
+        args.directory = root
+        raise SystemExit(elevate_setup(args))
+    setup_lock(root, stack)
+    print(f"Existing installation: {root}. Updating Talaria; saved setup is retained.")
+    deployment.update(expect=args.expect)
+    print(f"Config: {config['config']}")
+    print_update_command(root)
+    if args.plugin:
+        print(
+            "The Hermes plugin is separate: refresh it with talaria hermes-plugin "
+            "on the Hermes host, then restart the gateway."
+        )
+
+
 def _setup(args, prompts, stack):
     if not (sys.platform.startswith("linux") or sys.platform == "darwin"):
         raise ValueError("Use Linux, macOS, or WSL2; native Windows is not supported.")
@@ -407,6 +461,17 @@ def _setup(args, prompts, stack):
     for command in ("git", "uv"):
         if not shutil.which(command):
             raise ValueError(f"{command} is missing. Use install.sh to install prerequisites.")
+    existing = existing_installation(args)
+    if existing:
+        pending = existing / ".setup-pending.json"
+        if (existing / "current").is_symlink() and not pending.exists():
+            return update_existing(existing, args, stack)
+        args.directory = existing
+        resume = read_json(pending)
+        if args.config is None and resume.get("config"):
+            args.config = Path(resume["config"])
+        if args.service is None:
+            args.service = resume.get("service")
     available = supported_service()
     kind = args.service or prompts.ask(
         "App service (auto/none)", "auto" if available != "none" else "none", ("auto", "none")
@@ -431,11 +496,8 @@ def _setup(args, prompts, stack):
         root.mkdir(parents=True, exist_ok=True, mode=0o755)
     finally:
         os.umask(old_mask)
-    setup_lock = stack.enter_context((root / ".setup.lock").open("a"))
-    try:
-        fcntl.flock(setup_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError as exc:
-        raise ValueError("Another setup is running for this installation.") from exc
+    setup_lock(root, stack)
+    pending_setup = root / ".setup-pending.json"
     metadata = read_json(root / "deployment.json")
     config = (
         (
@@ -503,7 +565,7 @@ def _setup(args, prompts, stack):
         check_port(settings.host, settings.port)
     plan = service_plan(kind, root, config) if kind != "none" and not existing_service else None
     if plan:
-        preflight(plan, root, config, resuming=bool(metadata))
+        preflight(plan, root, config, resuming=bool(metadata) or pending_setup.exists())
     if args.password_file:
         password = secret_file(args.password_file, "sign-in password")
         if settings.password_hash and not verify_password(password, settings.password_hash):
@@ -521,22 +583,27 @@ def _setup(args, prompts, stack):
         ):
             raise ValueError("Passwords must match and contain 12 to 1024 characters.")
         settings.password_hash = hash_password(password)
+    write_json(pending_setup, {"service": kind, "config": str(config)})
     pending = configure_hermes(args, prompts, settings, home, python, info)
+    settings_changed = settings != load(config)
     password_path = initialize_password(config, settings)
     # Shared runtime files must be readable by the optional dedicated service user.
     old_mask = os.umask(0o022)
     try:
         if metadata:
             deployment = Deployment(root)
+            before = deployment.status()["current"]["commit"]
             deployment.config["health_url"] = local_url(settings.host, settings.port)
             write_json(root / "deployment.json", deployment.config)
             deployment.update(expect=args.expect)
-            if existing_service:
-                # A no-op release update still needs to pick up configuration changes.
+            if (
+                existing_service
+                and settings_changed
+                and deployment.status()["current"]["commit"] == before
+            ):
+                # Resuming a failed setup can change credentials without changing releases.
                 deployment.restart()
-                check_health(
-                    deployment.config["health_url"], deployment.status()["current"]["commit"]
-                )
+                check_health(deployment.config["health_url"], before)
         else:
             command = [
                 "install",
@@ -593,8 +660,7 @@ def _setup(args, prompts, stack):
         print(f"Service: {existing_service} ({metadata.get('scope', 'user')})")
     else:
         print(f"Start: {shlex.quote(str(root / 'bin/talaria'))}")
-    prefix = "sudo -n " if os.geteuid() == 0 and os.environ.get("SUDO_UID", "0") != "0" else ""
-    print(f"Update manually: {prefix}{shlex.quote(str(root / 'bin/talaria'))} update")
+    print_update_command(root)
     if args.restart_hermes and (
         not connection.startswith("connected")
         or (args.plugin and "extended access available" not in connection)
@@ -603,6 +669,8 @@ def _setup(args, prompts, stack):
             "Talaria is installed, but Hermes connectivity was not verified. "
             "Check the gateway status and configured endpoint."
         )
+
+    pending_setup.unlink(missing_ok=True)
 
 
 def main(argv):

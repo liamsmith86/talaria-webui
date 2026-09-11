@@ -184,6 +184,9 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
     }
     for name in ("VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "PYTHONPATH"):
         env.pop(name, None)
+    with socket.socket() as available:
+        available.bind(("127.0.0.1", 0))
+        port = available.getsockname()[1]
     command = [
         "bash",
         remote / "install.sh",
@@ -198,20 +201,50 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
         "--service",
         "none",
         "--port",
-        "18766",
+        str(port),
         "--public-url",
         "https://example.com/telaria",
     ]
-    for attempt in range(2):
-        result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=180)
+    for attempt in range(3):
+        with socket.socket() as occupied:
+            if attempt:
+                # An already-running manual instance must not block installing an update.
+                occupied.bind(("127.0.0.1", port))
+                occupied.listen()
+            result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=180)
         assert result.returncode == 0, result.stdout + result.stderr
         settings = load(config)
         assert settings.public_url == "https://example.com/telaria"
-        assert "Update manually:" in result.stdout and "Hermes: not configured" in result.stdout
+        assert "Update manually:" in result.stdout
+        assert not (root / ".setup-pending.json").exists()
+        if attempt == 0:
+            assert "Hermes: not configured" in result.stdout
+        else:
+            assert "saved setup is retained" in result.stdout
         if attempt == 0:
             saved = config.read_bytes()
+            module = remote / "src/talaria/__init__.py"
+            module.write_text(module.read_text() + "\n# Next fixture release.\n")
+            run(["git", "-C", remote, "add", "."])
+            run(
+                [
+                    "git",
+                    "-C",
+                    remote,
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.invalid",
+                    "commit",
+                    "-m",
+                    "Next release",
+                ]
+            )
         else:
             assert config.read_bytes() == saved
+            assert json.loads((root / "current/release.json").read_text())["commit"] == run(
+                ["git", "-C", remote, "rev-parse", "HEAD"]
+            )
     installed = run(
         [root / "current/venv/bin/python", "-c", "import talaria; print(talaria.__file__)"]
     )
@@ -302,3 +335,160 @@ def test_sudo_git_credentials_run_as_the_caller(tmp_path, monkeypatch):
     assert "'#12345'" in helper and "credential" in helper
     assert "sudo -n -H -u '#12345'" in env["GIT_SSH_COMMAND"]
     assert command[-2:] == ["fetch", "remote"]
+
+
+def test_completed_installer_rerun_only_updates(options, monkeypatch, tmp_path):
+    from talaria.config import Settings, save
+    from talaria.deployment import Deployment, select, write_json
+
+    from .test_deployment import A, release
+
+    root = options.directory
+    root.mkdir()
+    save(options.config, Settings(password_hash="saved", api_key="keep-this-key"))
+    select(root, "current", release(root, A))
+    write_json(
+        root / "deployment.json",
+        {
+            "schema": 1,
+            "repository": options.repository,
+            "branch": options.branch,
+            "config": str(options.config),
+            "service": "existing.service",
+            "scope": "user",
+        },
+    )
+    before = options.config.read_bytes()
+    # Original setup flags must not trigger reconfiguration during an update.
+    options.skip_hermes = False
+    options.plugin = options.enable_hermes_api = options.restart_hermes = True
+    options.password_file = tmp_path / "no-longer-needed-password-file"
+    calls = []
+    monkeypatch.setattr(Deployment, "update", lambda self, **kw: calls.append(kw))
+    monkeypatch.setattr(Deployment, "restart", lambda _: pytest.fail("Extra restart"))
+    monkeypatch.setattr(wizard, "configure_hermes", lambda *a: pytest.fail("Repeated Hermes setup"))
+    monkeypatch.setattr(wizard, "supported_service", lambda: pytest.fail("Repeated service setup"))
+    monkeypatch.setattr(wizard, "check_port", lambda *a: pytest.fail("Running port checked"))
+    wizard.setup(options, wizard.Prompts(None))
+    assert calls == [{"expect": None}]
+    assert options.config.read_bytes() == before
+
+
+def test_installer_refuses_ambiguous_installations(tmp_path, monkeypatch):
+    first, second = tmp_path / "one", tmp_path / "two"
+    for path in (first, second):
+        path.mkdir()
+        (path / "deployment.json").write_text("{}")
+    monkeypatch.setattr(wizard, "default_directory", lambda: first)
+    original = Path.resolve
+    monkeypatch.setattr(
+        Path, "resolve", lambda p: second if str(p) == "/opt/talaria" else original(p)
+    )
+    original_file = Path.is_file
+    monkeypatch.setattr(
+        Path,
+        "is_file",
+        lambda p: True if str(p) == "/opt/talaria/deployment.json" else original_file(p),
+    )
+    with pytest.raises(ValueError, match="Multiple installations"):
+        wizard.existing_installation(wizard.parser().parse_args([]))
+
+
+def test_failed_service_setup_resumes_after_release_was_installed(options, monkeypatch):
+    from talaria.deployment import Deployment, select, write_json
+
+    from .test_deployment import A, release
+
+    options.service = "systemd"
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setattr(wizard, "supported_service", lambda: "systemd")
+    plan = {
+        "kind": "systemd",
+        "service": "test.service",
+        "scope": "user",
+        "start": ["systemctl", "--user", "start", "test.service"],
+        "stop": ["systemctl", "--user", "stop", "test.service"],
+        "restart": ["systemctl", "--user", "restart", "test.service"],
+    }
+    monkeypatch.setattr(wizard, "service_plan", lambda *a: plan)
+    monkeypatch.setattr(wizard, "preflight", lambda *a, **kw: None)
+    monkeypatch.setattr(wizard, "prepare_account", lambda *a: None)
+    monkeypatch.setattr(wizard, "run", lambda *a, **kw: None)
+    monkeypatch.setattr(wizard, "check_health", lambda *a, **kw: None)
+    monkeypatch.setattr(Deployment, "update", lambda *a, **kw: None)
+
+    def stage(command):
+        root = options.directory
+        write_json(
+            root / "deployment.json",
+            {
+                "schema": 1,
+                "repository": options.repository,
+                "branch": options.branch,
+                "config": str(options.config),
+                "scope": "user",
+                "service": None,
+            },
+        )
+        select(root, "current", release(root, A))
+
+    monkeypatch.setattr(wizard, "manage", stage)
+    attempts = []
+
+    def start_service(plan):
+        attempts.append(plan)
+        if len(attempts) == 1:
+            raise DeploymentError("Service unavailable")
+
+    monkeypatch.setattr(wizard, "install_service", start_service)
+    with pytest.raises(DeploymentError, match="Service unavailable"):
+        wizard.setup(options, wizard.Prompts(None))
+    saved = options.config.read_bytes()
+    assert (options.directory / ".setup-pending.json").exists()
+    wizard.setup(options, wizard.Prompts(None))
+    assert len(attempts) == 2
+    assert options.config.read_bytes() == saved
+    assert not (options.directory / ".setup-pending.json").exists()
+    assert (
+        json.loads((options.directory / "deployment.json").read_text())["service"] == "test.service"
+    )
+
+
+def test_resumed_setup_restarts_only_when_saved_credentials_changed(options, monkeypatch):
+    from talaria.config import Settings, save
+    from talaria.deployment import Deployment, select, write_json
+
+    from .test_deployment import A, release
+
+    root = options.directory
+    root.mkdir()
+    save(options.config, Settings(password_hash="saved", api_key="previous-key"))
+    select(root, "current", release(root, A))
+    write_json(
+        root / "deployment.json",
+        {
+            "schema": 1,
+            "repository": options.repository,
+            "branch": options.branch,
+            "config": str(options.config),
+            "service": "test.service",
+            "scope": "user",
+        },
+    )
+    write_json(root / ".setup-pending.json", {"service": "none", "config": str(options.config)})
+    calls = []
+    monkeypatch.setattr(Deployment, "update", lambda self, **kw: None)
+    monkeypatch.setattr(Deployment, "restart", lambda self: calls.append("restart"))
+    monkeypatch.setattr(wizard, "check_health", lambda *a: None)
+    monkeypatch.setattr(wizard, "verify_hermes", lambda *a: "connected")
+
+    def credentials(args, prompts, settings, *rest):
+        settings.api_key = "new-key"
+        return False
+
+    monkeypatch.setattr(wizard, "configure_hermes", credentials)
+    wizard.setup(options, wizard.Prompts(None))
+    assert calls == ["restart"]
+    assert load(options.config).api_key == "new-key"
+    wizard.setup(options, wizard.Prompts(None))
+    assert calls == ["restart"]
