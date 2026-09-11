@@ -132,7 +132,7 @@ def test_opening_reselecting_and_button_all_check_live(page, update_ui):
     page.get_by_role("button", name="Check for updates", exact=True).click()
     expect(page.get_by_role("tabpanel")).to_contain_text("Up to date")
     assert len(calls) == 3
-    expect(page.get_by_role("button", name="Update", exact=True)).to_be_disabled()
+    expect(page.get_by_role("button", name="Update", exact=True)).to_have_count(0)
     page.set_viewport_size({"width": 390, "height": 844})
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
 
