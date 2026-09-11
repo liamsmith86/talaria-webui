@@ -3,7 +3,35 @@
 import pytest
 from playwright.sync_api import expect
 
+from .conftest import wait_for_store
 from .test_conversation_features import IMAGE, seed
+
+
+def test_return_to_discord_original_after_branching(page, live_app):
+    peer = live_app[1]
+    peer.extension = {"session_fork": True}
+    sid = seed(peer, "discord-original", count=2)
+    peer.sessions[sid].update(source="discord", title="Discord original")
+    page.reload()
+    original = page.get_by_role("button", name="Discord original", exact=True)
+    original.click()
+    wait_for_store(page, "state => state.active === 'discord-original' && !state.loading")
+    page.get_by_role("button", name="Options for Discord original", exact=True).click()
+    page.get_by_role("button", name="Branch conversation", exact=True).click()
+    page.get_by_label("Conversation name", exact=True).fill("Independent copy")
+    page.get_by_role("button", name="Create branch", exact=True).click()
+    wait_for_store(page, "state => state.active !== 'discord-original' && !state.loading")
+    branch = next(s for s in peer.sessions.values() if s.get("parent_session_id") == sid)
+    assert branch["source"] == "api_server"
+    peer.messages[branch["id"]] = [*peer.messages[branch["id"]],
+                                   {"id": 90, "role": "assistant", "content": "Only in the copy"}]
+    original.click()
+    wait_for_store(page, "state => state.active === 'discord-original' && !state.loading")
+    expect(original).to_have_attribute("aria-current", "page")
+    expect(page.locator(".message")).to_have_count(2)
+    expect(page.locator(".conversation-content")).not_to_contain_text("Only in the copy")
+    page.get_by_role("button", name="Independent copy · branch", exact=True).click()
+    expect(page.locator(".message.assistant").last).to_contain_text("Only in the copy")
 
 
 def test_image_submission_keeps_its_original_boundary_during_navigation(page):

@@ -259,12 +259,18 @@ async def messages(request: Request):
 
 
 async def fork(request: Request):
+    from .extensions import PREFIX
+
     sid = identifier(request.path_params["session_id"])
     data = await body(request)
     payload = {"title": text_field(data, "title", 160, "Branched conversation")}
-    result = await request.app.state.hermes.request(
-        "POST", f"/api/sessions/{sid}/fork", json=payload
-    )
+    client = request.app.state.hermes
+    try:
+        result = await client.request("POST", f"{PREFIX}/sessions/{sid}/fork", json=payload)
+    except APIError as exc:
+        if exc.status != 404:
+            raise  # An ambiguous failure must never create a second copy.
+        result = await client.request("POST", f"/api/sessions/{sid}/fork", json=payload)
     return JSONResponse(object_result(result).get("session", result), status_code=201)
 
 

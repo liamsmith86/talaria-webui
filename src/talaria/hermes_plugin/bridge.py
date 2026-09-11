@@ -181,6 +181,22 @@ def wire(app, adapter):
             session = await asyncio.to_thread(db.get_session, sid)
             if session is None:
                 return web.json_response({"error": "Conversation not found."}, status=404)
+            if action == "fork":
+                if not callable(getattr(db, "patch_session_model_config", None)):
+                    return web.json_response({"error": "Branch metadata unavailable."}, status=404)
+                # Hermes's API fork omits the marker its CLI writes. Without
+                # it, resume resolution can redirect the original into the copy.
+                # Delegate the operation, then attach the native lineage marker
+                # before returning the new session to the client.
+                response = await adapter._handle_fork_session(request)
+                if response.status == 201:
+                    fork = json.loads(response.body)["session"]
+                    if fork.get("parent_session_id") != sid or fork.get("id") == sid:
+                        raise ValueError("Unexpected branch identity")
+                    await asyncio.to_thread(
+                        db.patch_session_model_config, fork["id"], {"_branched_from": sid}
+                    )
+                return response
             observations = Observations(get_hermes_home())
             if action == "rewind":
                 if not can_rewind:
@@ -264,7 +280,7 @@ def wire(app, adapter):
         app.router.add_get(
             f"{prefix}/sessions/{{session_id}}/{{action:context|response}}", dispatch
         )
-        app.router.add_post(f"{prefix}/sessions/{{session_id}}/{{action:rewind}}", dispatch)
+        app.router.add_post(f"{prefix}/sessions/{{session_id}}/{{action:rewind|fork}}", dispatch)
 
 
 def register(ctx):

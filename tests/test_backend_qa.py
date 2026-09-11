@@ -36,6 +36,21 @@ async def backend(tmp_path):
     await app.state.profiles.close()
 
 
+@pytest.mark.parametrize("status", [404, 409, 503])
+async def test_fork_only_falls_back_when_the_plugin_endpoint_is_missing(backend, status):
+    client, _, peer = backend
+    peer.sessions["original"] = {"id": "original", "source": "discord"}
+    peer.messages["original"] = [{"id": 1, "role": "user", "content": "Original"}]
+    peer.discovery_overrides["/talaria/v1/sessions/original/fork"] = (
+        {"error": "Unavailable"}, status,
+    )
+    response = await client.post("/api/sessions/original/fork", json={"title": "Copy"})
+    native_calls = [c for c in peer.calls if c[0:2] == ("POST", "/api/sessions/original/fork")]
+    assert len(native_calls) == (1 if status == 404 else 0)
+    assert len(peer.sessions) == (2 if status == 404 else 1)
+    assert response.status_code == (201 if status == 404 else 409 if status == 409 else 502)
+
+
 @pytest.mark.parametrize("fail", [False, True])
 async def test_capability_reads_overlap_and_do_not_outlive_the_request(backend, fail):
     client, app, _ = backend

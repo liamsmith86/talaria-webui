@@ -46,6 +46,11 @@ class FakeHermes:
         body = await request.json() if request.method in {"POST", "PATCH", "PUT"} else {}
         if path in self.discovery_overrides:
             return JSONResponse(*self.discovery_overrides[path])
+        plugin_fork = path.startswith("/talaria/v1/sessions/") and path.endswith("/fork")
+        if plugin_fork:
+            if not (self.extension or {}).get("session_fork"):
+                return JSONResponse({"error": "Not installed"}, 404)
+            path = path.replace("/talaria/v1/sessions/", "/api/sessions/", 1)
         if path == "/talaria/v1/runs":
             if not (self.extension or {}).get("context_runs"):
                 return JSONResponse({"error": "Not installed"}, 404)
@@ -213,6 +218,13 @@ class FakeHermes:
             if sid not in self.sessions:
                 return JSONResponse({}, 404)
             if path.endswith("/messages"):
+                # Native API forks lacking the CLI's marker are incorrectly
+                # treated as continuations by Hermes's resume resolver.
+                children = [s for s in self.sessions.values()
+                            if s.get("parent_session_id") == sid
+                            and not (s.get("model_config") or {}).get("_branched_from")]
+                if children:
+                    sid = children[-1]["id"]
                 offset = int(request.query_params.get("offset", "0"))
                 limit = int(request.query_params.get("limit", "100"))
                 all_messages = self.messages[sid]
@@ -227,7 +239,12 @@ class FakeHermes:
                 )
             if path.endswith("/fork"):
                 new_id = uuid.uuid4().hex
-                self.sessions[new_id] = {**self.sessions[sid], "id": new_id, "title": body["title"]}
+                self.sessions[sid]["end_reason"] = "branched"
+                self.sessions[new_id] = {
+                    "id": new_id, "title": body["title"],
+                    "source": "api_server", "parent_session_id": sid,
+                    "model_config": {"_branched_from": sid} if plugin_fork else {},
+                }
                 self.messages[new_id] = list(self.messages[sid])
                 return JSONResponse(
                     {"object": "hermes.session", "session": self.sessions[new_id]}, 201
