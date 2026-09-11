@@ -75,9 +75,9 @@ def main():
     if args.dev and not args.config.exists():
         settings.port = 8767
     if args.set_password:
-        password = getpass.getpass("New password (at least 12 characters): ")
-        if not 12 <= len(password) <= 1024 or password != getpass.getpass("Confirm password: "):
-            parser.error("Passwords must match and contain 12 to 1024 characters.")
+        password = getpass.getpass("New password (at least 4 characters): ")
+        if not 4 <= len(password) <= 1024 or password != getpass.getpass("Confirm password: "):
+            parser.error("Passwords must match and contain 4 to 1024 characters.")
         settings.password_hash = hash_password(password)
         settings.signing_key = secrets.token_hex(32)
         save(args.config, settings)

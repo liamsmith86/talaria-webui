@@ -56,6 +56,10 @@ saved configuration; it does not repeat password, binding, service, or Hermes se
 Custom installation paths still need `--directory`; ambiguous installations are rejected.
 `talaria update` is the faster routine update command and uses the same deployment code.
 The Hermes plugin is updated separately using the plugin command below.
+If your Hermes home is missing, root/sudo setup checks at most 32 other account
+homes and offers a selection. It does not recursively search or read credentials
+until a home is selected. Use `--hermes-home PATH` for headless selection or custom
+locations. Interactive highlighting respects `NO_COLOR` and `TERM=dumb`.
 
 For an existing Python 3.12+, Git, and uv installation, the wizard is also available
 as `uv run --locked --no-dev talaria setup`. For configuration entirely by hand:
@@ -68,7 +72,7 @@ uv run --locked --no-dev talaria install
 The default URL is **http://127.0.0.1:8766**. The login password is saved in
 `~/.config/talaria/initial-password.txt`. Root installs with a system service use
 `/opt/talaria` and `/var/lib/talaria`, and run the app as an unprivileged account.
-Git authentication and local Hermes changes retain the invoking user’s identity.
+Hermes configuration changes run as the selected home’s owner.
 The installer prints the actual paths and commands. Linux uses systemd where
 available; macOS uses a user LaunchAgent. Otherwise, start the app manually.
 Systemd user services follow the account's login/linger policy; LaunchAgents start

@@ -43,26 +43,55 @@ from .setup_services import (
     supported_service,
 )
 
+MAX_DISCOVERY_HOMES = 32
+
 
 class Prompts:
     def __init__(self, terminal):
         self.terminal = terminal
 
+    def highlight(self, text, code="1;36"):
+        if (
+            self.terminal is not None
+            and self.terminal.isatty()
+            and os.environ.get("TERM") != "dumb"
+            and "NO_COLOR" not in os.environ
+        ):
+            return f"\033[{code}m{text}\033[0m"
+        return text
+
     def ask(self, label, default="", choices=()):
         if self.terminal is None:
             return default
         while True:
-            print(f"{label} [{default}]: ", end="", file=self.terminal, flush=True)
+            print(
+                f"{self.highlight(label)} {self.highlight(f'[{default}]', '1;33')}: ",
+                end="", file=self.terminal, flush=True,
+            )
             answer = self.terminal.readline()
             if not answer:
                 raise ValueError("Input closed; no further changes made.")
             answer = answer.strip() or default
             if not choices or answer in choices:
                 return answer
-            print("Choose " + ", ".join(choices), file=self.terminal)
+            print(self.highlight("Choose " + ", ".join(choices), "1;31"), file=self.terminal)
 
     def yes(self, label, default=False):
         return self.ask(label + " (yes/no)", "yes" if default else "no", ("yes", "no")) == "yes"
+
+    def password(self):
+        while True:
+            password = getpass.getpass(
+                self.highlight("WebUI password (4+ characters): "), stream=self.terminal
+            )
+            if not 4 <= len(password) <= 1024:
+                print(self.highlight("Use 4 to 1024 characters.", "1;31"), file=self.terminal)
+                continue
+            if password == getpass.getpass(
+                self.highlight("Confirm password: "), stream=self.terminal
+            ):
+                return password
+            print(self.highlight("Passwords do not match. Try again.", "1;31"), file=self.terminal)
 
 
 def secret_file(path, label):
@@ -121,6 +150,7 @@ def find_hermes_python(home):
     candidates = [
         home / "hermes-agent/venv/bin/python",
         home / "venv/bin/python",
+        home.parent / "hermes-agent/venv/bin/python",
         Path.home() / "hermes-agent/venv/bin/python",
         Path("/usr/local/lib/hermes-agent/venv/bin/python"),
     ]
@@ -128,11 +158,11 @@ def find_hermes_python(home):
     if executable:
         command = Path(executable).resolve()
         if (command.parent.parent / "pyvenv.cfg").is_file():
-            candidates.insert(0, command.parent / "python")
+            candidates.append(command.parent / "python")
         try:
             first = command.open().readline().strip()
             if first.startswith("#!/") and "python" in first and " " not in first:
-                candidates.insert(0, Path(first[2:]))
+                candidates.append(Path(first[2:]))
         except (OSError, UnicodeError):
             pass
     return next((path for path in candidates if path.is_file()), None)
@@ -221,7 +251,9 @@ def configure_hermes(args, prompts, settings, home, python, info):
             url = prompts.ask("Hermes API URL (blank to connect later)", args.hermes_url or "")
             if url:
                 settings.hermes_url = validate_url(url)
-                settings.api_key = getpass.getpass("Hermes API key: ", stream=prompts.terminal)
+                settings.api_key = getpass.getpass(
+                    prompts.highlight("Hermes API key: "), stream=prompts.terminal
+                )
         if not settings.api_key:
             print("Connect to Hermes in the WebUI after signing in.")
         return False
@@ -353,15 +385,79 @@ def parser():
     return result
 
 
-def elevate_setup(args):
-    """Only service installation elevates; retain explicit paths and the caller's Hermes."""
-    values = vars(args).copy()
-    values["service"] = "systemd"
-    home = (
+def default_hermes_home(args):
+    return (
         (args.hermes_home or Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")))
         .expanduser()
         .resolve()
     )
+
+
+def discover_hermes_home(args, prompts):
+    home = default_hermes_home(args)
+    if (
+        args.skip_hermes or args.hermes_url or args.hermes_home
+        or "HERMES_HOME" in os.environ or home.is_dir() or os.geteuid() != 0
+    ):
+        return home
+    # One directory lookup per distinct account home; never traverse its contents.
+    candidates = {}
+    seen = set()
+    accounts = sorted(
+        pwd.getpwall(),
+        key=lambda account: (
+            Path(account.pw_shell).name in {"nologin", "false", "sync", "halt", "shutdown"},
+            account.pw_name,
+        ),
+    )
+    for account in accounts:
+        directory = Path(account.pw_dir)
+        if not directory.is_absolute() or directory == Path("/"):
+            continue
+        candidate = directory / ".hermes"
+        if candidate in seen:
+            continue
+        if len(seen) == MAX_DISCOVERY_HOMES:
+            print(
+                f"Discovery stopped after {MAX_DISCOVERY_HOMES} account homes. "
+                "Use --hermes-home PATH for another location."
+            )
+            break
+        seen.add(candidate)
+        try:
+            if candidate.is_dir():
+                candidates[candidate] = account.pw_name
+        except OSError:
+            continue
+    if not candidates:
+        return home
+    paths = sorted(candidates, key=str)
+    if prompts.terminal is None:
+        raise ValueError(
+            "Hermes found under another user; select one with --hermes-home: "
+            + ", ".join(map(str, paths))
+        )
+    print(Prompts(sys.stdout).highlight("Hermes installations:"))
+    for number, path in enumerate(paths, 1):
+        print(f"  {number}. {candidates[path]} — {path}")
+    print("  0. Connect manually later")
+    choice = prompts.ask(
+        "Which Hermes installation should Talaria use?",
+        "1" if len(paths) == 1 else "0",
+        tuple(str(index) for index in range(len(paths) + 1)),
+    )
+    if choice == "0":
+        args.skip_hermes = True
+        return home
+    args.hermes_home = paths[int(choice) - 1]
+    return args.hermes_home
+
+
+def elevate_setup(args, *, service="systemd"):
+    """Elevate setup while retaining explicit paths and the caller's existing Hermes."""
+    values = vars(args).copy()
+    values["service"] = service
+    home = default_hermes_home(args)
     if not args.skip_hermes and home.is_dir() and (not args.hermes_url or args.hermes_home):
         values["hermes_home"] = home
         values["hermes_python"] = args.hermes_python or find_hermes_python(home)
@@ -389,7 +485,10 @@ def elevate_setup(args):
         command.insert(
             command.index(sys.executable), "SSH_AUTH_SOCK=" + os.environ["SSH_AUTH_SOCK"]
         )
-    # sudo sets SUDO_UID; Git uses that account's credential helpers during deployment.
+    for name in ("TERM", "NO_COLOR"):
+        if name in os.environ:
+            command.insert(command.index(sys.executable), name + "=" + os.environ[name])
+    # sudo sets SUDO_UID; Git can fall back to that account's credential helpers.
     return subprocess.call(command)
 
 
@@ -473,6 +572,19 @@ def _setup(args, prompts, stack):
             args.config = Path(resume["config"])
         if args.service is None:
             args.service = resume.get("service")
+    if (
+        os.geteuid() != 0 and not args.skip_hermes and not args.hermes_url
+        and not args.hermes_home and "HERMES_HOME" not in os.environ
+        and not default_hermes_home(args).is_dir() and shutil.which("sudo")
+    ):
+        admin = passwordless_sudo()
+        if not admin and prompts.terminal is not None and prompts.yes(
+            "Check other users for Hermes using sudo?", True
+        ):
+            admin = subprocess.call(["sudo", "-v"]) == 0
+        if admin:
+            print("Using sudo to check other users and complete installation.")
+            raise SystemExit(elevate_setup(args, service=args.service))
     available = supported_service()
     kind = args.service or "none"
     if args.service is None and prompts.terminal is not None and available != "none":
@@ -523,11 +635,7 @@ def _setup(args, prompts, stack):
         )
     settings = load(config)
     original = (settings.host, settings.port, settings.public_url)
-    home = (
-        (args.hermes_home or Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")))
-        .expanduser()
-        .resolve()
-    )
+    home = discover_hermes_home(args, prompts)
     python = args.hermes_python or find_hermes_python(home)
     info = None
     if (
@@ -576,19 +684,14 @@ def _setup(args, prompts, stack):
             raise ValueError(
                 "A different password exists; use talaria --set-password to change it."
             )
-        if not 12 <= len(password) <= 1024:
-            raise ValueError("Sign-in password must contain 12 to 1024 characters.")
+        if not 4 <= len(password) <= 1024:
+            raise ValueError("Sign-in password must contain 4 to 1024 characters.")
         if not settings.password_hash:
             settings.password_hash = hash_password(password)
     elif not settings.password_hash and prompts.yes(
         "Choose your own WebUI password instead of generating one?", False
     ):
-        password = getpass.getpass("WebUI password (12+ characters): ", stream=prompts.terminal)
-        if not 12 <= len(password) <= 1024 or password != getpass.getpass(
-            "Confirm: ", stream=prompts.terminal
-        ):
-            raise ValueError("Passwords must match and contain 12 to 1024 characters.")
-        settings.password_hash = hash_password(password)
+        settings.password_hash = hash_password(prompts.password())
     write_json(pending_setup, {"service": kind, "config": str(config)})
     pending = configure_hermes(args, prompts, settings, home, python, info)
     settings_changed = settings != load(config)
@@ -696,10 +799,11 @@ def main(argv):
                     ) from exc
             setup(args, Prompts(terminal))
     except (ValueError, OSError, DeploymentError) as exc:
+        error = Prompts(sys.stderr).highlight(f"Talaria setup: {exc}", "1;31")
         command.exit(
             1,
-            f"Talaria setup: {exc}\n"
+            error + "\n"
             "Re-run with the same options to retry; saved credentials are preserved.\n",
         )
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, EOFError):
         command.exit(130, "Talaria setup interrupted. Re-run with the same options to resume.\n")

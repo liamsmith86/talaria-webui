@@ -1,9 +1,11 @@
 """Installer failure paths use only temporary homes and fake service managers."""
 
+import io
 import json
 import os
 import plistlib
 import pty
+import re
 import select
 import shutil
 import socket
@@ -21,7 +23,8 @@ from talaria.setup_services import preflight, service_plan, unit_quote
 
 
 @pytest.mark.parametrize("piped_stdin", [False, True])
-def test_interactive_setup_uses_controlling_terminal(piped_stdin):
+@pytest.mark.parametrize("color", [False, True])
+def test_interactive_setup_uses_controlling_terminal(piped_stdin, color):
     """Exercise real prompts and password echo with shell and curl-style stdin."""
     script = """
 import fcntl
@@ -39,6 +42,11 @@ wizard.setup = check
 wizard.main([])
 """
     terminal, slave = pty.openpty()
+    env = {**os.environ, "TERM": "xterm"}
+    if color:
+        env.pop("NO_COLOR", None)
+    else:
+        env["NO_COLOR"] = "1"
     try:
         child = subprocess.Popen(
             [sys.executable, "-c", script, str(Path(wizard.__file__).resolve().parents[1])],
@@ -46,6 +54,7 @@ wizard.main([])
             stdout=slave,
             stderr=slave,
             start_new_session=True,
+            env=env,
         )
     finally:
         os.close(slave)
@@ -59,7 +68,7 @@ wizard.main([])
             (b'Continue? (yes/no) [yes]: ', b'\n'),
             (b'Interactive setup passed', None),
         ]:
-            while prompt not in transcript:
+            while prompt not in re.sub(rb"\x1b\[[0-9;]*m", b"", transcript):
                 assert select.select([terminal], [], [], 10)[0], transcript.decode()
                 try:
                     chunk = os.read(terminal, 4096)
@@ -71,6 +80,7 @@ wizard.main([])
                 os.write(terminal, answer)
         assert child.wait(timeout=10) == 0
         assert b'test-private-password' not in transcript
+        assert (b'\x1b[' in transcript) == color
     finally:
         os.close(terminal)
         if child.poll() is None:
@@ -96,6 +106,91 @@ def options(tmp_path, monkeypatch):
         ]
     )
     return args
+
+
+def test_password_retries_and_accepts_four_characters(monkeypatch):
+    replies = iter(["abc", "abcd", "different", "1234", "1234"])
+    monkeypatch.setattr(wizard.getpass, "getpass", lambda *a, **kw: next(replies))
+    terminal = io.StringIO()
+    assert wizard.Prompts(terminal).password() == "1234"
+    assert "4 to 1024" in terminal.getvalue() and "do not match" in terminal.getvalue()
+    assert "\033[" not in terminal.getvalue()
+
+
+def test_discovery_limits_directory_checks_to_32_homes(options, monkeypatch, tmp_path, capsys):
+    from types import SimpleNamespace
+
+    options.skip_hermes = False
+    monkeypatch.delenv("HERMES_HOME", raising=False)
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    accounts = [
+        SimpleNamespace(pw_dir=str(tmp_path / f"user{i}"), pw_name=f"user{i:04}",
+                        pw_shell="/bin/bash")
+        for i in range(1000)
+    ]
+    monkeypatch.setattr(wizard.pwd, "getpwall", lambda: accounts)
+    checked = []
+    monkeypatch.setattr(Path, "is_dir", lambda path: checked.append(path) or False)
+    current = wizard.default_hermes_home(options)
+    assert wizard.discover_hermes_home(options, wizard.Prompts(None)) == current
+    assert checked[0] == current
+    assert len(checked[1:]) == wizard.MAX_DISCOVERY_HOMES == 32
+    assert "--hermes-home" in capsys.readouterr().out
+
+
+def test_discovery_selects_without_reading_other_users_configuration(
+    options, monkeypatch, tmp_path
+):
+    from types import SimpleNamespace
+
+    options.skip_hermes = False
+    monkeypatch.delenv("HERMES_HOME", raising=False)
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    accounts = []
+    for name in ("alice", "bob"):
+        directory = tmp_path / name
+        (directory / ".hermes").mkdir(parents=True)
+        accounts.append(SimpleNamespace(pw_dir=str(directory), pw_name=name, pw_shell="/bin/sh"))
+    monkeypatch.setattr(wizard.pwd, "getpwall", lambda: accounts)
+    monkeypatch.setattr(Path, "read_text", lambda *a, **kw: pytest.fail("Read during discovery"))
+    with pytest.raises(ValueError, match="select one with --hermes-home"):
+        wizard.discover_hermes_home(options, wizard.Prompts(None))
+    prompts = wizard.Prompts(io.StringIO())
+    monkeypatch.setattr(prompts, "ask", lambda *a: "2")
+    assert wizard.discover_hermes_home(options, prompts) == tmp_path / "bob/.hermes"
+    assert options.hermes_home == tmp_path / "bob/.hermes"
+    monkeypatch.setattr(wizard.pwd, "getpwall", lambda: pytest.fail("Ignored explicit selection"))
+    assert wizard.discover_hermes_home(options, prompts) == options.hermes_home
+    options.hermes_home = None
+    current = wizard.default_hermes_home(options)
+    current.mkdir(parents=True)
+    assert wizard.discover_hermes_home(options, prompts) == current
+
+
+@pytest.mark.parametrize("passwordless", [False, True])
+def test_sudo_discovery_elevates_before_reading_other_homes(options, monkeypatch, passwordless):
+    options.skip_hermes = False
+    monkeypatch.delenv("HERMES_HOME", raising=False)
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(wizard.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(wizard, "passwordless_sudo", lambda: passwordless)
+    calls = []
+    monkeypatch.setattr(wizard.subprocess, "call", lambda command: calls.append(command) or 0)
+    monkeypatch.setattr(wizard, "elevate_setup", lambda args, **kw: calls.append(kw) or 0)
+    prompts = wizard.Prompts(io.StringIO())
+    monkeypatch.setattr(prompts, "yes", lambda *a: True)
+    with pytest.raises(SystemExit) as stopped:
+        wizard.setup(options, prompts)
+    assert stopped.value.code == 0
+    assert calls == ([] if passwordless else [["sudo", "-v"]]) + [{"service": "none"}]
+    assert not options.directory.exists()
+
+
+def test_discovered_home_uses_that_users_hermes_python(tmp_path):
+    python = tmp_path / "alice/hermes-agent/venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.touch()
+    assert wizard.find_hermes_python(tmp_path / "alice/.hermes") == python
 
 
 def test_invalid_setup_does_not_write_configuration(options):
@@ -128,7 +223,7 @@ def test_interrupted_install_reuses_saved_password_on_retry(options, monkeypatch
 
 def test_chosen_password_file_can_be_reused_but_cannot_reset_login(options, monkeypatch):
     password = options.directory.parent / "password"
-    password.write_text("A chosen private password\n")
+    password.write_text("1234\n")
     password.chmod(0o600)
     options.password_file = password
     monkeypatch.setattr(wizard, "manage", lambda _: (_ for _ in ()).throw(DeploymentError("build")))

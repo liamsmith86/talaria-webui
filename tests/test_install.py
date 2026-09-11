@@ -2,6 +2,8 @@ import json
 import subprocess
 import sys
 
+import pytest
+
 from talaria.auth import hash_password, verify_password
 from talaria.config import Settings, load, save, validate_url
 
@@ -20,6 +22,22 @@ def test_password_verification():
     stored = hash_password("a long example password")
     assert verify_password("a long example password", stored)
     assert not verify_password("different password", stored)
+
+
+@pytest.mark.parametrize("password", ["123", "1234"])
+def test_set_password_uses_four_character_minimum(tmp_path, monkeypatch, password):
+    from talaria import cli
+
+    path = tmp_path / "config.json"
+    monkeypatch.setattr(sys, "argv", ["talaria", "--config", str(path), "--set-password"])
+    monkeypatch.setattr(cli.getpass, "getpass", lambda *a, **kw: password)
+    if len(password) < 4:
+        with pytest.raises(SystemExit) as stopped:
+            cli.main()
+        assert stopped.value.code == 2 and not path.exists()
+    else:
+        cli.main()
+        assert verify_password(password, load(path).password_hash)
 
 
 def test_cli_help_is_available_without_setup():
