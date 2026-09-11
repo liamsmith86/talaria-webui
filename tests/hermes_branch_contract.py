@@ -60,6 +60,24 @@ async def main():
         db.create_session("compressed-tip", "discord", parent_session_id="compressed-original")
         db.append_message("compressed-tip", "assistant", "New context")
         assert db.resolve_resume_session_id("compressed-original") == "compressed-tip"
+        # Default branch names belong to Hermes; no client-generated fixed suffix.
+        db.create_session("named-original", "api_server")
+        db.set_session_title("named-original", "Named original")
+        for number in (2, 3):
+            response = await client.post("/talaria/v1/sessions/named-original/fork",
+                                         headers=headers, json={})
+            assert response.status == 201, await response.text()
+            fork = (await response.json())["session"]
+            assert fork["title"] == f"Named original #{number}"
+            assert db.resolve_resume_session_id("named-original") == "named-original"
+        # A rejected custom title must not create an unnamed, unmarked child.
+        before = db._read_one("SELECT count(*) AS n FROM sessions")["n"]
+        for title in ("Named original #2", "x" * 1000):
+            response = await client.post("/talaria/v1/sessions/named-original/fork",
+                                         headers=headers, json={"title": title})
+            assert response.status == 400, await response.text()
+            assert db._read_one("SELECT count(*) AS n FROM sessions")["n"] == before
+            assert db.resolve_resume_session_id("named-original") == "named-original"
     await adapter.disconnect()
     db.close()
 
