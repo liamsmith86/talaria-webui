@@ -86,12 +86,14 @@ def playwright_runtime():
             if re.match(r"\s*\(*\s*async\b", expression):
                 raise ValueError("Use a synchronous polling predicate or wait_for_store().")
             return original(self, expression, **kwargs)
+
         return wait
 
     with ExitStack() as stack, sync_playwright() as runtime:
         for cls in (Page, Frame):
-            stack.enter_context(patch.object(cls, "wait_for_function",
-                                            checked_wait(cls.wait_for_function)))
+            stack.enter_context(
+                patch.object(cls, "wait_for_function", checked_wait(cls.wait_for_function))
+            )
         yield runtime
 
 

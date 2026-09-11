@@ -84,9 +84,9 @@ def test_failed_push_check_propagates_the_failure(repo, monkeypatch):
 
     (repo / "app.py").write_text("answer = 42\n")
     revision = commit()
-    monkeypatch.setattr(sys, "stdin", io.StringIO(
-        f"refs/heads/main {revision} remote {'0' * 40}\n"
-    ))
+    monkeypatch.setattr(
+        sys, "stdin", io.StringIO(f"refs/heads/main {revision} remote {'0' * 40}\n")
+    )
 
     def fail(*args, **kwargs):
         raise subprocess.CalledProcessError(1, args)
@@ -105,24 +105,36 @@ def test_docs_only_ref_cannot_skip_a_code_update_to_another_ref(repo, monkeypatc
     code = commit()
     (repo / "README.md").write_text("Documentation\n")
     revision = commit()
-    monkeypatch.setattr(sys, "stdin", io.StringIO(
-        f"refs/heads/docs {revision} docs {code}\nrefs/heads/main {revision} main {old}\n"
-    ))
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.StringIO(
+            f"refs/heads/docs {revision} docs {code}\nrefs/heads/main {revision} main {old}\n"
+        ),
+    )
     calls = []
     monkeypatch.setattr(check, "run", lambda *args, **kwargs: calls.append(args))
     check.pre_push()
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("paths,backend,browsers,native", [
-    (["src/talaria/setup.py", "README.md"], check.INSTALL_TESTS, False, ["tests/test_setup.py"]),
-    (["contrib/check.py"], ["tests/test_local_checks.py"], False, []),
-    (["src/talaria/static/markdown.js"], None, True, []),
-    (["src/talaria/routes.py"], [], True, []),
-    (["uv.lock"], [], True, ["tests"]),
-    (["unknown-new-component.py"], [], True, []),
-    (["README.md"], None, False, []),
-])
+@pytest.mark.parametrize(
+    "paths,backend,browsers,native",
+    [
+        (
+            ["src/talaria/setup.py", "README.md"],
+            check.INSTALL_TESTS,
+            False,
+            ["tests/test_setup.py"],
+        ),
+        (["contrib/check.py"], ["tests/test_local_checks.py"], False, []),
+        (["src/talaria/static/markdown.js"], None, True, []),
+        (["src/talaria/routes.py"], [], True, []),
+        (["uv.lock"], [], True, ["tests"]),
+        (["unknown-new-component.py"], [], True, []),
+        (["README.md"], None, False, []),
+    ],
+)
 def test_check_selection_is_focused_with_a_conservative_fallback(paths, backend, browsers, native):
     scope = check.plan(paths)
     assert (scope["backend"], scope["browsers"], scope["native"]) == (backend, browsers, native)

@@ -380,17 +380,35 @@ class Deployment:
                 )
                 run([uv, "venv", "--python", sys._base_executable, release / "venv"])
                 python = release / "venv/bin/python"
-                run([
-                    uv, "pip", "sync", "--python", python, "--require-hashes",
-                    "--link-mode", "copy", requirements,
-                ])
+                run(
+                    [
+                        uv,
+                        "pip",
+                        "sync",
+                        "--python",
+                        python,
+                        "--require-hashes",
+                        "--link-mode",
+                        "copy",
+                        requirements,
+                    ]
+                )
                 wheels = list((release / "artifacts").glob("talaria_webui-*.whl"))
                 if len(wheels) != 1:
                     raise DeploymentError("Expected exactly one Talaria wheel.")
-                run([
-                    uv, "pip", "install", "--python", python, "--no-deps",
-                    "--link-mode", "copy", wheels[0],
-                ])
+                run(
+                    [
+                        uv,
+                        "pip",
+                        "install",
+                        "--python",
+                        python,
+                        "--no-deps",
+                        "--link-mode",
+                        "copy",
+                        wheels[0],
+                    ]
+                )
                 readable_runtime(release / "venv")
                 self.report("Checking startup, configuration, and packaged assets…")
                 self.probe(release)
@@ -498,7 +516,7 @@ class Deployment:
             directory / "talaria",
             (
                 '#!/bin/sh\ncase "${1-}" in\n'
-                '  install|update|rollback|status|uninstall) '
+                "  install|update|rollback|status|uninstall) "
                 f'exec {root}/manager/venv/bin/talaria "$@" ;;\n'
                 '  ""|-*) ;;\n'
                 f'  *) exec {root}/current/venv/bin/talaria "$@" ;;\n'

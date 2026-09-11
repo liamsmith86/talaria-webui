@@ -64,8 +64,10 @@ def test_return_to_discord_original_after_branching(page, live_app):
     wait_for_store(page, "state => state.active !== 'discord-original' && !state.loading")
     branch = next(s for s in peer.sessions.values() if s.get("parent_session_id") == sid)
     assert branch["source"] == "api_server"
-    peer.messages[branch["id"]] = [*peer.messages[branch["id"]],
-                                   {"id": 90, "role": "assistant", "content": "Only in the copy"}]
+    peer.messages[branch["id"]] = [
+        *peer.messages[branch["id"]],
+        {"id": 90, "role": "assistant", "content": "Only in the copy"},
+    ]
     original.click()
     wait_for_store(page, "state => state.active === 'discord-original' && !state.loading")
     expect(original).to_have_attribute("aria-current", "page")
@@ -76,7 +78,8 @@ def test_return_to_discord_original_after_branching(page, live_app):
 
 
 def test_image_submission_keeps_its_original_boundary_during_navigation(page):
-    result = page.evaluate("""async image => {
+    result = page.evaluate(
+        """async image => {
       const {state,update,newConversation}=await import('/static/store.js');
       const {sendMessage}=await import('/static/runs.js');
       update({active:'origin',loading:false,history:[
@@ -100,7 +103,9 @@ def test_image_submission_keeps_its_original_boundary_during_navigation(page):
         return {active:state.active,user:live.baseUserId,message:live.baseMessageId,
           length:live.baseHistoryLength};
       } finally {window.fetch=original}
-    }""", IMAGE)
+    }""",
+        IMAGE,
+    )
     assert result == {"active": "elsewhere", "user": 10, "message": 11, "length": 2}
 
 

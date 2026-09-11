@@ -236,7 +236,11 @@ def test_managed_launcher_never_injects_production_config_into_dev(deployment):
 @pytest.mark.skipif(not shutil.which("uv") or not shutil.which("git"), reason="Needs Git and uv")
 @pytest.mark.parametrize("sudo", [False, True])
 def test_real_git_wheel_install_update_failure_and_rollback(
-    deployment, tmp_path, monkeypatch, sudo, private_umask,
+    deployment,
+    tmp_path,
+    monkeypatch,
+    sudo,
+    private_umask,
 ):
     """Exercise the actual build/install/probe pipeline without touching a host service."""
     # A fresh install puts uv here but does not edit the user's shell startup files.
@@ -255,9 +259,11 @@ def test_real_git_wheel_install_update_failure_and_rollback(
         )
     which = shutil.which
     monkeypatch.setattr(
-        shutil, "which",
-        lambda command, **kwargs: None if command == "uv" and not kwargs
-        else which(command, **kwargs),
+        shutil,
+        "which",
+        lambda command, **kwargs: (
+            None if command == "uv" and not kwargs else which(command, **kwargs)
+        ),
     )
     project = Path(__file__).resolve().parents[1]
     remote = Path(deployment.config["repository"])

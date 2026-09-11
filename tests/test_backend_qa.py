@@ -42,7 +42,8 @@ async def test_fork_only_falls_back_when_the_plugin_endpoint_is_missing(backend,
     peer.sessions["original"] = {"id": "original", "source": "discord"}
     peer.messages["original"] = [{"id": 1, "role": "user", "content": "Original"}]
     peer.discovery_overrides["/talaria/v1/sessions/original/fork"] = (
-        {"error": "Unavailable"}, status,
+        {"error": "Unavailable"},
+        status,
     )
     response = await client.post("/api/sessions/original/fork", json={"title": "Copy"})
     native_calls = [c for c in peer.calls if c[0:2] == ("POST", "/api/sessions/original/fork")]

@@ -67,7 +67,9 @@ class Prompts:
         while True:
             print(
                 f"{self.highlight(label)} {self.highlight(f'[{default}]', '1;33')}: ",
-                end="", file=self.terminal, flush=True,
+                end="",
+                file=self.terminal,
+                flush=True,
             )
             answer = self.terminal.readline()
             if not answer:
@@ -397,8 +399,12 @@ def default_hermes_home(args):
 def discover_hermes_home(args, prompts):
     home = default_hermes_home(args)
     if (
-        args.skip_hermes or args.hermes_url or args.hermes_home
-        or "HERMES_HOME" in os.environ or home.is_dir() or os.geteuid() != 0
+        args.skip_hermes
+        or args.hermes_url
+        or args.hermes_home
+        or "HERMES_HOME" in os.environ
+        or home.is_dir()
+        or os.geteuid() != 0
     ):
         return home
     # One directory lookup per distinct account home; never traverse its contents.
@@ -577,13 +583,19 @@ def _setup(args, prompts, stack):
         if args.service is None:
             args.service = resume.get("service")
     if (
-        os.geteuid() != 0 and not args.skip_hermes and not args.hermes_url
-        and not args.hermes_home and "HERMES_HOME" not in os.environ
-        and not default_hermes_home(args).is_dir() and shutil.which("sudo")
+        os.geteuid() != 0
+        and not args.skip_hermes
+        and not args.hermes_url
+        and not args.hermes_home
+        and "HERMES_HOME" not in os.environ
+        and not default_hermes_home(args).is_dir()
+        and shutil.which("sudo")
     ):
         admin = passwordless_sudo()
-        if not admin and prompts.terminal is not None and prompts.yes(
-            "Check other users for Hermes using sudo?", True
+        if (
+            not admin
+            and prompts.terminal is not None
+            and prompts.yes("Check other users for Hermes using sudo?", True)
         ):
             admin = subprocess.call(["sudo", "-v"]) == 0
         if admin:
@@ -740,9 +752,9 @@ def _setup(args, prompts, stack):
                 "scope": plan["scope"],
                 "service_file": str(plan["path"]),
                 "service_sha256": hashlib.sha256(plan["text"].encode()).hexdigest(),
-                "account_created": bool(created or deployment.config.get("setup", {}).get(
-                    "account_created"
-                )),
+                "account_created": bool(
+                    created or deployment.config.get("setup", {}).get("account_created")
+                ),
             }
             write_json(root / "deployment.json", deployment.config)
             try:
@@ -820,8 +832,7 @@ def main(argv):
         error = Prompts(sys.stderr).highlight(f"Talaria setup: {exc}", "1;31")
         command.exit(
             1,
-            error + "\n"
-            "Re-run with the same options to retry; saved credentials are preserved.\n",
+            error + "\nRe-run with the same options to retry; saved credentials are preserved.\n",
         )
     except (KeyboardInterrupt, EOFError):
         command.exit(130, "Talaria setup interrupted. Re-run with the same options to resume.\n")

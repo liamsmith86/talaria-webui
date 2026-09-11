@@ -24,16 +24,28 @@ FOCUSED = STREAMING + [
     "tests/test_message_submission.py",
 ]
 INSTALL_TESTS = [
-    "tests/test_setup.py", "tests/test_install.py", "tests/test_deployment.py",
+    "tests/test_setup.py",
+    "tests/test_install.py",
+    "tests/test_deployment.py",
     "tests/test_uninstall.py",
-    "tests/test_operations_qa.py", "tests/test_environments.py", "tests/test_proxy_paths.py",
+    "tests/test_operations_qa.py",
+    "tests/test_environments.py",
+    "tests/test_proxy_paths.py",
 ]
 INSTALL_FILES = {
-    "install.sh", "src/talaria/cli.py", "src/talaria/credentials.py",
-    "src/talaria/deployment.py", "src/talaria/plugin_install.py",
-    "src/talaria/uninstall.py", "tests/test_uninstall.py",
-    "src/talaria/setup.py", "src/talaria/setup_services.py", "src/talaria/setup_hermes.py",
-    "tests/test_setup.py", "tests/test_install.py", "tests/test_deployment.py",
+    "install.sh",
+    "src/talaria/cli.py",
+    "src/talaria/credentials.py",
+    "src/talaria/deployment.py",
+    "src/talaria/plugin_install.py",
+    "src/talaria/uninstall.py",
+    "tests/test_uninstall.py",
+    "src/talaria/setup.py",
+    "src/talaria/setup_services.py",
+    "src/talaria/setup_hermes.py",
+    "tests/test_setup.py",
+    "tests/test_install.py",
+    "tests/test_deployment.py",
     "tests/test_operations_qa.py",
 }
 CHECK_FILES = {"contrib/check.py", "tests/test_local_checks.py"}
@@ -49,10 +61,17 @@ def plan(paths=None):
     installer = all(path in INSTALL_FILES or path in CHECK_FILES for path in paths)
     frontend = all(path.startswith("src/talaria/static/") for path in paths)
     native = any(
-        "hermes" in path or "contract" in path
-        or path in {
-            "src/talaria/setup.py", "src/talaria/plugin_install.py", "tests/test_setup.py",
-            "pyproject.toml", "uv.lock", "tests/conftest.py", "tests/test_extended_access.py",
+        "hermes" in path
+        or "contract" in path
+        or path
+        in {
+            "src/talaria/setup.py",
+            "src/talaria/plugin_install.py",
+            "tests/test_setup.py",
+            "pyproject.toml",
+            "uv.lock",
+            "tests/conftest.py",
+            "tests/test_extended_access.py",
         }
         for path in paths
     )
@@ -110,16 +129,29 @@ def environment():
 
 def lint(paths=None):
     run("ruff", "check", ".", ".github/scripts")
-    scripts = Path("src/talaria/static").glob("*.js") if paths is None else (
-        Path(path) for path in paths if path.endswith(".js") and Path(path).is_file()
+    scripts = (
+        Path("src/talaria/static").glob("*.js")
+        if paths is None
+        else (Path(path) for path in paths if path.endswith(".js") and Path(path).is_file())
     )
     for path in scripts:
         run("node", "--check", str(path))
 
 
 def pytest(*args, env=None):
-    run(sys.executable, "-m", "pytest", "-q", "-n", str(workers()),
-        "--dist", "worksteal", "--fail-on-skip", *args, env=env)
+    run(
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        "-n",
+        str(workers()),
+        "--dist",
+        "worksteal",
+        "--fail-on-skip",
+        *args,
+        env=env,
+    )
 
 
 def check(full=False, native=False, paths=None):
@@ -137,7 +169,7 @@ def check(full=False, native=False, paths=None):
     lint(paths=None if full else paths)
     if scope["backend"] is not None:
         pytest(*scope["backend"], "-m", "not browser and not hermes", env=env)
-    browsers = (("chromium", "firefox", "webkit") if full else ("chromium", "webkit"))
+    browsers = ("chromium", "firefox", "webkit") if full else ("chromium", "webkit")
     for browser in browsers if scope["browsers"] else ():
         print(f"Browser checks: {browser}", flush=True)
         browser_env = {**env, "TALARIA_TEST_BROWSER": browser}
@@ -145,8 +177,12 @@ def check(full=False, native=False, paths=None):
             pytest("-m", "browser", env=browser_env)
         else:
             files = FOCUSED + scope["extra_browser"] if browser == "chromium" else STREAMING
-            pytest(*(file for file in dict.fromkeys(files) if Path(file).is_file()),
-                   "-m", "browser", env=browser_env)
+            pytest(
+                *(file for file in dict.fromkeys(files) if Path(file).is_file()),
+                "-m",
+                "browser",
+                env=browser_env,
+            )
     if scope["native"]:
         pytest(*scope["native"], "-m", "hermes", env=env)
 
@@ -171,8 +207,9 @@ def docs_only(paths):
 
 
 def changed_paths(base, revision=None):
-    paths = git("diff", "--name-only", "--no-renames", "-z", base,
-                *([revision] if revision else [])).split("\0")
+    paths = git(
+        "diff", "--name-only", "--no-renames", "-z", base, *([revision] if revision else [])
+    ).split("\0")
     if revision is None:
         paths += git("ls-files", "--others", "--exclude-standard", "-z").split("\0")
     return sorted(set(filter(None, paths)))
@@ -183,7 +220,8 @@ def check_environment():
     if not env.get("HERMES_SOURCE"):
         source = subprocess.run(
             ["git", "config", "--get", "talaria.hermesSource"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
         if source:
             env["HERMES_SOURCE"] = source
@@ -201,16 +239,28 @@ def verify_revision(commit, paths, *, fresh=False, native=False):
     key = None
     records = {}
     if not scope["native"]:
-        identity = [git("rev-parse", f"{commit}^{{tree}}"), scope, sys.version,
-                    sys.executable, platform.platform(), workers(),
-                    subprocess.check_output(["node", "--version"]).decode().strip(),
-                    subprocess.check_output(["uv", "--version"]).decode().strip(),
-                    {k: v for k, v in env.items()
-                     if k.startswith(("PYTEST_", "TALARIA_", "PLAYWRIGHT_", "NODE_", "UV_"))}]
+        identity = [
+            git("rev-parse", f"{commit}^{{tree}}"),
+            scope,
+            sys.version,
+            sys.executable,
+            platform.platform(),
+            workers(),
+            subprocess.check_output(["node", "--version"]).decode().strip(),
+            subprocess.check_output(["uv", "--version"]).decode().strip(),
+            {
+                k: v
+                for k, v in env.items()
+                if k.startswith(("PYTEST_", "TALARIA_", "PLAYWRIGHT_", "NODE_", "UV_"))
+            },
+        ]
         key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         try:
-            records = {k: v for k, v in json.loads(cache.read_text()).items()
-                       if isinstance(v, (int, float)) and 0 <= time.time() - v < 3600}
+            records = {
+                k: v
+                for k, v in json.loads(cache.read_text()).items()
+                if isinstance(v, (int, float)) and 0 <= time.time() - v < 3600
+            }
         except (OSError, ValueError, AttributeError):
             pass
         if not fresh and key in records:
@@ -222,9 +272,18 @@ def verify_revision(commit, paths, *, fresh=False, native=False):
     with tempfile.TemporaryDirectory(prefix="talaria-push-") as directory:
         root = Path(directory)
         export(commit, root)
-        run("uv", "run", "--locked", "python", str(root / "contrib/check.py"),
-            "check", *(["--native"] if native else []),
-            *(["--paths", *paths] if paths else []), cwd=root, env=env)
+        run(
+            "uv",
+            "run",
+            "--locked",
+            "python",
+            str(root / "contrib/check.py"),
+            "check",
+            *(["--native"] if native else []),
+            *(["--paths", *paths] if paths else []),
+            cwd=root,
+            env=env,
+        )
     if key:
         records[key] = time.time()
         records = dict(sorted(records.items(), key=lambda item: item[1])[-32:])

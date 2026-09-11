@@ -98,9 +98,7 @@ def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
     page.get_by_role("button", name="Close dialog").click()
     page.get_by_role("button", name="Session options", exact=True).click()
     audit("conversation-menu")
-    page.get_by_role("dialog").get_by_role(
-        "button", name="Session details", exact=True
-    ).click()
+    page.get_by_role("dialog").get_by_role("button", name="Session details", exact=True).click()
     expect(page.locator(".details-refresh")).to_have_count(0)
     audit("conversation-usage")
     page.get_by_role("button", name="Close dialog").click()

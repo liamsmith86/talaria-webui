@@ -77,9 +77,12 @@ def test_reduced_motion_bypasses_pacing_and_cancels_fades(reveal):
     reveal.wait_for_function("() => matchMedia('(prefers-reduced-motion: reduce)').matches")
     reveal.evaluate("revealTest.render('Hello '+ 'A calm reply. '.repeat(100))")
     reveal.wait_for_function("() => revealTest.text() === 'Hello '+ 'A calm reply. '.repeat(100)")
-    assert reveal.evaluate(
-        "document.getElementById('reveal-test').getAnimations({subtree:true}).length"
-    ) == 0
+    assert (
+        reveal.evaluate(
+            "document.getElementById('reveal-test').getAnimations({subtree:true}).length"
+        )
+        == 0
+    )
 
 
 def test_replacements_and_unmount_discard_pending_reveal_work(reveal):
@@ -143,9 +146,12 @@ def test_mobile_scroll_follows_revealed_text_until_reader_scrolls_up(page):
       const text=state.lives.paced.text+'More detail. '.repeat(100);
       update({lives:{paced:{...state.lives.paced,text}}});
     }""")
-    wait_for_store(page, """state =>
+    wait_for_store(
+        page,
+        """state =>
       document.querySelector('.message.assistant p').textContent===state.lives.paced.text
-    """)
+    """,
+    )
     page.wait_for_function("""() => {
       const el=document.querySelector('.conversation-viewport');
       return el.scrollHeight-el.scrollTop-el.clientHeight<5;
@@ -159,9 +165,12 @@ def test_mobile_scroll_follows_revealed_text_until_reader_scrolls_up(page):
       const text=state.lives.paced.text+'Still arriving. '.repeat(60);
       update({lives:{paced:{...state.lives.paced,text}}});
     }""")
-    wait_for_store(page, """state =>
+    wait_for_store(
+        page,
+        """state =>
       document.querySelector('.message.assistant p').textContent===state.lives.paced.text
-    """)
+    """,
+    )
     assert page.locator(".conversation-viewport").evaluate("el => el.scrollTop") < 5
 
 

@@ -63,24 +63,24 @@ wizard.main([])
     transcript = b""
     try:
         for prompt, answer in [
-            (b'Service [auto]: ', b'none\n'),
-            (b'Password: ', b'test-private-password\n'),
-            (b'Continue? (yes/no) [yes]: ', b'\n'),
-            (b'Interactive setup passed', None),
+            (b"Service [auto]: ", b"none\n"),
+            (b"Password: ", b"test-private-password\n"),
+            (b"Continue? (yes/no) [yes]: ", b"\n"),
+            (b"Interactive setup passed", None),
         ]:
             while prompt not in re.sub(rb"\x1b\[[0-9;]*m", b"", transcript):
                 assert select.select([terminal], [], [], 10)[0], transcript.decode()
                 try:
                     chunk = os.read(terminal, 4096)
                 except OSError:
-                    pytest.fail(f'Terminal closed before prompt: {transcript.decode()}')
+                    pytest.fail(f"Terminal closed before prompt: {transcript.decode()}")
                 assert chunk, transcript.decode()
                 transcript += chunk
             if answer is not None:
                 os.write(terminal, answer)
         assert child.wait(timeout=10) == 0
-        assert b'test-private-password' not in transcript
-        assert (b'\x1b[' in transcript) == color
+        assert b"test-private-password" not in transcript
+        assert (b"\x1b[" in transcript) == color
     finally:
         os.close(terminal)
         if child.poll() is None:
@@ -124,8 +124,9 @@ def test_discovery_limits_directory_checks_to_32_homes(options, monkeypatch, tmp
     monkeypatch.delenv("HERMES_HOME", raising=False)
     monkeypatch.setattr(os, "geteuid", lambda: 0)
     accounts = [
-        SimpleNamespace(pw_dir=str(tmp_path / f"user{i}"), pw_name=f"user{i:04}",
-                        pw_shell="/bin/bash")
+        SimpleNamespace(
+            pw_dir=str(tmp_path / f"user{i}"), pw_name=f"user{i:04}", pw_shell="/bin/bash"
+        )
         for i in range(1000)
     ]
     monkeypatch.setattr(wizard.pwd, "getpwall", lambda: accounts)
@@ -439,9 +440,16 @@ bitwarden.fetch_bitwarden_secrets = lambda **kwargs: (
 runpy.run_path(sys.argv[1], run_name='__main__')
 """
     result = subprocess.run(
-        [str(source / "venv/bin/python"), "-c", script,
-         str(Path(wizard.__file__).with_name("setup_hermes.py"))],
-        input=json.dumps(setup_request), text=True, capture_output=True, check=True,
+        [
+            str(source / "venv/bin/python"),
+            "-c",
+            script,
+            str(Path(wizard.__file__).with_name("setup_hermes.py")),
+        ],
+        input=json.dumps(setup_request),
+        text=True,
+        capture_output=True,
+        check=True,
         cwd=tmp_path,
         env={"PATH": os.environ["PATH"], "HOME": str(tmp_path), "HERMES_HOME": str(tmp_path)},
         timeout=45,
@@ -503,7 +511,7 @@ def test_sudo_elevation_preserves_explicit_paths_and_hermes_identity(options, mo
     assert wizard.elevate_setup(options) == 0
     command = calls[0]
     assert command[:5] == ["sudo", "-n", "-H", "--", "env"]
-    assert "PYTHONDONTWRITEBYTECODE=1" in command[5:command.index(sys.executable)]
+    assert "PYTHONDONTWRITEBYTECODE=1" in command[5 : command.index(sys.executable)]
     assert command[command.index("--service") + 1] == "systemd"
     assert command[command.index("--hermes-home") + 1] == str(options.hermes_home)
     assert command[command.index("--hermes-python") + 1] == str(options.hermes_python)
@@ -560,9 +568,7 @@ def test_root_shell_keeps_its_existing_git_credentials(tmp_path, monkeypatch):
     original = subprocess.Popen
     with request.open() as input_file:
         monkeypatch.setattr(
-            subprocess, "Popen", lambda *args, **kwargs: original(
-                *args, stdin=input_file, **kwargs
-            )
+            subprocess, "Popen", lambda *args, **kwargs: original(*args, stdin=input_file, **kwargs)
         )
         result = deployment.run(["git", "credential", "fill"], cwd=tmp_path)
     assert "username=test-owner" in result and "password=test-token" in result

@@ -90,9 +90,7 @@ class Assets(StaticFiles):
 async def index(request):
     # The document is tiny; cache the template per application, not per request.
     base = html.escape(request.app.state.settings.base_path + "/", quote=True)
-    return HTMLResponse(
-        request.app.state.index_html.replace("__TALARIA_BASE__", base)
-    )
+    return HTMLResponse(request.app.state.index_html.replace("__TALARIA_BASE__", base))
 
 
 async def health(request):

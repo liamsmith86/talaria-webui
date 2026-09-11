@@ -29,7 +29,10 @@ def installed(tmp_path):
     for name in ("initial-password.txt", "profiles.json", "service.log"):
         (config.parent / name).write_text("private")
     metadata = {
-        "schema": 1, "config": str(config), "scope": "user", "service": None,
+        "schema": 1,
+        "config": str(config),
+        "scope": "user",
+        "service": None,
         "health_url": "http://127.0.0.1:1",
     }
     write_json(root / "deployment.json", metadata)
@@ -92,7 +95,9 @@ def test_changed_launch_agent_is_preserved_then_owned_agent_is_removed(installed
     plan = service_plan("launchd", root, config)
     plan["path"].parent.mkdir(parents=True)
     metadata["setup"] = {
-        "kind": "launchd", "scope": "user", "service_file": str(plan["path"]),
+        "kind": "launchd",
+        "scope": "user",
+        "service_file": str(plan["path"]),
         "service_sha256": hashlib.sha256(plan["text"].encode()).hexdigest(),
     }
     write_json(root / "deployment.json", metadata)

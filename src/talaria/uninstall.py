@@ -28,8 +28,9 @@ def service_to_remove(root, metadata, config):
     if kind not in {"systemd", "launchd"}:
         raise DeploymentError("Unknown service manager; installation preserved.")
     plan = service_plan(kind, root, config)
-    if owned and (owned.get("service_file") != str(plan["path"])
-                  or owned.get("scope") != plan["scope"]):
+    if owned and (
+        owned.get("service_file") != str(plan["path"]) or owned.get("scope") != plan["scope"]
+    ):
         raise DeploymentError("Service ownership does not match this account; preserved.")
     if metadata.get("service") not in {None, plan["service"]}:
         raise DeploymentError("Service name does not match setup; preserved.")
@@ -80,17 +81,27 @@ def uninstall(root, *, yes=False, prompts=None):
     config = Path(metadata["config"])
     if not config.is_absolute():
         raise DeploymentError("Invalid configuration path; installation preserved.")
-    files = [config, *(config.parent / name for name in (
-        "initial-password.txt", "profiles.json", "service.log",
-    ))]
+    files = [
+        config,
+        *(
+            config.parent / name
+            for name in (
+                "initial-password.txt",
+                "profiles.json",
+                "service.log",
+            )
+        ),
+    ]
     plan = service_to_remove(root, metadata, config)
     account = None
     if metadata.get("setup", {}).get("account_created"):
         with suppress(KeyError):
             account = pwd.getpwnam("talaria-webui")
-        if account and (account.pw_uid == 0 or Path(account.pw_dir) != config.parent or Path(
-            account.pw_shell
-        ).name not in {"nologin", "false"}):
+        if account and (
+            account.pw_uid == 0
+            or Path(account.pw_dir) != config.parent
+            or Path(account.pw_shell).name not in {"nologin", "false"}
+        ):
             raise DeploymentError("Service account has changed; installation preserved.")
     if not plan:
         running = False
@@ -137,8 +148,17 @@ def uninstall(root, *, yes=False, prompts=None):
                 run(["groupdel", "talaria-webui"])
         for name in ("releases", "repository.git"):
             shutil.rmtree(root / name)
-        for name in ("current", "previous", "manager", "deployment.json", "update.json",
-                     "activation.json", ".setup-pending.json", ".setup.lock", ".update.lock"):
+        for name in (
+            "current",
+            "previous",
+            "manager",
+            "deployment.json",
+            "update.json",
+            "activation.json",
+            ".setup-pending.json",
+            ".setup.lock",
+            ".update.lock",
+        ):
             (root / name).unlink(missing_ok=True)
         (root / "bin/talaria").unlink(missing_ok=True)
         with suppress(OSError):

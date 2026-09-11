@@ -35,10 +35,12 @@ def test_tool_only_messages_do_not_render_a_zero_reply(page, live_app):
             "role": "assistant",
             "content": "",
             "reasoning": "Check the configuration",
-            "tool_calls": [{
-                "id": "call-1",
-                "function": {"name": "terminal", "arguments": '{"command":"pwd"}'},
-            }],
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "function": {"name": "terminal", "arguments": '{"command":"pwd"}'},
+                }
+            ],
         },
         {"id": 2, "role": "tool", "tool_call_id": "call-1", "content": '{"output":""}'},
         {"id": 3, "role": "assistant", "content": "0"},
@@ -46,10 +48,13 @@ def test_tool_only_messages_do_not_render_a_zero_reply(page, live_app):
     page.evaluate("async sid => (await import('/static/store.js')).openSession(sid)", sid)
     expect(page.locator(".tool-card")).to_have_count(1)
     tool_message = page.locator(".message.assistant").first
-    assert tool_message.evaluate(
-        "el => [...el.childNodes].filter(n => n.nodeType === Node.TEXT_NODE)"
-        ".map(n => n.textContent.trim()).join('')"
-    ) == ""
+    assert (
+        tool_message.evaluate(
+            "el => [...el.childNodes].filter(n => n.nodeType === Node.TEXT_NODE)"
+            ".map(n => n.textContent.trim()).join('')"
+        )
+        == ""
+    )
     # An actual answer of zero is valid content and must remain visible.
     expect(page.locator(".message-text")).to_have_text("0")
 
@@ -116,10 +121,13 @@ def test_history_refresh_keeps_one_bubble_per_saved_user_message(page, live_app,
     expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_enabled()
     peer = live_app[1]
     assert len(peer.runs) == 1
-    page.evaluate("""async sid => {
+    page.evaluate(
+        """async sid => {
         const store = await import('/static/store.js');
         await store.refreshHistory(sid);
-    }""", sid)
+    }""",
+        sid,
+    )
     expect(page.get_by_text(text, exact=True)).to_have_count(2 if repeat_text else 1)
 
 

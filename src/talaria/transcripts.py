@@ -122,9 +122,7 @@ async def download(request):
                 page = await message_page(client, sid, offset, order="oldest")
                 canonical = page.get("session_id") or sid
                 if canonical != sid and offset:
-                    raise APIError(
-                        "The session changed during download. Please try again.", 409
-                    )
+                    raise APIError("The session changed during download. Please try again.", 409)
                 sid = identifier(canonical)
                 for message in page["data"]:
                     if format_ == "json":
