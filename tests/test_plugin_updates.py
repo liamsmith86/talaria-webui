@@ -24,6 +24,40 @@ def bundle(path, value):
     return path
 
 
+@pytest.mark.parametrize("provenance", ["pin", "git", "invalid"])
+def test_bundled_updates_preserve_native_ownership(tmp_path, provenance):
+    home = tmp_path / "hermes"
+    target = bundle(home / "plugins/talaria", "native")
+    source = bundle(tmp_path / "source", "bundled")
+    before = fingerprint(target)
+    if provenance == "git":
+        (target / ".git").mkdir()
+    else:
+        (home / "plugins/.install-metadata.json").write_text(
+            '{"talaria":{"pinned":true,"revision":"reviewed"}}' if provenance == "pin" else "["
+        )
+    with pytest.raises(DeploymentError):
+        plugin_install.install(home, source, lambda _: pytest.fail("Restarted native plugin"))
+    assert fingerprint(target) == before
+    assert not (home / "plugins/.talaria-maintenance/restart-required").exists()
+
+
+def test_managed_cli_syncs_plugin_even_when_app_is_current(tmp_path, monkeypatch):
+    from talaria import control, supervisor_cli
+
+    (tmp_path / control.SOCKET).touch()
+    write_json(tmp_path / "update.json", {"available": False, "latest_commit": A})
+    calls = []
+    monkeypatch.setattr(supervisor_cli, "dispatch", lambda *args: calls.append(args))
+    args = SimpleNamespace(command="update", check=False, expect=None)
+    assert supervisor_cli.manage(args, tmp_path)
+    assert calls == [(tmp_path, "check", None), (tmp_path, "update", A)]
+    calls.clear()
+    args.check = True
+    assert supervisor_cli.manage(args, tmp_path)
+    assert calls == [(tmp_path, "check", None)]
+
+
 def test_replacement_removes_retired_code_and_restarts_once(tmp_path):
     home = tmp_path / "hermes"
     source = bundle(tmp_path / "source", "old")

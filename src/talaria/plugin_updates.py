@@ -104,8 +104,10 @@ def sync(deployment, release):
 
 
 def register(root, home, command):
+    from .plugin_install import require_bundled_target
     from .setup_services import migrate_service
 
+    require_bundled_target(home)
     executable = str(command.expanduser().resolve()) if command else shutil.which("hermes")
     if not executable or not Path(executable).is_file():
         raise DeploymentError("Pass --hermes-command with the local Hermes executable.")

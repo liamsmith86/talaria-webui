@@ -139,6 +139,36 @@ def test_reopening_uses_cooldown_but_manual_check_is_immediate(page, update_ui):
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
 
 
+def test_connection_can_sync_linked_plugin_without_a_talaria_update(page, update_ui):
+    info, checks = update_ui
+    info["updates_local_plugin"] = True
+    info["update"].update(available=False, latest_commit=A)
+    sent = []
+
+    def update(route):
+        operation = {**route.request.post_data_json, "action": "update", "status": "completed"}
+        sent.append(operation)
+        info["operation"] = operation
+        route.fulfill(json=operation)
+
+    page.route("**/api/installation/update", update)
+    page.get_by_role("tab", name="Connection", exact=True).click()
+    button = page.get_by_role("button", name="Sync linked plugin", exact=True)
+    expect(button).to_be_enabled()
+    expect(page.get_by_role("tabpanel")).to_contain_text("Linked local Hermes restarts")
+    assert len(checks) == 1
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
+    page.evaluate("sessionStorage.setItem('plugin-reloads', '0')")
+    page.add_init_script(
+        "sessionStorage.setItem('plugin-reloads', "
+        "Number(sessionStorage.getItem('plugin-reloads')) + 1)"
+    )
+    button.click()
+    page.wait_for_function("() => sessionStorage.getItem('plugin-reloads') === '1'")
+    assert len(sent) == 1 and sent[0]["expect"] == A
+
+
 def test_automatic_check_resumes_after_ten_minutes(page, update_ui):
     _, calls = update_ui
     for minutes, count in [(9, 1), (10, 2)]:

@@ -8,11 +8,14 @@ from pathlib import Path
 
 
 def main():
+    from hermes_cli import __version__
     from hermes_cli.config import load_env, read_raw_config, save_env_value
     from hermes_cli.env_loader import load_hermes_dotenv
 
     home = Path(os.environ["HERMES_HOME"])
-    read_raw_config()  # Fail closed on malformed YAML before the gateway's fallback loader.
+    raw = read_raw_config()  # Fail closed before the gateway's fallback loader.
+    plugins = raw.get("plugins") if isinstance(raw, dict) else None
+    plugins = plugins if isinstance(plugins, dict) else {}
     load_hermes_dotenv(hermes_home=home)
     from gateway.config import Platform, load_gateway_config
 
@@ -50,6 +53,16 @@ def main():
                 "key": key,
                 "multiplex": config.multiplex_profiles,
                 "changed": changed,
+                "version": __version__,
+                "plugin_enabled": bool(
+                    request.get("plugin")
+                    or (
+                        isinstance(plugins.get("enabled"), list)
+                        and isinstance(plugins.get("disabled", []), list)
+                        and "talaria" in (plugins.get("enabled") or [])
+                        and "talaria" not in (plugins.get("disabled") or [])
+                    )
+                ),
             }
         )
     )

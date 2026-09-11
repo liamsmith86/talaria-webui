@@ -1,6 +1,7 @@
 """Install a bundled plugin on this host, with restart and recoverable replacement."""
 
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -9,6 +10,26 @@ from pathlib import Path
 
 from .deployment import DeploymentError, default_directory, locked
 from .hermes_plugin.release import fingerprint
+
+
+def require_bundled_target(home):
+    metadata = home / "plugins/.install-metadata.json"
+    try:
+        with metadata.open() as file:
+            data = json.loads(file.read(1024 * 1024))
+        if not isinstance(data, dict):
+            raise ValueError("Invalid plugin provenance")
+    except FileNotFoundError:
+        data = {}
+    except (OSError, ValueError) as exc:
+        raise DeploymentError(
+            "Cannot verify Hermes plugin ownership; nothing was changed."
+        ) from exc
+    if "talaria" in data or (home / "plugins/talaria/.git").exists():
+        raise DeploymentError(
+            "Hermes manages this plugin's source or pin. Update it through Hermes Desktop "
+            "or its native plugin installer; Talaria will not overwrite it."
+        )
 
 
 def restore(target, backup):
@@ -74,6 +95,7 @@ def install(home, source, restart=None):
             restore(target, backup)
         changed = not target.exists() or fingerprint(target) != fingerprint(source)
         if changed:
+            require_bundled_target(home)
             install_files(source, target, backup, pending)
         if restart and pending.exists():
             try:

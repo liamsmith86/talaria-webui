@@ -89,7 +89,30 @@ system installation). It previews removal of Talaria's service, installation,
 configuration, and passwords, then asks for confirmation. Add `--yes` for headless
 use. Hermes, its plugin/sessions, and shared Python/Git/uv installations are kept.
 
-**Plugin only**, on the Hermes host:
+### Hermes plugin
+
+Use **Install in Hermes Desktop** in Settings → Connection, or open this URL:
+
+```text
+hermes://plugin/install?repo=liamsmith86/talaria-webui/src/talaria/hermes_plugin&enable=1
+```
+
+GitHub strips clickable `hermes://` links. Desktop asks for confirmation; select
+the installation/profile used by Talaria. Private repositories require GitHub access.
+
+Alternatively, on the Hermes host:
+
+```sh
+hermes plugins install liamsmith86/talaria-webui/src/talaria/hermes_plugin --enable
+hermes gateway restart
+```
+
+To refresh this native installation, repeat with `--force` (or use the Desktop
+link with `&force=1`). Hermes currently cannot `plugins update` subdirectory
+installs. For a pinned installation, also supply the reviewed `--ref COMMIT`.
+Native installation retains Hermes's source checks and consent flow.
+
+**Bundled plugin**, from a Talaria checkout or installed Talaria package:
 
 ```sh
 uv run --locked --no-dev talaria hermes-plugin --home /path/to/hermes-profile
@@ -103,7 +126,7 @@ The plugin uses the same API key as Hermes; it does not require a separate key.
 
 ### Local plugin updates
 
-To link an already installed, enabled **local** plugin to a managed Talaria installation,
+To link an already installed, enabled **bundled local** plugin to a managed Talaria installation,
 run this once as the installation owner (root for a system installation):
 
 ```sh
@@ -115,6 +138,9 @@ managed service permissions if needed. Specify `--hermes-command /absolute/path/
 if the CLI is not on PATH. Browser updates and `talaria update` then install the
 matching plugin and restart/verify Hermes only when needed. Rollbacks restore the
 matching plugin too. The gateway may briefly disconnect while restarting.
+`Sync linked plugin` also works when Talaria itself is current. Connection shows
+the loaded plugin release; comparisons use Talaria's bundled version, not GitHub.
+Native-managed plugins and their pins are never overwritten by this updater.
 
 For a standalone local refresh after updating Talaria:
 
@@ -122,9 +148,17 @@ For a standalone local refresh after updating Talaria:
 talaria hermes-plugin --home /path/to/hermes-profile --restart
 ```
 
+Rerunning `install.sh --plugin --hermes-home /path/to/hermes-profile` also refreshes
+an unlinked bundled plugin; add `--restart-hermes` to restart and verify it.
+
 There is no SSH execution or remote plugin updater. On a separate Hermes host,
 export the updated plugin there and manage its restart locally. For multiplexed
 gateways, link the primary profile; additional profile plugin copies remain manual.
+
+Hermes exposes its version through `/health` and authenticated `/health/detailed`;
+Talaria displays it in **Your agent**, and local setup reports it. Compatibility is
+checked by capabilities, not a hardcoded version cutoff. The plugin uses some
+internal Hermes interfaces, so future breaking changes can still require an update.
 
 ### Docker
 

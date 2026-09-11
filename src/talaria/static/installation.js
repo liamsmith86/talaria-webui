@@ -33,7 +33,7 @@ function delay(signal) {
   });
 }
 
-export function Installation() {
+export function Installation({ pluginOnly = false }) {
   const [info, setInfo] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
@@ -133,7 +133,7 @@ export function Installation() {
       try {
         const data = await fetchInfo(signal);
         if (["running", "finishing"].includes(data.operation?.status)) await follow(data.operation, signal);
-        else if (data.can_update &&
+        else if (data.can_update && (!pluginOnly || data.updates_local_plugin) &&
           !recentlyChecked(lastCheckAttempt) &&
           !recentlyChecked(Date.parse(data.update?.checked_at)))
           await submit("check", data, signal);
@@ -148,30 +148,31 @@ export function Installation() {
     return () => controller.abort();
     // These functions use only arguments, stable setters, and the lifetime's signal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [pluginOnly]);
 
   const development = info?.environment === "development";
   const available = info?.update?.available;
   const problem = error || info?.update?.error;
-  return html`<div class="section-heading">
+  if (pluginOnly && !info?.updates_local_plugin) return null;
+  return html`${!pluginOnly && html`<div class="section-heading">
       <h3>Talaria ${info && html`<span class="installation-version" aria-label=${`Version ${info.version}`}>${info.version}</span>`}</h3>
       ${development && html`<span class="environment-badge">Development</span>`}
     </div>
     ${info && html`<dl class="installation-details">
       <div><dt>Build</dt><dd>${development ? "Working checkout" : info.commit?.slice(0, 10) || "Installed package"}</dd></div>
       ${info.managed && html`<div><dt>Branch</dt><dd>${info.branch}</dd></div>`}
-    </dl>`}
+    </dl>`}`}
     ${!development && html`<section class="installation-update" aria-label="Updates">
-      <p class="installation-status" role="status">${busy ? phase : problem ? "Update unavailable" : available
+      <p class="installation-status" role="status">${pluginOnly && !busy ? "Talaria: " : ""}${busy ? phase : problem ? "Update unavailable" : available
         ? "Update available" : info?.update?.checked_at ? "Up to date" : "Not checked"}</p>
       ${problem && !busy && html`<p class="form-error" role="alert">${problem}</p>`}
-      ${available && info?.updates_local_plugin && html`<p class="field-help">Hermes restarts if its plugin changes.</p>`}
+      ${info?.updates_local_plugin && html`<p class="field-help">Linked local Hermes restarts if its plugin changes.</p>`}
       ${info?.can_update ? html`<div class="installation-actions">
         <button class="button secondary" disabled=${busy} onClick=${() => act("check")}>
           <${Icon} name="refresh" size=${16} />Check for updates
         </button>
-        ${available && html`<button class="button primary" disabled=${busy || !!problem}
-          onClick=${() => act("update")}><${Icon} name="download" size=${16} />Update</button>`}
+        ${(available || info.updates_local_plugin) && html`<button class="button primary" disabled=${busy || !!problem || !info.update?.latest_commit}
+          onClick=${() => act("update")}><${Icon} name="download" size=${16} />${available ? pluginOnly ? "Update Talaria & plugin" : "Update" : "Sync linked plugin"}</button>`}
       </div>` : info && html`<p class="field-help">${info.managed
         ? "Start Talaria with its managed launcher to enable updates."
         : "Update using your package or container manager."}</p>`}

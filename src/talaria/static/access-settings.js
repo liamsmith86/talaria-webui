@@ -1,6 +1,16 @@
 import { html, useState, Icon } from "./lib.js";
 import { api } from "./api.js";
 import { state, update, useStore } from "./store.js";
+import { Installation } from "./installation.js";
+
+const installURL = "hermes://plugin/install?repo=liamsmith86%2Ftalaria-webui%2Fsrc%2Ftalaria%2Fhermes_plugin&enable=1";
+const releaseLabels = {
+  current: "Matches this Talaria release",
+  outdated: "Plugin update available",
+  newer: "Plugin is newer than this Talaria release",
+  different: "Plugin differs from this Talaria release",
+  unknown: "Plugin version not reported",
+};
 
 export function ExtendedAccess({ onSaved }) {
   const app = useStore();
@@ -9,6 +19,8 @@ export function ExtendedAccess({ onSaved }) {
   const available = app.caps.talaria_extensions?.version === 1;
   const inherited = app.caps.talaria_extensions?.context_runs;
   const context = app.caps.talaria_extensions?.profile_context || {};
+  const release = app.caps.talaria_extensions?.release;
+  const needsInstall = !available || !["current", "newer"].includes(release?.status);
   async function refresh() {
     setBusy(true);
     setError("");
@@ -27,6 +39,9 @@ export function ExtendedAccess({ onSaved }) {
       <h3>Extended access</h3>
       <span class="quiet-badge">Optional</span>
     </div>
+    ${available && html`<p class="field-help" role="status">
+      ${release?.version && `${release.version} · `}${releaseLabels[release?.status] || releaseLabels.unknown}
+    </p>`}
     <div class="access-status" role="status">
       <${Icon} name=${available ? "check" : "info"} size=${16} /><span
         >${available
@@ -40,19 +55,23 @@ export function ExtendedAccess({ onSaved }) {
         Some profile context could not be loaded. Check its configuration in Hermes,
         then check again.
       </p>`}
-    ${available && !inherited && html`<p class="field-help">
-      Update the Talaria plugin in Hermes to inherit agent instructions and prefill.
-    </p>`}
     ${!available &&
     html`<p class="field-help">
-      Install and enable the Talaria plugin in Hermes, then restart its gateway.
-      Talaria will detect it automatically. Standard chat works without it.
+      Install the plugin on your Hermes host, then restart its gateway.
     </p>`}
     ${error && html`<p class="form-error" role="alert">${error}</p>`}
     <div class="dialog-actions">
+      ${needsInstall && html`<a class="button secondary"
+        href=${installURL + (available ? "&force=1" : "")}>
+        ${available ? "Update in Hermes Desktop" : "Install in Hermes Desktop"}
+      </a>`}
       <button class="button secondary" disabled=${busy} onClick=${refresh}>
         ${busy ? "Checking…" : "Check again"}
       </button>
     </div>
+    ${needsInstall && html`<p class="field-help">
+      <a href="https://github.com/liamsmith86/talaria-webui#hermes-plugin" target="_blank" rel="noopener noreferrer">Server installation instructions</a>
+    </p>`}
+    ${needsInstall && html`<${Installation} pluginOnly=${true} />`}
   </section>`;
 }

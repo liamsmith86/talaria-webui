@@ -43,7 +43,7 @@ def manage(args, root):
     else:
         dispatch(root, "check", args.expect)
         state = read_json(root / "update.json")
-        if not args.check and state.get("available"):
+        if not args.check:
             dispatch(root, "update", args.expect or state["latest_commit"])
         elif state.get("available"):
             print("Update available.")
