@@ -19,6 +19,7 @@ async def test_proxy_authentication_and_assets(tmp_path, path, strip):
         public_url="https://example.com" + path,
         password_hash=hash_password("test-password"),
         signing_key="key",
+        api_key=KEY,
     )
     app = create_app(settings, tmp_path / "config.json")
 
@@ -54,6 +55,13 @@ async def test_proxy_authentication_and_assets(tmp_path, path, strip):
         bootstrap = (await client.get(path + "/api/bootstrap")).json()
         assert bootstrap["authenticated"] is True
         headers["X-CSRF-Token"] = bootstrap["csrf"]
+        # Testing a new profile must never silently reuse this profile's key.
+        tested = await client.post(
+            path + "/api/profiles/test",
+            headers=headers,
+            json={"url": settings.hermes_url, "api_key": ""},
+        )
+        assert tested.status_code == 400
         assert (await client.post(path + "/api/logout", headers=headers)).status_code == 200
         assert (await client.get(path + "/api/bootstrap")).json()["authenticated"] is False
         redirect = await client.get(path + "?profile=default")
@@ -149,3 +157,8 @@ def test_browser_behind_subpath_proxy(browser, tmp_path, strip):
         server.should_exit = upstream.should_exit = True
         thread.join(timeout=10)
         ut.join(timeout=10)
+
+
+def test_public_origin_matches_browser_normalization():
+    assert validate_public_url("https://EXAMPLE.com:443/telaria/") == "https://example.com/telaria"
+    assert validate_public_url("http://[::1]:80/telaria") == "http://[::1]/telaria"

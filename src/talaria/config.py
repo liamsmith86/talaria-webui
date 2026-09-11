@@ -55,13 +55,24 @@ def validate_url(value: str, *, api: bool = True) -> str:
 
 def validate_public_url(value: str) -> str:
     value = validate_url(value, api=False)
-    path = urlsplit(value).path
+    url = urlsplit(value)
+    path = url.path
     if path and (
         not re.fullmatch(r"(?:/[A-Za-z0-9._~-]+)+", path)
         or any(part in {".", ".."} for part in path.split("/"))
     ):
-        raise ValueError("Use a public URL with a simple path, such as https://example.com/talaria.")
-    return value
+        raise ValueError(
+            "Use a public URL with a simple path, such as https://example.com/talaria."
+        )
+    host = url.hostname.encode("idna").decode("ascii").lower()
+    if not re.fullmatch(r"[a-z0-9._:-]+", host):
+        raise ValueError("Enter a valid public hostname or IP address.")
+    host = f"[{host}]" if ":" in host else host
+    port = url.port
+    authority = host + (
+        f":{port}" if port and port != {"http": 80, "https": 443}[url.scheme] else ""
+    )
+    return f"{url.scheme}://{authority}{path}"
 
 
 def default_path() -> Path:

@@ -14,11 +14,25 @@ MARKER = "# Managed by talaria setup\n"
 LABEL = "app.talaria.webui"
 
 
+def passwordless_sudo():
+    if os.geteuid() == 0 or not shutil.which("sudo"):
+        return False
+    try:
+        run(["sudo", "-n", "true"], timeout=5)
+        return True
+    except DeploymentError:
+        return False
+
+
 def supported_service():
     if sys.platform == "darwin" and os.geteuid() != 0 and shutil.which("launchctl"):
-        return "launchd"
+        try:
+            run(["launchctl", "print", f"gui/{os.getuid()}"], timeout=10)
+            return "launchd"
+        except DeploymentError:
+            return "none"
     if sys.platform.startswith("linux") and Path("/run/systemd/system").exists():
-        if os.geteuid() == 0:
+        if os.geteuid() == 0 or passwordless_sudo():
             return "systemd"
         try:
             run(["systemctl", "--user", "show-environment"], timeout=10)
@@ -106,6 +120,15 @@ def preflight(plan, root, config, *, resuming=False):
             f"{plan['path']} already exists with different settings; preserved. "
             "Use --service none or manage this service yourself."
         )
+    if plan["kind"] == "systemd" and any(
+        path.is_relative_to(temporary.resolve())
+        for path in (root, config, Path(sys._base_executable).resolve())
+        for temporary in (Path("/tmp"), Path("/var/tmp"))
+    ):
+        raise DeploymentError(
+            "Use persistent installation/config paths outside /tmp and /var/tmp "
+            "for a systemd service (its temporary directory is private)."
+        )
     if not plan["account"]:
         return
     # Do not repurpose an existing interactive or privileged account.
@@ -181,4 +204,9 @@ def install_service(plan):
 
 
 def describe(plan):
-    return {action: shlex.join(plan[action]) for action in ("start", "stop", "restart")}
+    prefix = (
+        ["sudo", "-n"]
+        if plan["scope"] == "system" and os.environ.get("SUDO_UID", "0") != "0"
+        else []
+    )
+    return {action: shlex.join([*prefix, *plan[action]]) for action in ("start", "stop", "restart")}

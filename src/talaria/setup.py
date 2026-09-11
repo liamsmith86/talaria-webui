@@ -6,6 +6,7 @@ import getpass
 import ipaddress
 import json
 import os
+import pwd
 import shlex
 import shutil
 import socket
@@ -34,6 +35,7 @@ from .installation import read_json
 from .setup_services import (
     describe,
     install_service,
+    passwordless_sudo,
     preflight,
     prepare_account,
     service_plan,
@@ -124,7 +126,8 @@ def find_hermes_python(home):
     executable = shutil.which("hermes")
     if executable:
         command = Path(executable).resolve()
-        candidates.insert(0, command.parent / "python")
+        if (command.parent.parent / "pyvenv.cfg").is_file():
+            candidates.insert(0, command.parent / "python")
         try:
             first = command.open().readline().strip()
             if first.startswith("#!/") and "python" in first and " " not in first:
@@ -143,6 +146,16 @@ def hermes_request(python, home, **request):
         if key in os.environ
     }
     env.update(HERMES_HOME=str(home), HERMES_ENABLE_PROJECT_PLUGINS="false")
+    owner = home.stat()
+    identity = {}
+    if os.geteuid() == 0 and owner.st_uid != 0:
+        account = pwd.getpwuid(owner.st_uid)
+        identity = {
+            "user": owner.st_uid,
+            "group": owner.st_gid,
+            "extra_groups": os.getgrouplist(account.pw_name, account.pw_gid),
+        }
+        env["HOME"] = account.pw_dir
     try:
         result = subprocess.run(
             [str(python), "-c", Path(__file__).with_name("setup_hermes.py").read_text()],
@@ -152,6 +165,7 @@ def hermes_request(python, home, **request):
             cwd=home,
             env=env,
             timeout=45,
+            **identity,
         )
         if result.returncode:
             raise ValueError(
@@ -179,6 +193,9 @@ def backup_hermes(home):
         if source.is_file() and not target.exists():
             fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(fd, "wb") as file:
+                if os.geteuid() == 0:
+                    owner = source.stat()
+                    os.fchown(file.fileno(), owner.st_uid, owner.st_gid)
                 file.write(source.read_bytes())
                 file.flush()
                 os.fsync(file.fileno())
@@ -217,18 +234,21 @@ def configure_hermes(args, prompts, settings, home, python, info):
     # A headless run never implicitly changes Hermes, even for recommended defaults.
     if prompts.terminal is None:
         plugin = args.plugin
-    if enable or plugin or args.restart_hermes:
-        if home.stat().st_uid != os.geteuid():
-            raise ValueError(
-                "Run setup as the owner of this Hermes profile, or use --skip-hermes "
-                "with --hermes-url and --hermes-key-file."
-            )
     if enable or plugin:
         backup_hermes(home)
         if plugin:
             from .plugin_install import main as export_plugin
 
+            plugins = home / "plugins"
+            parent_exists = plugins.exists()
             export_plugin(["--home", str(home)])
+            if os.geteuid() == 0:
+                owner = home.stat()
+                target = plugins / "talaria"
+                owned = [target, *target.iterdir()] + ([] if parent_exists else [plugins])
+                for path in owned:
+                    if not path.is_symlink():
+                        os.chown(path, owner.st_uid, owner.st_gid)
         info = hermes_request(python, home, enable=enable, plugin=plugin)
     if info["enabled"] and info["key"]:
         if not args.hermes_url and not settings.api_key:
@@ -251,10 +271,22 @@ def configure_hermes(args, prompts, settings, home, python, info):
         if not command:
             raise ValueError("Hermes CLI is not on PATH; restart your gateway manually.")
         env = {**os.environ, "HERMES_HOME": str(home)}
-        command = [command, "gateway", "restart"] + (["--system"] if os.geteuid() == 0 else [])
+        owner = home.stat()
+        identity = {}
+        if os.geteuid() == 0 and owner.st_uid != 0:
+            account = pwd.getpwuid(owner.st_uid)
+            identity = {
+                "user": owner.st_uid,
+                "group": owner.st_gid,
+                "extra_groups": os.getgrouplist(account.pw_name, account.pw_gid),
+            }
+            env["HOME"] = account.pw_dir
+        command = [command, "gateway", "restart"] + (["--system"] if owner.st_uid == 0 else [])
         # Restart diagnostics can contain private Hermes configuration; keep them private.
         try:
-            result = subprocess.run(command, env=env, cwd=home, capture_output=True, timeout=60)
+            result = subprocess.run(
+                command, env=env, cwd=home, capture_output=True, timeout=60, **identity
+            )
         except subprocess.TimeoutExpired as exc:
             raise ValueError(
                 "Hermes restart is still pending; check `hermes gateway status`."
@@ -320,6 +352,46 @@ def parser():
     return result
 
 
+def elevate_setup(args):
+    """Only service installation elevates; retain explicit paths and the caller's Hermes."""
+    values = vars(args).copy()
+    values["service"] = "systemd"
+    home = (
+        (args.hermes_home or Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")))
+        .expanduser()
+        .resolve()
+    )
+    if not args.skip_hermes and home.is_dir() and (not args.hermes_url or args.hermes_home):
+        values["hermes_home"] = home
+        values["hermes_python"] = args.hermes_python or find_hermes_python(home)
+    argv = []
+    for name, value in values.items():
+        if value is None or value is False:
+            continue
+        argv.append("--" + name.replace("_", "-"))
+        if value is not True:
+            argv.append(str(value.expanduser().resolve() if isinstance(value, Path) else value))
+    command = [
+        "sudo",
+        "-n",
+        "-H",
+        "--",
+        "env",
+        "PATH=" + os.environ["PATH"],
+        sys.executable,
+        "-c",
+        "from talaria.cli import main; main()",
+        "setup",
+        *argv,
+    ]
+    if os.environ.get("SSH_AUTH_SOCK"):
+        command.insert(
+            command.index(sys.executable), "SSH_AUTH_SOCK=" + os.environ["SSH_AUTH_SOCK"]
+        )
+    # sudo sets SUDO_UID; Git uses that account's credential helpers during deployment.
+    return subprocess.call(command)
+
+
 def setup(args, prompts):
     with ExitStack() as stack:
         return _setup(args, prompts, stack)
@@ -345,6 +417,9 @@ def _setup(args, prompts, stack):
         kind = available
     if kind not in {"none", available}:
         raise ValueError(f"{kind} is not available in this login; use --service none.")
+    if kind == "systemd" and os.geteuid() != 0 and passwordless_sudo():
+        print("Using passwordless sudo for the system installation and app service.")
+        raise SystemExit(elevate_setup(args))
     system = kind == "systemd" and os.geteuid() == 0
     root = (
         (args.directory or (Path("/opt/talaria") if system else default_directory()))
@@ -518,7 +593,8 @@ def _setup(args, prompts, stack):
         print(f"Service: {existing_service} ({metadata.get('scope', 'user')})")
     else:
         print(f"Start: {shlex.quote(str(root / 'bin/talaria'))}")
-    print(f"Update manually: {shlex.quote(str(root / 'bin/talaria'))} update")
+    prefix = "sudo -n " if os.geteuid() == 0 and os.environ.get("SUDO_UID", "0") != "0" else ""
+    print(f"Update manually: {prefix}{shlex.quote(str(root / 'bin/talaria'))} update")
     if args.restart_hermes and (
         not connection.startswith("connected")
         or (args.plugin and "extended access available" not in connection)

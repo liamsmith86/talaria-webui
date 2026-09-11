@@ -31,13 +31,20 @@ Do not configure automatic updates.
 
 ### Guided or manual
 
-Linux, macOS, and WSL2. Root is optional; missing prerequisites require consent.
+Linux, macOS, and WSL2. Root is optional; passwordless sudo also enables system installation.
+Missing prerequisites require consent.
 While this repository is private, authenticate Git first.
 
 ```sh
 git clone https://github.com/liamsmith86/talaria-webui.git
 cd talaria-webui
 bash install.sh
+```
+
+After the repository becomes public, the same installer can be launched with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/liamsmith86/talaria-webui/main/install.sh | bash
 ```
 
 Setup offers local/LAN/all-interface binding, a generated or chosen WebUI password,
@@ -56,6 +63,7 @@ uv run --locked --no-dev talaria install
 The default URL is **http://127.0.0.1:8766**. The login password is saved in
 `~/.config/talaria/initial-password.txt`. Root installs with a system service use
 `/opt/talaria` and `/var/lib/talaria`, and run the app as an unprivileged account.
+Git authentication and local Hermes changes retain the invoking user’s identity.
 The installer prints the actual paths and commands. Linux uses systemd where
 available; macOS uses a user LaunchAgent. Otherwise, start the app manually.
 Systemd user services follow the account's login/linger policy; LaunchAgents start

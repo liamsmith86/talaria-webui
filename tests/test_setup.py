@@ -244,3 +244,61 @@ def test_native_hermes_key_reuse_plugin_and_config_preservation(tmp_path):
     assert "preserve-this-model" in (home / "config.yaml").read_text()
     assert "talaria" in (home / "config.yaml").read_text()
     assert (home / ".env").stat().st_mode & 0o077 == 0
+
+
+def test_passwordless_sudo_selects_system_service_without_user_bus(monkeypatch):
+    from talaria import setup_services
+
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(Path, "exists", lambda _: True)
+    monkeypatch.setattr(shutil, "which", lambda command: "/usr/bin/" + command)
+    calls = []
+    monkeypatch.setattr(setup_services, "run", lambda command, **_: calls.append(command))
+    assert setup_services.supported_service() == "systemd"
+    assert calls == [["sudo", "-n", "true"]]
+
+
+def test_sudo_elevation_preserves_explicit_paths_and_hermes_identity(options, monkeypatch):
+    options.skip_hermes = False
+    options.hermes_home = options.directory.parent / "users-profile"
+    options.hermes_home.mkdir()
+    options.hermes_python = options.directory.parent / "native-python"
+    options.service = "auto"
+    calls = []
+    monkeypatch.setattr(subprocess, "call", lambda command: calls.append(command) or 0)
+    assert wizard.elevate_setup(options) == 0
+    command = calls[0]
+    assert command[:5] == ["sudo", "-n", "-H", "--", "env"]
+    assert command[command.index("--service") + 1] == "systemd"
+    assert command[command.index("--hermes-home") + 1] == str(options.hermes_home)
+    assert command[command.index("--hermes-python") + 1] == str(options.hermes_python)
+    assert command[command.index("--config") + 1] == str(options.config)
+    assert "--non-interactive" in command
+
+
+def test_sudo_git_credentials_run_as_the_caller(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from talaria import deployment
+
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setenv("SUDO_UID", "12345")
+    monkeypatch.setattr(
+        deployment.pwd, "getpwuid", lambda uid: SimpleNamespace(pw_dir=str(tmp_path))
+    )
+    captured = []
+    original = subprocess.Popen
+
+    def launch(command, **kwargs):
+        captured.append((command, kwargs["env"]))
+        return original([sys.executable, "-c", "pass"], **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", launch)
+    deployment.run(["git", "fetch", "remote"])
+    command, env = captured[0]
+    assert "credential.helper=" in command
+    helper = next(arg for arg in command if arg.startswith("credential.helper=!"))
+    assert "'#12345'" in helper and "credential" in helper
+    assert "sudo -n -H -u '#12345'" in env["GIT_SSH_COMMAND"]
+    assert command[-2:] == ["fetch", "remote"]

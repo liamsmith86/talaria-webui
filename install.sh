@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Bootstrap only: configuration and managed releases live in `talaria setup`.
+# Parse the complete script before executing when invoked through curl | bash.
+talaria_bootstrap() {
 set -euo pipefail
 umask 077
 
@@ -107,20 +109,28 @@ if ! command -v uv >/dev/null 2>&1; then
     [ "$(id -u)" -ne 0 ] || uv_bin=/usr/local/bin
     UV_UNMANAGED_INSTALL="$uv_bin" sh "$work/uv.sh"
 fi
-# Keep root-installed Python accessible to an unprivileged system service.
-if [ "$(id -u)" -eq 0 ] && [ "$(uname -s)" = Linux ]; then
+# An existing system Python avoids a private-home interpreter in a system service.
+can_admin=false
+if [ "$(id -u)" -eq 0 ] || { command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; }; then
+    can_admin=true
+fi
+if $can_admin && [ "$(uname -s)" = Linux ]; then
     export UV_PYTHON_INSTALL_DIR=/opt/talaria-python
 fi
 python_path=$(uv python find --system --no-project --no-python-downloads "${UV_PYTHON:->=3.12}" 2>/dev/null) || python_path=
-if [ "$(id -u)" -eq 0 ] && [ "$(uname -s)" = Linux ]; then
-    case "$python_path" in /root/*)
+if $can_admin && [ "$(uname -s)" = Linux ]; then
+    case "$python_path" in /root/*|/home/*)
         python_path=$(uv python find --system --no-project --no-managed-python --no-python-downloads '>=3.12' 2>/dev/null) || python_path=
     ;; esac
 fi
 if [ -z "$python_path" ]; then
     confirm 'Install Python 3.14 with uv (leaves system Python unchanged)?'
-    (umask 022; uv python install 3.14)
-    python_path=$(uv python find --system --no-python-downloads 3.14)
+    if $can_admin && [ "$(uname -s)" = Linux ]; then
+        elevated sh -c 'umask 022; exec "$@"' sh env UV_PYTHON_INSTALL_DIR=/opt/talaria-python "$(command -v uv)" python install 3.14
+    else
+        (umask 022; uv python install 3.14)
+    fi
+    python_path=$(uv python find --system --no-project --no-python-downloads 3.14)
 fi
 "$python_path" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)' || fail 'Python 3.12 or newer is required.'
 export UV_PYTHON_DOWNLOADS=never
@@ -131,4 +141,7 @@ commit=$(git -C "$work/source" rev-parse HEAD)
 # Downloaded dependencies use the repository lock and its seven-day cooldown.
 # Do not install development dependencies or leave a temporary Python interpreter behind.
 uv run --project "$work/source" --python "$python_path" --locked --no-dev talaria setup \
-    --repository "$repository" --branch "$branch" --expect "$commit" "${forward[@]}"
+    --repository "$repository" --branch "$branch" --expect "$commit" ${forward[@]+"${forward[@]}"}
+}
+
+talaria_bootstrap "$@"
