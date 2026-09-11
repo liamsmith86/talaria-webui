@@ -8,12 +8,12 @@ from pathlib import Path
 
 
 def main():
-    from dotenv import load_dotenv
     from hermes_cli.config import load_env, read_raw_config, save_env_value
+    from hermes_cli.env_loader import load_hermes_dotenv
 
     home = Path(os.environ["HERMES_HOME"])
     read_raw_config()  # Fail closed on malformed YAML before the gateway's fallback loader.
-    load_dotenv(home / ".env", override=True)
+    load_hermes_dotenv(hermes_home=home)
     from gateway.config import Platform, load_gateway_config
 
     request = json.load(sys.stdin)
