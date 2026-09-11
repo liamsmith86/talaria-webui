@@ -475,6 +475,8 @@ def elevate_setup(args, *, service="systemd"):
         "--",
         "env",
         "PATH=" + os.environ["PATH"],
+        # The caller must still be able to remove the temporary bootstrap venv.
+        "PYTHONDONTWRITEBYTECODE=1",
         sys.executable,
         "-c",
         "from talaria.cli import main; main()",

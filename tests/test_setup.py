@@ -495,6 +495,7 @@ def test_sudo_elevation_preserves_explicit_paths_and_hermes_identity(options, mo
     assert wizard.elevate_setup(options) == 0
     command = calls[0]
     assert command[:5] == ["sudo", "-n", "-H", "--", "env"]
+    assert "PYTHONDONTWRITEBYTECODE=1" in command[5:command.index(sys.executable)]
     assert command[command.index("--service") + 1] == "systemd"
     assert command[command.index("--hermes-home") + 1] == str(options.hermes_home)
     assert command[command.index("--hermes-python") + 1] == str(options.hermes_python)
