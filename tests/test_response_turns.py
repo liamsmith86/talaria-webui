@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -313,3 +315,67 @@ def test_prior_delegation_does_not_hide_current_unsaved_child_details(page):
     }""")
     expect(page.locator(".tool-card")).to_have_count(2)
     expect(page.locator(".completed-children")).to_contain_text("New task")
+
+
+@pytest.mark.parametrize("width", [390, 1440])
+def test_live_events_render_before_the_next_upstream_event(
+    page, live_app, monkeypatch, record_property, width
+):
+    """A stalled model/tool must not hold earlier events behind a future delta."""
+    page.set_viewport_size({"width": width, "height": 960})
+    frames = [
+        {"event": "reasoning.available", "text": "First reasoning"},
+        {"event": "tool.started", "tool": "terminal", "tool_call_id": "a", "preview": "date"},
+        {"event": "tool.completed", "tool": "terminal", "tool_call_id": "a"},
+        {"event": "message.delta", "delta": "First text"},
+        {"event": "reasoning.available", "text": "Second reasoning"},
+        {"event": "tool.started", "tool": "terminal", "tool_call_id": "b", "preview": "uname"},
+        {"event": "message.delta", "delta": "Second text"},
+    ]
+    gates = [threading.Event() for _ in range(len(frames) + 1)]
+    emitted = []
+
+    async def events(run):
+        for index, frame in enumerate([*frames, {"event": "run.cancelled"}]):
+            assert await asyncio.to_thread(gates[index].wait, 15)
+            emitted.append(time.time() * 1000)
+            yield "data: " + json.dumps(frame) + "\n\n"
+        run["status"] = "cancelled"
+
+    monkeypatch.setattr(live_app[1], "events", events)
+    page.evaluate("""() => {
+      const samples=window.eventSamples=[];
+      const checks=[
+        () => document.querySelectorAll('.reasoning').length===1,
+        () => document.querySelectorAll('.tool-card').length===1,
+        () => document.querySelector('.tool-card')?.textContent.includes('completed'),
+        () => document.querySelector('.message.assistant .message-text')
+          ?.textContent.includes('First text'),
+        () => document.querySelectorAll('.reasoning').length===2,
+        () => document.querySelectorAll('.tool-card').length===2,
+        () => [...document.querySelectorAll('.message.assistant .message-text')]
+          .some(el=>el.textContent.includes('Second text')),
+      ];
+      window.eventObserver=new MutationObserver(()=>{
+        if(checks[samples.length]?.()) samples.push(Date.now());
+      });
+      eventObserver.observe(document.querySelector('main'),
+        {childList:true,subtree:true,characterData:true});
+    }""")
+    try:
+        page.get_by_label("Message Hermes").fill("Measure live event delivery")
+        page.get_by_role("button", name="Send message", exact=True).click()
+        # Feedback exists while the upstream has provided no text or tool events.
+        expect(page.locator(".message.assistant .thinking")).to_be_visible()
+        for index, gate in enumerate(gates[:-1]):
+            gate.set()
+            page.wait_for_function("index => eventSamples.length > index", arg=index, timeout=5000)
+        received = page.evaluate("eventSamples")
+        delays = [round(end - start, 1) for start, end in zip(emitted, received, strict=True)]
+        record_property("upstream_to_dom_ms", delays)
+        print(f"\nLive events ({width}px), upstream-to-DOM ms: {delays}")
+        assert len(live_app[1].runs) == 1
+    finally:
+        page.evaluate("eventObserver.disconnect()")
+        for gate in gates:
+            gate.set()
