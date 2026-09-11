@@ -2,11 +2,40 @@
 
 import asyncio
 import json
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect
 
 from .conftest import wait_for_store
+
+
+@pytest.mark.parametrize("chunk_size", [31, 4096])
+def test_native_completed_trace_reconciles_with_fragmented_or_batched_delivery(
+    page, live_app, monkeypatch, chunk_size,
+):
+    trace = json.loads((Path(__file__).with_name("fixtures") / "hermes-completed.json").read_text())
+    peer = live_app[1]
+
+    async def events(run):
+        peer.messages[run["session_id"]] = [
+            {"id": index + 1, **row} for index, row in enumerate(trace["messages"])
+        ]
+        run.update(status="completed", output=trace["messages"][-1]["content"])
+        wire = "".join("data: " + json.dumps(event) + "\n\n" for event in trace["events"])
+        for offset in range(0, len(wire), chunk_size):
+            yield wire[offset:offset + chunk_size]
+            await asyncio.sleep(0.005)
+
+    monkeypatch.setattr(peer, "events", events)
+    page.get_by_label("Message Hermes").fill(trace["messages"][0]["content"])
+    page.get_by_role("button", name="Send message", exact=True).click()
+    wait_for_store(page, "state => state.lives[state.active]?.persisted")
+    expect(page.locator(".message.assistant")).to_have_count(1)
+    expect(page.locator(".message.assistant .message-text")).to_have_text("Fixture reply.")
+    page.reload()
+    expect(page.locator(".message.assistant")).to_have_count(1)
+    expect(page.locator(".message.assistant .message-text")).to_have_text("Fixture reply.")
 
 
 @pytest.mark.parametrize("cancelled", [False, True])

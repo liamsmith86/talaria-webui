@@ -5,6 +5,15 @@ import pytest
 from .conftest import wait_for_store
 
 
+def test_async_polling_cannot_silently_accept_a_false_condition(page):
+    for target in (page, page.main_frame):
+        with pytest.raises(ValueError, match="synchronous polling"):
+            target.wait_for_function("async () => false")
+    page.evaluate("window.pollReady=false; setTimeout(()=>window.pollReady=true, 50)")
+    page.wait_for_function("() => window.pollReady")
+    assert page.evaluate("window.pollReady")
+
+
 @pytest.fixture
 def reveal(page):
     page.evaluate(r"""async () => {

@@ -95,7 +95,7 @@ The full suite tests Linux x86-64/Python 3.12, Linux ARM64/Python 3.14, one macO
 
 On Windows, use Ubuntu under WSL2 and follow the Linux installation instructions; keep the checkout in the Linux filesystem. CI tests this route. Native Windows installation is not supported. Docker Desktop can run the Linux image; connect to host services through `host.docker.internal` and publish the port with `-p 127.0.0.1:8766:8766` instead of `--network host`.
 
-Run `uv sync --locked`, then `uv run --only-group lint ruff check .` and `uv run pytest -m 'not browser and not hermes'`. Browser tests need `uv run playwright install --with-deps` and `TALARIA_AXE_PATH`; native contracts need `HERMES_SOURCE`. Run browser tests with `uv run pytest -n 2 -m browser`; the workflow contains the pinned setup commands. CI fails on skipped tests.
+See [local development checks](CONTRIBUTING.md) for Git hooks, focused browser tests, native Hermes setup, and verifying regressions against an older revision. These checks run locally without adding CI jobs.
 
 Dependencies use a seven-day cooldown and a committed lockfile. Docker's Python and uv images are pinned by digest; update these pins deliberately. The `Required checks` status gates merges.
 
