@@ -137,9 +137,7 @@ def test_completed_response_cache_is_bounded_without_losing_recovery_state(page)
 
 def test_text_deltas_reuse_sidebar_rows_and_tool_cards(page):
     result = page.evaluate("""async () => {
-      const {state,update,refreshSessions}=await import('/static/store.js');
-      // Supersede any startup listing before installing the synthetic rows.
-      await refreshSessions();
+      const {state,update}=await import('/static/store.js');
       const {applyEvent}=await import('/static/runs.js');
       let titles=0,tools=0;
       const sessions=Array.from({length:300},(_,i)=>({id:'stable-'+i,source:'api_server',

@@ -98,14 +98,23 @@ def page(browser, live_app):
         page.get_by_role("button", name="Step inside").click()
         page.locator(".topbar-title").wait_for()
         # Let the simulator's initial discovery finish before starting a scenario.
-        state = page.evaluate_handle("async () => (await import('/static/store.js')).state")
-        page.wait_for_function(
-            "state => !!state.defaultModel && state.readiness.status === 'ok'", arg=state
-        )
-        state.dispose()
+        wait_for_store(page, "state => !!state.defaultModel && state.readiness.status === 'ok'")
+        # Startup listing is independent of discovery; finish/supersede it
+        # before tests install artificial conversation state.
+        page.evaluate("async () => (await import('/static/store.js')).refreshSessions()")
         yield page
     finally:
         # Let intercepted requests finish before closing their response context.
         for tab in context.pages:
             tab.unroute_all(behavior="wait")
         context.close()
+
+
+def wait_for_store(page, predicate):
+    # Playwright polls synchronously: an async predicate is a truthy Promise,
+    # so it can resolve false once instead of waiting for the desired state.
+    state = page.evaluate_handle("async () => (await import('/static/store.js')).state")
+    try:
+        page.wait_for_function(predicate, arg=state)
+    finally:
+        state.dispose()

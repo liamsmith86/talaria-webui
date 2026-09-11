@@ -2,6 +2,8 @@
 
 import pytest
 
+from .conftest import wait_for_store
+
 
 @pytest.fixture
 def reveal(page):
@@ -132,10 +134,9 @@ def test_mobile_scroll_follows_revealed_text_until_reader_scrolls_up(page):
       const text=state.lives.paced.text+'More detail. '.repeat(100);
       update({lives:{paced:{...state.lives.paced,text}}});
     }""")
-    page.wait_for_function("""async () => {
-      const {state}=await import('/static/store.js');
-      return document.querySelector('.message.assistant p').textContent===state.lives.paced.text;
-    }""")
+    wait_for_store(page, """state =>
+      document.querySelector('.message.assistant p').textContent===state.lives.paced.text
+    """)
     page.wait_for_function("""() => {
       const el=document.querySelector('.conversation-viewport');
       return el.scrollHeight-el.scrollTop-el.clientHeight<5;
@@ -149,8 +150,41 @@ def test_mobile_scroll_follows_revealed_text_until_reader_scrolls_up(page):
       const text=state.lives.paced.text+'Still arriving. '.repeat(60);
       update({lives:{paced:{...state.lives.paced,text}}});
     }""")
-    page.wait_for_function("""async () => {
-      const {state}=await import('/static/store.js');
-      return document.querySelector('.message.assistant p').textContent===state.lives.paced.text;
+    wait_for_store(page, """state =>
+      document.querySelector('.message.assistant p').textContent===state.lives.paced.text
+    """)
+    assert page.locator(".conversation-viewport").evaluate("el => el.scrollTop") < 5
+
+
+def test_delayed_scroll_event_and_viewport_resize_keep_following_the_bottom(page):
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      update({active:'scroll-order',loading:false,history:[],lives:{'scroll-order':{
+        id:'preview',status:'running',tools:[],text:'A long reply. '.repeat(150)}}});
     }""")
+    at_bottom = """() => {
+      const el=document.querySelector('.conversation-viewport');
+      return el.scrollHeight>el.clientHeight && el.scrollHeight-el.scrollTop-el.clientHeight<5;
+    }"""
+    page.wait_for_function(at_bottom)
+    page.evaluate("""() => {
+      const el=document.querySelector('.conversation-viewport');
+      el.dispatchEvent(new Event('scroll'));
+      const spacer=document.createElement('div');spacer.style.height='600px';
+      document.querySelector('.scroll-anchor').before(spacer);
+      // A queued follow-scroll event arrives before the resize observer has
+      // followed newly revealed text. The reader has not moved upward.
+      el.dispatchEvent(new Event('scroll'));
+    }""")
+    page.wait_for_function(at_bottom)
+    page.set_viewport_size({"width": 390, "height": 600})
+    page.wait_for_function(at_bottom)
+    page.evaluate("""() => {
+      const el=document.querySelector('.conversation-viewport');
+      el.scrollTop=0;el.dispatchEvent(new Event('scroll'));
+    }""")
+    page.set_viewport_size({"width": 390, "height": 700})
+    page.evaluate("""() => new Promise(resolve =>
+      requestAnimationFrame(()=>requestAnimationFrame(resolve)))""")
     assert page.locator(".conversation-viewport").evaluate("el => el.scrollTop") < 5

@@ -28,7 +28,6 @@ import {
 import { Images } from "./images.js";
 import { ConversationFind } from "./conversation-find.js";
 import { responseParts } from "./response-parts.js";
-export { plainContent } from "./content.js";
 
 function toolText(value, input = false) {
   if (typeof value !== "string") return "";
@@ -491,6 +490,7 @@ export function Conversation({ app }) {
   const scroll = useRef();
   const bottom = useRef();
   const sticky = useRef(true);
+  const scrollTop = useRef(0);
   const [away, setAway] = useState(false);
   const [olderBusy, setOlderBusy] = useState(false);
   const live = app.lives[app.active];
@@ -499,9 +499,7 @@ export function Conversation({ app }) {
     () => historyItems(app.history, live),
     [app.history, live?.persisted, live?.userImages],
   );
-  const streaming =
-    live &&
-    !["completed", "failed", "cancelled", "interrupted"].includes(live.status);
+  const streaming = running(app.active, app.lives);
   useEffect(() => {
     sticky.current = true;
     setAway(false);
@@ -520,9 +518,13 @@ export function Conversation({ app }) {
         bottom.current?.scrollIntoView({ behavior: "instant" });
     });
     observer.observe(content);
+    observer.observe(scroll.current);
     return () => observer.disconnect();
   }, [app.active]);
   const lastUser = items.findLast((m) => m.role === "user");
+  const savedTurn = live?.persisted && live.savedMessageId != null
+    ? items.find((item) => item.record?.id === live.savedMessageId)
+    : null;
   const canChange =
     !!app.caps.talaria_extensions?.rewind &&
     (app.sessionDetails || app.sessions.find((s) => s.id === app.active))
@@ -546,18 +548,16 @@ export function Conversation({ app }) {
     () =>
       !app.loading &&
       items.map(
-        (m, index) =>
+        (m) =>
           html`<${Message}
             key=${m.id}
             ...${m}
             agentName=${agentName}
             canChange=${canChange && typeof m.record?.id === "number"}
-            responseStatus=${live?.persisted && index === items.length - 1
-              ? live.status
-              : null}
+            responseStatus=${m === savedTurn && !live.outcomeUnknown ? live.status : null}
           />`,
       ),
-    [items, canChange, app.loading, live?.persisted, live?.status, agentName],
+    [items, canChange, app.loading, savedTurn, live?.status, live?.outcomeUnknown, agentName],
   );
   async function loadEarlier() {
     if (olderBusy) return;
@@ -591,7 +591,12 @@ export function Conversation({ app }) {
       ref=${scroll}
       onScroll=${(e) => {
         const el = e.currentTarget;
-        sticky.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+        const top = Math.max(0, el.scrollTop);
+        if (el.scrollHeight - top - el.clientHeight < 120) sticky.current = true;
+        // A delayed scroll event can arrive after the next text chunk grows
+        // the page. Only upward movement means the reader left the bottom.
+        else if (top < scrollTop.current) sticky.current = false;
+        scrollTop.current = top;
         setAway(!sticky.current);
       }}
     >
@@ -618,8 +623,9 @@ export function Conversation({ app }) {
           text=${live.userText}
           images=${live.userImages}
         />`}
-        ${live?.persisted &&
-        !items.some((m) => m.tools.some((t) => t.kind === "agent")) &&
+        ${savedTurn === items.at(-1) &&
+        savedTurn &&
+        !savedTurn.tools.some((t) => t.kind === "agent") &&
         live.tools.some((t) => t.kind === "agent") &&
         html`<div
           class="tool-stack completed-children"
