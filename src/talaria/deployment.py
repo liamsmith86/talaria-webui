@@ -8,6 +8,7 @@ import argparse
 import fcntl
 import json
 import os
+import pwd
 import re
 import selectors
 import shlex
@@ -100,6 +101,41 @@ def stop(process):
 
 def run(command, *, cwd=None, timeout=180) -> str:
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "UV_NO_PROGRESS": "1"}
+    caller = os.environ.get("SUDO_UID", "")
+    if str(command[0]) == "git" and os.geteuid() == 0 and caller.isdecimal() and int(caller) != 0:
+        account = pwd.getpwuid(int(caller))
+        # Ask the invoking user's own Git helpers for HTTPS credentials, and run
+        # SSH as that user. Do not execute their Git configuration as root.
+        user_git = shlex.join(
+            [
+                "sudo",
+                "-n",
+                "-H",
+                "-u",
+                "#" + caller,
+                "--",
+                "git",
+                "-C",
+                account.pw_dir,
+                "credential",
+            ]
+        )
+        helper = (
+            '!f() { case "$1" in get) a=fill;; store) a=approve;; erase) a=reject;; '
+            "*) return 1;; esac; " + user_git + ' "$a"; }; f'
+        )
+        command = [
+            command[0],
+            "-c",
+            "credential.helper=",
+            "-c",
+            "credential.helper=" + helper,
+            *command[1:],
+        ]
+        ssh = ["sudo", "-n", "-H", "-u", "#" + caller, "--", "env"]
+        if env.get("SSH_AUTH_SOCK"):
+            ssh += ["SSH_AUTH_SOCK=" + env["SSH_AUTH_SOCK"]]
+        env["GIT_SSH_COMMAND"] = shlex.join([*ssh, "ssh", "-o", "BatchMode=yes"])
     with tempfile.TemporaryFile() as output:
         try:
             process = subprocess.Popen(
@@ -342,6 +378,12 @@ class Deployment:
     def restart(self):
         if not self.config.get("service"):
             return
+        if self.config.get("manager") == "launchd":
+            run(
+                ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{self.config['service']}"],
+                timeout=45,
+            )
+            return
         command = ["systemctl"]
         if self.config.get("scope") == "user":
             command += ["--user"]
@@ -523,6 +565,7 @@ def main(argv):
         if name == "install":
             command.add_argument("--repository", default=REPOSITORY, help="Trusted Git repository")
             command.add_argument("--branch", default="main")
+            command.add_argument("--expect", help="Only install this full remote commit SHA")
             command.add_argument("--config", type=Path, default=default_path())
             command.add_argument(
                 "--service", help="Existing systemd unit to restart after activation"
@@ -543,6 +586,8 @@ def main(argv):
     try:
         root = args.directory.expanduser().resolve()
         if args.command == "install":
+            if args.expect and not COMMIT.fullmatch(args.expect):
+                raise DeploymentError("--expect needs a full commit SHA.")
             with locked(root):
                 if (root / "deployment.json").exists():
                     raise DeploymentError(
@@ -575,7 +620,7 @@ def main(argv):
                     },
                 )
             deployment = Deployment(root)
-            deployment.update()
+            deployment.update(expect=args.expect)
             print(f"Launcher: {root / 'bin/talaria'}")
         else:
             deployment = Deployment(root)

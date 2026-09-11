@@ -5,6 +5,7 @@ import hmac
 import secrets
 import time
 from collections import OrderedDict
+from urllib.parse import urlsplit
 
 from starlette.requests import Request
 
@@ -60,7 +61,8 @@ def csrf_token(request: Request) -> str:
 
 
 def browser_request_valid(request: Request, *, login: bool = False) -> bool:
-    expected = request.app.state.settings.public_url or str(request.base_url).rstrip("/")
+    base = urlsplit(str(request.base_url))
+    expected = request.app.state.settings.public_origin or f"{base.scheme}://{base.netloc}"
     origin = request.headers.get("origin")
     if origin and origin != expected:
         return False

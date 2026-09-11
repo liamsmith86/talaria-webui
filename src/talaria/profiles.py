@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 from urllib.parse import urlsplit, urlunsplit
 
+from starlette._utils import get_route_path
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -234,9 +235,9 @@ class ProfileRouter:
         self.app, self.profiles = app, profiles
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] == "http" and scope["path"].startswith("/api/"):
+        if scope["type"] == "http" and get_route_path(scope).startswith("/api/"):
             request = Request(scope)
-            path = scope["path"]
+            path = get_route_path(scope)
             if (
                 auth.authenticated(request)
                 and path not in {"/api/login", "/api/logout", "/api/profiles"}

@@ -1,11 +1,12 @@
 import { html, useEffect, useState, Icon } from "./lib.js";
 import { activeProfile } from "./profile-context.js";
+import { siteURL } from "./paths.js";
 import { api } from "./api.js";
 import { Dialog, Connection } from "./dialogs.js";
 import { ExtendedAccess } from "./access-settings.js";
 import { update, refreshProfiles, toast } from "./store.js";
 
-const profileHref = (id) => `/?profile=${encodeURIComponent(id)}`;
+const profileHref = (id) => siteURL(`?profile=${encodeURIComponent(id)}`);
 
 export function ProfileSwitch({ app }) {
   return html`<button

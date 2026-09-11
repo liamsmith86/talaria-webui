@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import secrets
 import tempfile
 from dataclasses import asdict, dataclass
@@ -23,8 +24,17 @@ class Settings:
     def secure(self) -> bool:
         return self.public_url.startswith("https://")
 
+    @property
+    def base_path(self) -> str:
+        return urlsplit(self.public_url).path.rstrip("/")
 
-def validate_url(value: str, *, origin: bool = False) -> str:
+    @property
+    def public_origin(self) -> str:
+        url = urlsplit(self.public_url)
+        return f"{url.scheme}://{url.netloc}" if self.public_url else ""
+
+
+def validate_url(value: str, *, api: bool = True) -> str:
     url = urlsplit(value.strip())
     if (
         url.scheme not in {"http", "https"}
@@ -34,14 +44,35 @@ def validate_url(value: str, *, origin: bool = False) -> str:
         or url.query
         or url.fragment
         or any(ord(c) < 33 for c in value.strip())
-        or (origin and url.path not in {"", "/"})
     ):
         raise ValueError("Enter an HTTP or HTTPS address without credentials or a query.")
     _ = url.port
     path = url.path.rstrip("/")
-    if path.endswith("/v1"):
+    if api and path.endswith("/v1"):
         path = path[:-3]
     return f"{url.scheme}://{url.netloc}{path}"
+
+
+def validate_public_url(value: str) -> str:
+    value = validate_url(value, api=False)
+    url = urlsplit(value)
+    path = url.path
+    if path and (
+        not re.fullmatch(r"(?:/[A-Za-z0-9._~-]+)+", path)
+        or any(part in {".", ".."} for part in path.split("/"))
+    ):
+        raise ValueError(
+            "Use a public URL with a simple path, such as https://example.com/talaria."
+        )
+    host = url.hostname.encode("idna").decode("ascii").lower()
+    if not re.fullmatch(r"[a-z0-9._:-]+", host):
+        raise ValueError("Enter a valid public hostname or IP address.")
+    host = f"[{host}]" if ":" in host else host
+    port = url.port
+    authority = host + (
+        f":{port}" if port and port != {"http": 80, "https": 443}[url.scheme] else ""
+    )
+    return f"{url.scheme}://{authority}{path}"
 
 
 def default_path() -> Path:
@@ -60,6 +91,10 @@ def save_data(path: Path, data: dict) -> None:
         with os.fdopen(fd, "w") as file:
             json.dump(data, file, indent=2)
             file.write("\n")
+            # Administrative CLI changes must not strand a service-owned config.
+            if hasattr(os, "geteuid") and os.geteuid() == 0 and path.exists():
+                owner = path.stat()
+                os.fchown(file.fileno(), owner.st_uid, owner.st_gid)
             file.flush()
             os.fsync(file.fileno())
         os.replace(name, path)
@@ -76,5 +111,5 @@ def load(path: Path) -> Settings:
         settings.signing_key = secrets.token_hex(32)
     settings.hermes_url = validate_url(settings.hermes_url)
     if settings.public_url:
-        settings.public_url = validate_url(settings.public_url, origin=True)
+        settings.public_url = validate_public_url(settings.public_url)
     return settings
