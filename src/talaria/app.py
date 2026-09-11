@@ -10,7 +10,7 @@ from starlette._utils import get_route_path
 from starlette.applications import Starlette
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -41,6 +41,7 @@ class BrowserBoundary:
                 headers = list(message.get("headers", []))
                 headers += [
                     (b"x-content-type-options", b"nosniff"),
+                    (b"x-robots-tag", b"noindex, nofollow"),
                     (b"referrer-policy", b"no-referrer"),
                     (b"x-frame-options", b"DENY"),
                     (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
@@ -94,6 +95,10 @@ async def index(request):
     return HTMLResponse(request.app.state.index_html.replace("__TALARIA_BASE__", base))
 
 
+async def robots(request):
+    return PlainTextResponse("User-agent: *\nDisallow: /\n")
+
+
 async def health(request):
     return JSONResponse({"status": "ok", **installation.build_info()})
 
@@ -123,6 +128,7 @@ def create_app(
         exception_handlers={APIError: api_error},
         routes=[
             Route("/", index),
+            Route("/robots.txt", robots),
             Route("/health", health),
             Route("/api/bootstrap", routes.bootstrap),
             Route("/api/installation", installation.details),
@@ -166,7 +172,7 @@ def create_app(
     app.state.index_html = (STATIC / "index.html").read_text()
     app.state.hermes = Hermes(settings.hermes_url, settings.api_key, transport=transport)
     app.state.relay = Relay(app.state.hermes)
-    app.state.limiter = auth.LoginLimiter()
+    app.state.limiter = auth.LoginLimiter(settings.trusted_proxies)
     app.state.connection_lock = asyncio.Lock()
     app.state.capabilities = {}
     app.state.extensions = {}

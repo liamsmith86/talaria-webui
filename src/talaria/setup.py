@@ -150,7 +150,7 @@ def check_port(host, port):
         raise ValueError(f"Cannot bind {host}:{port}; choose another address or --port.") from exc
 
 
-def find_hermes_python(home):
+def find_hermes_python(home, command=None):
     candidates = [
         home / "hermes-agent/venv/bin/python",
         home / "venv/bin/python",
@@ -158,17 +158,19 @@ def find_hermes_python(home):
         Path.home() / "hermes-agent/venv/bin/python",
         Path("/usr/local/lib/hermes-agent/venv/bin/python"),
     ]
-    executable = shutil.which("hermes")
+    cli_candidates = []
+    executable = command or shutil.which("hermes")
     if executable:
-        command = Path(executable).resolve()
-        if (command.parent.parent / "pyvenv.cfg").is_file():
-            candidates.append(command.parent / "python")
+        script = Path(executable).resolve()
+        if (script.parent.parent / "pyvenv.cfg").is_file():
+            cli_candidates.append(script.parent / "python")
         try:
-            first = command.open().readline().strip()
+            first = script.open().readline().strip()
             if first.startswith("#!/") and "python" in first and " " not in first:
-                candidates.append(Path(first[2:]))
+                cli_candidates.append(Path(first[2:]))
         except (OSError, UnicodeError):
             pass
+    candidates = cli_candidates + candidates if command else candidates + cli_candidates
     return next((path for path in candidates if path.is_file()), None)
 
 
@@ -469,7 +471,7 @@ def update_existing(root, args, stack):
     migrate_service(deployment)
     print(f"Config: {config['config']}")
     print_management_commands(root)
-    if args.plugin:
+    if args.plugin and not config.get("hermes_plugin"):
         print(
             "The Hermes plugin is separate: refresh it with talaria hermes-plugin "
             "on the Hermes host, then restart the gateway."
@@ -547,8 +549,8 @@ def terminal(interactive, flag="--non-interactive"):
         yield Prompts(stream)
 
 
-def restart_gateway(home):
-    command = shutil.which("hermes")
+def restart_gateway(home, command=None):
+    command = command or shutil.which("hermes")
     if not command:
         raise ValueError("Hermes CLI is not on PATH; restart your gateway manually.")
     env = {**os.environ, "HERMES_HOME": str(home)}
@@ -566,7 +568,7 @@ def restart_gateway(home):
     # Restart diagnostics can contain private Hermes configuration; keep them private.
     try:
         result = subprocess.run(
-            command, env=env, cwd=home, capture_output=True, timeout=60, **identity
+            command, env=env, cwd=home, capture_output=True, timeout=600, **identity
         )
     except subprocess.TimeoutExpired as exc:
         raise ValueError("Hermes restart is still pending; check `hermes gateway status`.") from exc

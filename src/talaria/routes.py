@@ -65,9 +65,9 @@ async def bootstrap(request: Request):
 async def login(request: Request):
     data = await body(request)
     state = request.app.state
-    address = request.client.host if request.client else "local"
+    address = state.limiter.address(request)
     if not state.limiter.allow(address):
-        raise APIError("Too many attempts. Please try again in five minutes.", 429)
+        raise APIError("Too many attempts. Please try again in an hour.", 429)
     password = text_field(data, "password", 1024)
     if not await asyncio.to_thread(auth.verify_password, password, state.settings.password_hash):
         raise APIError("That password didn’t match. Please try again.", 401, "login_failed")

@@ -34,6 +34,10 @@ async def test_proxy_authentication_and_assets(tmp_path, path, strip):
         page = await client.get(path + "/")
         assert f'src="{path}/static/app.js"' in page.text
         assert "base-uri 'none'" in page.headers["content-security-policy"]
+        assert page.headers["x-robots-tag"] == "noindex, nofollow"
+        robots = await client.get(path + "/robots.txt")
+        assert robots.status_code == 200
+        assert robots.text == "User-agent: *\nDisallow: /\n"
         for asset in ["app.js", "paths.js", "styles/theme.css", "vendor/inter.woff2"]:
             response = await client.get(path + "/static/" + asset)
             assert response.status_code == 200

@@ -14,6 +14,7 @@ import {
   useStore,
   initialize,
   update,
+  collapseSidebar,
   newConversation,
   supports,
   chooseModel,
@@ -150,6 +151,7 @@ function App() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        if (!matchMedia("(max-width: 700px)").matches) collapseSidebar(false);
         update({ sidebar: true });
         requestAnimationFrame(() =>
           document
@@ -199,12 +201,14 @@ function App() {
     >
       <header class="topbar">
         <div class="topbar-left">
-          <${IconButton}
+          ${(mobile || app.sidebarCollapsed) && html`<${IconButton}
             name="sidebar"
             label="Open sidebar"
-            class="icon-button mobile-only"
-            onClick=${() => update({ sidebar: true })}
-          /><span class="topbar-title"
+            onClick=${() => {
+              if (mobile) update({ sidebar: true });
+              else collapseSidebar(false);
+            }}
+          />`}<span class="topbar-title"
             >${app.active
               ? current.title || "Untitled session"
               : "New session"}</span

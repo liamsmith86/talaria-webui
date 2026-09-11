@@ -1,6 +1,7 @@
 """Visual pacing must never change received text or delay a terminal result."""
 
 import pytest
+from playwright.sync_api import expect
 
 from .conftest import wait_for_store
 
@@ -206,3 +207,59 @@ def test_delayed_scroll_event_and_viewport_resize_keep_following_the_bottom(page
     page.evaluate("""() => new Promise(resolve =>
       requestAnimationFrame(()=>requestAnimationFrame(resolve)))""")
     assert page.locator(".conversation-viewport").evaluate("el => el.scrollTop") < 5
+
+
+@pytest.mark.parametrize("movement", ["wheel", "scroll"])
+def test_small_upward_scroll_releases_follow_during_streaming(page, movement):
+    page.emulate_media(reduced_motion="reduce")
+    page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      update({active:'small-scroll',loading:false,history:[],lives:{'small-scroll':{
+        id:'preview',status:'running',tools:[],text:'A long reply. '.repeat(500)}}});
+    }""")
+    viewport = page.locator(".conversation-viewport")
+    at_bottom = """() => {
+      const el=document.querySelector('.conversation-viewport');
+      return el.scrollHeight>el.clientHeight && el.scrollHeight-el.scrollTop-el.clientHeight<3;
+    }"""
+    page.wait_for_function(at_bottom)
+    before = viewport.evaluate("el => el.scrollTop")
+    if movement == "wheel":
+        viewport.hover()
+        page.mouse.wheel(0, -45)
+    else:
+        # Touch/keyboard and scrollbar movement arrive through native scroll events.
+        viewport.evaluate("el => {el.scrollTop -= 45;}")
+    page.wait_for_function(
+        """before =>
+      document.querySelector('.conversation-viewport').scrollTop < before - 20
+    """,
+        arg=before,
+    )
+    expect(page.get_by_role("button", name="Jump to latest message")).to_be_visible()
+    after = viewport.evaluate("el => el.scrollTop")
+    page.evaluate("""async () => {
+      const {state,update}=await import('/static/store.js');
+      const live=state.lives['small-scroll'];
+      update({lives:{'small-scroll':{...live,text:live.text+'More words. '.repeat(500)}}});
+    }""")
+    wait_for_store(
+        page,
+        """state => document.querySelector('.message.assistant p').textContent
+      === state.lives['small-scroll'].text""",
+    )
+    # WebKit may still be animating the wheel upward; streaming must never pull it down.
+    assert viewport.evaluate("el => el.scrollTop") <= after + 3
+    page.get_by_role("button", name="Jump to latest message").click()
+    page.wait_for_function(at_bottom)
+    page.evaluate("""async () => {
+      const {state,update}=await import('/static/store.js');
+      const live=state.lives['small-scroll'];
+      update({lives:{'small-scroll':{...live,text:live.text+'Keep following. '.repeat(100)}}});
+    }""")
+    wait_for_store(
+        page,
+        """state => document.querySelector('.message.assistant p').textContent
+      === state.lives['small-scroll'].text""",
+    )
+    page.wait_for_function(at_bottom)

@@ -55,7 +55,7 @@ with the same options. Once installed, rerunning the script updates Talaria usin
 saved configuration; it does not repeat password, binding, service, or Hermes setup.
 Custom installation paths still need `--directory`; ambiguous installations are rejected.
 `talaria update` is the faster routine update command and uses the same deployment code.
-The Hermes plugin is updated separately using the plugin command below.
+Local plugin updates can be linked to the managed updater (see below).
 If your Hermes home is missing, root/sudo setup checks at most 32 other account
 homes and offers a selection. It does not recursively search or read credentials
 until a home is selected. Use `--hermes-home PATH` for headless selection or custom
@@ -100,6 +100,31 @@ hermes gateway restart
 Run the Hermes commands in the same profile (use `hermes --profile NAME` for a
 named profile). A multiplexed gateway also needs the plugin in its primary profile.
 The plugin uses the same API key as Hermes; it does not require a separate key.
+
+### Local plugin updates
+
+To link an already installed, enabled **local** plugin to a managed Talaria installation,
+run this once as the installation owner (root for a system installation):
+
+```sh
+talaria hermes-plugin --home /path/to/hermes-profile --manage-updates --directory /opt/talaria
+```
+
+This links future updates; it does not restart Hermes now. It refreshes Talaria's
+managed service permissions if needed. Specify `--hermes-command /absolute/path/to/hermes`
+if the CLI is not on PATH. Browser updates and `talaria update` then install the
+matching plugin and restart/verify Hermes only when needed. Rollbacks restore the
+matching plugin too. The gateway may briefly disconnect while restarting.
+
+For a standalone local refresh after updating Talaria:
+
+```sh
+talaria hermes-plugin --home /path/to/hermes-profile --restart
+```
+
+There is no SSH execution or remote plugin updater. On a separate Hermes host,
+export the updated plugin there and manage its restart locally. For multiplexed
+gateways, link the primary profile; additional profile plugin copies remain manual.
 
 ### Docker
 
@@ -163,7 +188,7 @@ restart the host's Hermes automatically.
 - Remote access: configure an HTTPS reverse proxy and set `public_url` to the exact browser URL, including any nonstandard port and subpath (see below).
 - Change the web password with `~/.local/share/talaria/bin/talaria --set-password`, then restart Talaria.
 
-Managed installations support `update`, `status`, and `rollback` through `~/.local/share/talaria/bin/talaria`. Refresh the bundled plugin separately after updating Talaria, then restart the Hermes gateway.
+Managed installations support `update`, `status`, and `rollback` through `~/.local/share/talaria/bin/talaria`. Linked local plugins follow updates and rollbacks; remote plugins remain manually managed.
 
 ### Reverse proxy
 
@@ -178,6 +203,7 @@ location = /telaria { return 308 /telaria/$is_args$args; }
 location /telaria/ {
     proxy_pass http://127.0.0.1:8766;
     proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_http_version 1.1;
     proxy_buffering off;
     proxy_read_timeout 3600s;
@@ -186,8 +212,10 @@ location /telaria/ {
 ```
 
 Keep buffering disabled for streaming. Talaria uses its configured public URL for
-cookies and origin checks; forwarded headers cannot change it. Login rate limits
-are shared when requests arrive through the same proxy address.
+cookies and origin checks; forwarded headers cannot change it. Login allows 30 failed attempts per IP per hour (in memory; resets on restart).
+For separate client limits behind a proxy, set `"trusted_proxies": ["127.0.0.1"]`
+in Talaria’s config, using your proxy’s actual address or CIDR. Only these peers
+may supply `X-Forwarded-For`; configure them to overwrite untrusted client headers.
 
 ## Development and platform support
 

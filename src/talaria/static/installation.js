@@ -1,11 +1,20 @@
 import { html, Icon, useEffect, useRef, useState } from "./lib.js";
 import { api } from "./api.js";
 
+const CHECK_COOLDOWN = 10 * 60 * 1000;
+let lastCheckAttempt = 0;
+
+function recentlyChecked(timestamp) {
+  const age = Date.now() - timestamp;
+  return age >= 0 && age < CHECK_COOLDOWN;
+}
+
 const phases = {
   checking: "Checking for updates…",
   building: "Preparing update…",
   verifying: "Verifying update…",
   restarting: "Restarting Talaria…",
+  plugin: "Updating local Hermes plugin…",
   recovering: "Restoring previous release…",
 };
 
@@ -28,7 +37,7 @@ export function Installation() {
   const [info, setInfo] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
-  const [phase, setPhase] = useState("Checking for updates…");
+  const [phase, setPhase] = useState("Loading…");
   const control = useRef(null);
   const acting = useRef(false);
 
@@ -83,6 +92,7 @@ export function Installation() {
     const operation = { id, action };
     const body = { id: operation.id };
     if (action === "update") body.expect = operation.expect = current.update.latest_commit;
+    if (action === "check") lastCheckAttempt = Date.now();
     setPhase(action === "check" ? phases.checking : phases.building);
     try {
       const accepted = await api(`/installation/${action}`, {
@@ -123,7 +133,10 @@ export function Installation() {
       try {
         const data = await fetchInfo(signal);
         if (["running", "finishing"].includes(data.operation?.status)) await follow(data.operation, signal);
-        else if (data.can_update) await submit("check", data, signal);
+        else if (data.can_update &&
+          !recentlyChecked(lastCheckAttempt) &&
+          !recentlyChecked(Date.parse(data.update?.checked_at)))
+          await submit("check", data, signal);
       } catch (failure) {
         if (!signal.aborted) setError(failure.message);
       } finally {
@@ -152,6 +165,7 @@ export function Installation() {
       <p class="installation-status" role="status">${busy ? phase : problem ? "Update unavailable" : available
         ? "Update available" : info?.update?.checked_at ? "Up to date" : "Not checked"}</p>
       ${problem && !busy && html`<p class="form-error" role="alert">${problem}</p>`}
+      ${available && info?.updates_local_plugin && html`<p class="field-help">Hermes restarts if its plugin changes.</p>`}
       ${info?.can_update ? html`<div class="installation-actions">
         <button class="button secondary" disabled=${busy} onClick=${() => act("check")}>
           <${Icon} name="refresh" size=${16} />Check for updates

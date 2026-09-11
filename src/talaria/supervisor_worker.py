@@ -21,6 +21,7 @@ def execute(root, operation, restart):
             ("Building", "building"),
             ("Checking startup", "verifying"),
             ("Activating", "restarting"),
+            ("Updating local Hermes", "plugin"),
             ("Restoring", "recovering"),
         ):
             if text.startswith(prefix):

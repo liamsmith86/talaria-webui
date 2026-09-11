@@ -7,6 +7,7 @@ import json
 import logging
 
 from .observations import Observations
+from .release import LOADED_REVISION
 
 log = logging.getLogger(__name__)
 PREFIX = "/talaria/v1"
@@ -198,6 +199,7 @@ async def capabilities(adapter, db):
     return web.json_response(
         {
             "version": 1,
+            "revision": LOADED_REVISION,
             "response_details": True,
             "context_usage": True,
             "model_details": True,

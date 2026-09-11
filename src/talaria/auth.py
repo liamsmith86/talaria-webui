@@ -5,6 +5,7 @@ import hmac
 import secrets
 import time
 from collections import OrderedDict
+from ipaddress import ip_address, ip_network
 from urllib.parse import urlsplit
 
 from starlette.requests import Request
@@ -75,16 +76,32 @@ def browser_request_valid(request: Request, *, login: bool = False) -> bool:
 
 
 class LoginLimiter:
-    def __init__(self):
+    def __init__(self, trusted_proxies=()):
+        self.trusted_proxies = tuple(ip_network(value) for value in trusted_proxies)
         self.failures: OrderedDict[str, list[float]] = OrderedDict()
+
+    def address(self, request: Request) -> str:
+        peer = request.client.host if request.client else "local"
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if not self.trusted_proxies or len(forwarded) > 2048:
+            return peer
+        try:
+            address = ip_address(peer)
+            for hop in reversed(forwarded.split(",")):
+                if not any(address in network for network in self.trusted_proxies):
+                    break
+                address = ip_address(hop.strip())
+            return str(address)
+        except ValueError:
+            return peer
 
     def allow(self, address: str) -> bool:
         now = time.monotonic()
-        times = [t for t in self.failures.pop(address, []) if now - t < 300]
+        times = [t for t in self.failures.pop(address, []) if now - t < 3600]
         self.failures[address] = times
         while len(self.failures) > 1024:
             self.failures.popitem(last=False)
-        if len(times) >= 8:
+        if len(times) >= 30:
             return False
         times.append(now)
         return True

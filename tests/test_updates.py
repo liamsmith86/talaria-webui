@@ -3,6 +3,7 @@
 import io
 import json
 import secrets
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -111,6 +112,7 @@ def update_ui(page, monkeypatch):
     def check(route):
         body = route.request.post_data_json
         calls.append(body)
+        info["update"]["checked_at"] = datetime.now(UTC).isoformat()
         info["operation"] = {**body, "action": "check", "status": "completed"}
         route.fulfill(json=info["operation"])
 
@@ -121,20 +123,49 @@ def update_ui(page, monkeypatch):
     return info, calls
 
 
-def test_opening_reselecting_and_button_all_check_live(page, update_ui):
+def test_reopening_uses_cooldown_but_manual_check_is_immediate(page, update_ui):
     info, calls = update_ui
     assert len(calls) == 1
     expect(page.get_by_role("tabpanel")).not_to_contain_text("sudo")
     page.get_by_role("tab", name="Talaria", exact=True).click()
     expect(page.get_by_role("button", name="Check for updates", exact=True)).to_be_enabled()
-    assert len(calls) == 2
+    assert len(calls) == 1
     info["update"]["available"] = False
     page.get_by_role("button", name="Check for updates", exact=True).click()
     expect(page.get_by_role("tabpanel")).to_contain_text("Up to date")
-    assert len(calls) == 3
+    assert len(calls) == 2
     expect(page.get_by_role("button", name="Update", exact=True)).to_have_count(0)
     page.set_viewport_size({"width": 390, "height": 844})
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
+
+
+def test_automatic_check_resumes_after_ten_minutes(page, update_ui):
+    _, calls = update_ui
+    for minutes, count in [(9, 1), (10, 2)]:
+        page.clock.set_fixed_time(datetime.now(UTC) + timedelta(minutes=minutes))
+        page.get_by_role("tab", name="Talaria", exact=True).click()
+        expect(page.get_by_role("button", name="Check for updates", exact=True)).to_be_enabled()
+        assert len(calls) == count
+
+
+def test_recent_server_check_survives_page_reload(page, update_ui):
+    _, calls = update_ui
+    page.reload()
+    page.get_by_role("button", name="Settings").click()
+    page.get_by_role("tab", name="Talaria", exact=True).click()
+    expect(page.get_by_role("button", name="Check for updates", exact=True)).to_be_enabled()
+    assert len(calls) == 1
+
+
+def test_failed_check_does_not_repeat_on_every_tab_open(page, update_ui):
+    info, calls = update_ui
+    # No successful server timestamp: the current page still remembers its attempt.
+    info["update"]["checked_at"] = None
+    info["update"]["error"] = "Could not reach the update server."
+    page.get_by_role("tab", name="Talaria", exact=True).click()
+    expect(page.get_by_role("alert")).to_have_text(info["update"]["error"])
+    expect(page.get_by_role("button", name="Check for updates", exact=True)).to_be_enabled()
+    assert len(calls) == 1
 
 
 def test_lost_update_ack_is_not_resent_and_reload_waits_for_new_build(page, update_ui):
@@ -161,6 +192,9 @@ def test_lost_update_ack_is_not_resent_and_reload_waits_for_new_build(page, upda
     expect(page.get_by_role("button", name="Update", exact=True)).to_be_disabled()
     expect(page.get_by_role("status").filter(has_text="Preparing update")).to_be_visible()
     assert len(sent) == 1 and sent[0]["expect"] == B
+    page.get_by_role("tab", name="Talaria", exact=True).click()
+    expect(page.get_by_role("status").filter(has_text="Preparing update")).to_be_visible()
+    assert len(sent) == 1
     info["operation"]["status"] = "completed"
     page.wait_for_timeout(1200)
     assert page.evaluate("sessionStorage.getItem('reloads')") == "0"

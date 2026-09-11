@@ -31,4 +31,29 @@ def model_options(refresh=False):
         log.debug(
             "Hermes reasoning limits unavailable; using its standard inventory", exc_info=True
         )
+    add_reasoning_defaults(payload)
     return payload
+
+
+def add_reasoning_defaults(payload):
+    from .observations import reasoning
+
+    try:
+        from gateway.run import _load_gateway_runtime_config
+        from hermes_constants import resolve_reasoning_config
+
+        config = _load_gateway_runtime_config()
+
+        def configured(model):
+            return reasoning({"reasoning": resolve_reasoning_config(config, model)})
+
+        default = configured(payload.get("model", ""))
+        if default is not None:
+            payload["configured_reasoning"] = default
+        for row in payload.get("providers", []):
+            for model, caps in row.get("capabilities", {}).items():
+                value = configured(model)
+                if value is not None:
+                    caps["configured_reasoning"] = value
+    except Exception:
+        log.debug("Hermes reasoning defaults unavailable", exc_info=True)

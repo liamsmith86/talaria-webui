@@ -21,7 +21,7 @@ export function useMediaQuery(query) {
 
 export function readStorage(key, fallback = "") {
   try {
-    const prefix = ["theme", "palette"].includes(key)
+    const prefix = ["theme", "palette", "sidebar-collapsed"].includes(key)
       ? "talaria."
       : storagePrefix;
     return localStorage.getItem(`${prefix}${key}`) ?? fallback;
@@ -31,7 +31,7 @@ export function readStorage(key, fallback = "") {
 }
 export function writeStorage(key, value) {
   try {
-    const prefix = ["theme", "palette"].includes(key)
+    const prefix = ["theme", "palette", "sidebar-collapsed"].includes(key)
       ? "talaria."
       : storagePrefix;
     localStorage.setItem(`${prefix}${key}`, value);
