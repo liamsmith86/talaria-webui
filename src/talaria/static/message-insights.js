@@ -91,13 +91,6 @@ export function ResponseDetails({ session, message, enabled, onClose }) {
         </dl>
       </div>`
     }
-    <p class="field-help usage-note">${
-      data?.status === "interrupted"
-        ? "This response was interrupted. Available details are from its last model call; values Hermes did not report remain unknown."
-        : data?.model
-          ? "Recorded by Hermes for this response. Cached input and reasoning tokens may be included in the input and output totals."
-          : "Hermes did not record model or reasoning settings for this response. Details become available for new responses with the Talaria plugin enabled."
-    }</p>
   </${Dialog}>`;
 }
 
@@ -172,19 +165,13 @@ export function ContextIndicator({ app }) {
                   <dt>Model</dt>
                   <dd>${context.model || "Not reported"}</dd>
                 </div>
-              </dl>
-              <p class="field-help usage-note">
-                Input tokens reported for the last model request. New replies,
-                tool results, or Hermes’s automatic compression can change the
-                next request’s usage. Remaining space also needs to accommodate
-                the model’s output.
-              </p>`
+              </dl>`
           : !busy &&
             !error &&
             html`<p class="dialog-intro">
               ${app.caps.talaria_extensions?.context_usage
-                ? "No context measurement has been recorded for this conversation yet. It will appear after the next completed response."
-                : "Enable the Talaria plugin in Hermes to see context usage for new responses."}
+                ? "No context usage recorded yet."
+                : "Enable the Talaria plugin to view context usage."}
             </p>`
       }
     </${Dialog}>`}`;

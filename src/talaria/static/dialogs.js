@@ -139,11 +139,6 @@ export function Connection({
     }
   }
   const content = html`
-    <p class="dialog-intro">
-      ${creating
-        ? "Use the profile’s name and API key from Hermes."
-        : "This connection belongs to the selected profile. Add another profile to connect elsewhere."}
-    </p>
     <form
       onSubmit=${(e) => {
         e.preventDefault();
@@ -198,7 +193,7 @@ export function Connection({
             setTested(false);
           }}
           placeholder=${keySet
-            ? "Saved securely · leave blank to keep"
+            ? "Leave blank to keep saved key"
             : "Your Hermes API server key"}
           autocomplete="new-password"
       /></label>
@@ -226,12 +221,12 @@ export function Connection({
   `;
   return embedded
     ? content
-    : html`<${Dialog} title=${initial ? "Meet your Hermes" : "Connection"} onClose=${onClose}>${content}</${Dialog}>`;
+    : html`<${Dialog} title=${initial ? "Connect Hermes" : "Connection"} onClose=${onClose}>${content}</${Dialog}>`;
 }
 
 export function SessionDialog({ mode, session, onClose }) {
   const [title, setTitle] = useState(
-    mode === "fork" ? "" : session.title || "Untitled conversation",
+    mode === "fork" ? "" : session.title || "Untitled session",
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -270,10 +265,10 @@ export function SessionDialog({ mode, session, onClose }) {
       }
       toast(
         mode === "delete"
-          ? "Conversation deleted"
+          ? "Session deleted"
           : mode === "fork"
-            ? "Conversation branched"
-            : "Conversation renamed",
+            ? "Session branched"
+            : "Session renamed",
       );
     } catch (e) {
       setError(e.message);
@@ -281,12 +276,11 @@ export function SessionDialog({ mode, session, onClose }) {
       setBusy(false);
     }
   }
-  return html`<${Dialog} title=${{ rename: "Rename conversation", delete: "Delete conversation?", fork: "Branch conversation" }[mode]} onClose=${onClose} dismissible=${!busy}>
+  return html`<${Dialog} title=${{ rename: "Rename session", delete: "Delete session?", fork: "Branch session" }[mode]} onClose=${onClose} dismissible=${!busy}>
     <form onSubmit=${submit}>
-      ${mode === "delete" ? html`<p class="dialog-intro">“${title}” will be permanently deleted from Hermes. This cannot be undone.</p>` : html`<label class="field">Conversation name<input value=${title} onInput=${(e) => setTitle(e.target.value)} placeholder=${mode === "fork" ? "Automatic name from Hermes" : ""} maxlength="150" required=${mode !== "fork"} autofocus /></label>`}
-      ${mode === "fork" && html`<p class="field-help">Continue in a new direction with a copy of this conversation’s history.</p>`}
+      ${mode === "delete" ? html`<p class="dialog-intro">“${title}” will be permanently deleted from Hermes. This cannot be undone.</p>` : html`<label class="field">Session name<input value=${title} onInput=${(e) => setTitle(e.target.value)} placeholder=${mode === "fork" ? "Automatic name from Hermes" : ""} maxlength="150" required=${mode !== "fork"} autofocus /></label>`}
       ${error && html`<div class="form-error" role="alert">${error}</div>`}
-      <div class="dialog-actions"><button type="button" class="button secondary" disabled=${busy} onClick=${onClose}>Cancel</button><button disabled=${busy} class=${`button ${mode === "delete" ? "danger" : "primary"}`}>${busy ? "Working…" : { rename: "Save name", delete: "Delete conversation", fork: "Create branch" }[mode]}</button></div>
+      <div class="dialog-actions"><button type="button" class="button secondary" disabled=${busy} onClick=${onClose}>Cancel</button><button disabled=${busy} class=${`button ${mode === "delete" ? "danger" : "primary"}`}>${busy ? "Working…" : { rename: "Save name", delete: "Delete session", fork: "Create branch" }[mode]}</button></div>
     </form>
   </${Dialog}>`;
 }
@@ -333,7 +327,6 @@ export function ModelPicker({
     [models],
   );
   return html`<${Dialog} title="Choose a model" className="model-dialog" onClose=${onClose}>
-    <p class="dialog-intro">Your model selection will only apply to this session.</p>
     <div class="model-search"><div class="search-field"><${Icon} name="search" size=${18}/><input aria-label="Search models" placeholder="Find a model…" value=${query} onInput=${(
       e,
     ) => {
@@ -408,7 +401,6 @@ export function ModelPicker({
 export function ReasoningPicker({ model, selected, onSelect, onClose }) {
   const options = reasoningOptions(model);
   return html`<${Dialog} title="Choose reasoning" onClose=${onClose}>
-    <p class="dialog-intro">Your reasoning selection will only apply to this session.</p>
     ${model?.capabilities?.reasoning === false && html`<p class="field-help">This model does not support adjustable reasoning.</p>`}
     ${model?.capabilities?.reasoning !== false && !Array.isArray(model?.capabilities?.supported_efforts) && html`<p class="field-help">Hermes may adjust the level to match the model’s supported settings.</p>`}
     <div class="model-list reasoning-list">${options.map(

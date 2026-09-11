@@ -90,16 +90,7 @@ function Installation() {
           : []),
       ]}
     />
-    ${development
-      ? html`<p class="dialog-intro">
-            Edits appear here as you develop. Production changes when you deploy
-            a release.
-          </p>
-          <p class="field-help">
-            Connect development to a separate Hermes profile to keep its
-            conversations and memory apart.
-          </p>`
-      : info.managed
+    ${!development && info.managed
         ? html`<section class="settings-section installation-update">
             <div class="section-heading">
               <h4>Updates</h4>
@@ -114,10 +105,6 @@ function Installation() {
                   : "Up to date at last check"}</span
               >`}
             </div>
-            <p class="field-help">
-              Update this installation from the server. Your previous release is
-              kept for rollback.
-            </p>
             <div class="update-command">
               <code>${info.update_command}</code
               ><button
@@ -150,21 +137,9 @@ function Installation() {
             ${info.update.error &&
             html`<p class="form-error" role="status">${info.update.error}</p>`}
             ${error && html`<p class="form-error" role="status">${error}</p>`}
-            ${info.previous?.commit &&
-            html`<div class="installation-rollback">
-              <h4>Previous release</h4>
-              <p class="field-help">
-                ${info.previous.version} ·
-                ${info.previous.commit.slice(0, 10)}<br />Restore it with
-                <code
-                  >${info.update_command.replace(/update$/, "rollback")}</code
-                >.
-              </p>
-            </div>`}
           </section>`
-        : html`<p class="field-help">
-            This copy was installed separately. Update it with the package
-            manager used to install it.
+        : !development && html`<p class="field-help">
+            Update using your package manager.
           </p>`}`;
 }
 

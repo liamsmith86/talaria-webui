@@ -84,7 +84,7 @@ export function Sidebar({ app }) {
               class="session-select"
               onClick=${() => openSession(session.id)}
               aria-current=${app.active === session.id ? "page" : undefined}
-              aria-label=${session.title || "Untitled conversation"}
+              aria-label=${session.title || "Untitled session"}
               aria-description=${
                 sourceLabel(session.source)
                   ? `Source: ${sourceLabel(session.source)}`
@@ -102,7 +102,7 @@ export function Sidebar({ app }) {
                     class=${`session-dot ${running(session.id, app.lives) ? "live" : ""}`}
                   ></span>`
               }<span class="session-caption"
-                >${session.title || "Untitled conversation"}</span
+                >${session.title || "Untitled session"}</span
               >${
                 sourceLabel(session.source) &&
                 html`<small class="source-badge" aria-hidden="true"
@@ -112,8 +112,8 @@ export function Sidebar({ app }) {
             </button>
             <button
               class="session-more"
-              title="Conversation options"
-              aria-label=${`Options for ${session.title || "conversation"}`}
+              title="Session options"
+              aria-label=${`Options for ${session.title || "session"}`}
               onClick=${() =>
                 update({ modal: { type: "session-menu", session } })}
             >
@@ -126,7 +126,7 @@ export function Sidebar({ app }) {
   return html`<aside
     ref=${drawer}
     class=${`sidebar ${app.sidebar ? "open" : ""}`}
-    aria-label="Conversations"
+    aria-label="Sessions"
     role=${mobile && app.sidebar ? "dialog" : undefined}
     aria-modal=${mobile && app.sidebar ? "true" : undefined}
     inert=${mobile && !app.sidebar}
@@ -164,26 +164,26 @@ export function Sidebar({ app }) {
     </div>
     <${ProfileSwitch} app=${app} />
     <button class="new-chat" onClick=${newConversation}>
-      <${Icon} name="plus" size=${18} /><span>New conversation</span
+      <${Icon} name="plus" size=${18} /><span>New session</span
       ><kbd>⌘ N</kbd>
     </button>
     <div class="search-field sidebar-search">
       <${Icon} name="search" size=${17} /><input
-        aria-label="Search conversations"
-        placeholder="Search conversations"
+        aria-label="Search sessions"
+        placeholder="Search sessions"
         value=${query}
         onInput=${(e) => setQuery(e.target.value)}
       /><kbd>⌘ K</kbd>
     </div>
-    <nav class="session-list" aria-label="Conversation history">
+    <nav class="session-list" aria-label="Session history">
       ${rows}
       ${
         !sessions.length &&
         html`<div class="sidebar-empty">
         ${
           query
-            ? "No conversations found."
-            : "A fresh start. Your conversations will find a home here."
+            ? "No sessions found."
+            : "No sessions yet."
         }
       </div>`
       }
@@ -203,7 +203,7 @@ export function Sidebar({ app }) {
           }
         }}
       >
-        ${moreBusy ? "Loading…" : "Load more conversations"}
+        ${moreBusy ? "Loading…" : "Load more sessions"}
       </button>`
       }
     </nav>
@@ -214,7 +214,7 @@ export function Sidebar({ app }) {
       >
         <span class="avatar"><${Icon} name="spark" size=${17} /></span
         ><span
-          >Your space<small
+          >Settings<small
             ><span
               class=${`connection-dot ${app.connected && ["ok", "ready", "unknown"].includes(app.readiness.status) ? "connected" : ""}`}
             ></span

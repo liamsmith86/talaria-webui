@@ -11,13 +11,13 @@ export function ConversationMenu({ session, onClose, readOnly = false }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const actions = [
-    ["details", "chart", "Conversation details"],
+    ["details", "chart", "Session details"],
     ["download", "download", "Download transcript"],
     ["rename", "edit", "Rename"],
-    ["fork", "branch", "Branch conversation"],
-    ["delete", "trash", "Delete conversation"],
+    ["fork", "branch", "Branch session"],
+    ["delete", "trash", "Delete session"],
   ].filter(([type]) => !readOnly || ["details", "download"].includes(type));
-  return html`<${Dialog} title=${session.title || "Conversation"} onClose=${onClose} dismissible=${!busy}>
+  return html`<${Dialog} title=${session.title || "Session"} onClose=${onClose} dismissible=${!busy}>
     <div class="session-menu">
       ${
         !readOnly &&
@@ -36,8 +36,8 @@ export function ConversationMenu({ session, onClose, readOnly = false }) {
           }}
         >
           <${Icon} name="pin" size=${19} />${session.pinned
-            ? "Unpin conversation"
-            : "Pin conversation"}
+            ? "Unpin session"
+            : "Pin session"}
         </button>`
       }
       ${actions.map(
@@ -68,7 +68,7 @@ export function ConversationDetails({ session, onClose }) {
         const next = value?.session || value;
         if (!next || typeof next !== "object" || Array.isArray(next))
           throw new Error(
-            "Conversation details are not available from Hermes.",
+            "Session details are not available from Hermes.",
           );
         if (current) setDetails(next);
       })
@@ -95,11 +95,11 @@ export function ConversationDetails({ session, onClose }) {
     ["Reasoning tokens", details.reasoning_tokens],
     ["Model calls", details.api_call_count],
   ];
-  return html`<${Dialog} title="Conversation details" className="usage-dialog" onClose=${onClose}>
-    <p class="detail-title">${details.title || "Untitled conversation"}${busy && html`<span class="details-refresh" role="status" aria-label="Refreshing details"><span class="spinner" /></span>`}</p>
+  return html`<${Dialog} title="Session details" className="usage-dialog" onClose=${onClose}>
+    <p class="detail-title">${details.title || "Untitled session"}${busy && html`<span class="details-refresh" role="status" aria-label="Refreshing details"><span class="spinner" /></span>`}</p>
     <div class="detail-context">${sourceLabel(details.source) && html`<span class="quiet-badge">${sourceLabel(details.source)}</span>`}${details.model && html`<span>${details.model}</span>`}</div>
     ${error && html`<div class="form-error" role="alert">${error}</div>`}
-    <section class="usage-total"><span>${actual ? "Reported cost" : "Estimated cost"}</span><strong>${money(cost)}</strong><small>USD · this conversation</small></section>
+    <section class="usage-total"><span>${actual ? "Reported cost" : "Estimated cost"}</span><strong>${money(cost)}</strong><small>USD · this session</small></section>
     <dl class="usage-grid">${counters.map(
       ([label, value]) =>
         html`<div>
@@ -108,7 +108,6 @@ export function ConversationDetails({ session, onClose }) {
         </div>`,
     )}</dl>
     ${actual && numberValue(details.estimated_cost_usd) !== null && html`<p class="field-help">Hermes’s estimate: ${money(details.estimated_cost_usd)}</p>`}
-    <p class="field-help usage-note">Conversation totals reported by Hermes. A dash means the value was not shared. Cache and reasoning counts may be included in input or output totals.</p>
   </${Dialog}>`;
 }
 
@@ -151,7 +150,7 @@ export function TranscriptDownload({ session, onClose }) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${(session.title || "Conversation").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").slice(0, 100)}.${format === "json" ? "json" : "md"}`;
+      link.download = `${(session.title || "Session").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").slice(0, 100)}.${format === "json" ? "json" : "md"}`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       onClose();
@@ -162,10 +161,9 @@ export function TranscriptDownload({ session, onClose }) {
     }
   }
   return html`<${Dialog} title="Download transcript" onClose=${onClose}>
-    <p class="dialog-intro">Includes all saved messages, including earlier history. A response still in progress appears once Hermes saves it. JSON also includes any image originals retained in this browser.</p>
     <div class="download-formats">
-      <button disabled=${!!busy} onClick=${() => download("markdown")}><${Icon} name="file"/><span><strong>Markdown</strong><small>A readable transcript. Images are noted in the text.</small></span><${Icon} name="download" size=${18}/></button>
-      <button disabled=${!!busy} onClick=${() => download("json")}><${Icon} name="terminal"/><span><strong>JSON</strong><small>Original message structure, tools, and image content.</small></span><${Icon} name="download" size=${18}/></button>
+      <button disabled=${!!busy} onClick=${() => download("markdown")}><${Icon} name="file"/><span><strong>Markdown</strong><small>Text transcript; image placeholders.</small></span><${Icon} name="download" size=${18}/></button>
+      <button disabled=${!!busy} onClick=${() => download("json")}><${Icon} name="terminal"/><span><strong>JSON</strong><small>Messages, tools, and image data.</small></span><${Icon} name="download" size=${18}/></button>
     </div>
     ${busy && html`<p class="download-progress" role="status"><span class="spinner" />Preparing the complete transcript…</p>`}
     ${error && html`<div class="form-error" role="alert">${error}</div>`}

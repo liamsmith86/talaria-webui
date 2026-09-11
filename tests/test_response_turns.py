@@ -119,7 +119,9 @@ def test_tool_rounds_settle_to_one_ordered_response(page, live_app, monkeypatch,
       const {state}=await import('/static/store.js');return state.modal.message.id;
     }""") == 6
     if cancelled:
-        expect(page.get_by_role("dialog")).to_contain_text("This response was interrupted")
+        expect(page.locator(".response-facts > div").filter(has_text="Status")).to_contain_text(
+            "Interrupted"
+        )
         expect(page.get_by_role("dialog")).to_contain_text("Not reported")
     page.get_by_role("button", name="Close dialog").click()
     page.reload()

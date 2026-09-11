@@ -69,7 +69,7 @@ def test_stop_and_steer(page, live_app):
 def test_long_history_and_malicious_markdown(page, live_app):
     peer = live_app[1]
     sid = "long-history"
-    peer.sessions[sid] = {"id": sid, "title": "A long conversation"}
+    peer.sessions[sid] = {"id": sid, "title": "A long session"}
     peer.messages[sid] = [
         {"id": i + 1, "role": "user" if i % 2 == 0 else "assistant", "content": f"History item {i}"}
         for i in range(130)
@@ -89,7 +89,7 @@ def test_long_history_and_malicious_markdown(page, live_app):
     requested = []
     page.on("request", lambda r: requested.append(r.url))
     page.reload()
-    page.get_by_role("button", name="A long conversation", exact=True).click()
+    page.get_by_role("button", name="A long session", exact=True).click()
     expect(page.get_by_role("button", name="Load earlier messages")).to_be_visible()
     page.get_by_role("button", name="Load earlier messages").click()
     expect(page.get_by_text("History item 0", exact=True)).to_be_visible()
@@ -100,7 +100,7 @@ def test_long_history_and_malicious_markdown(page, live_app):
 
 
 def test_connection_setup_without_exposing_key(page, live_app):
-    page.get_by_role("button", name="Your space").click()
+    page.get_by_role("button", name="Settings").click()
     page.get_by_role("tab", name="Connection", exact=True).click()
     expect(page.get_by_label("API key", exact=True)).to_have_value("")
     page.get_by_role("button", name="Test connection", exact=True).click()

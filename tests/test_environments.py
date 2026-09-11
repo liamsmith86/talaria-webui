@@ -104,11 +104,10 @@ def test_development_is_identifiable_on_desktop_mobile_and_login(page, live_app)
     page.reload()
     expect(page).to_have_title("Talaria · Dev")
     expect(page.locator(".sidebar-brand .environment-badge")).to_have_text("Dev")
-    page.get_by_role("button", name="Your space").click()
+    page.get_by_role("button", name="Settings").click()
     page.get_by_role("tab", name="Talaria", exact=True).click()
     expect(page.get_by_role("tabpanel")).to_contain_text("Development")
     expect(page.get_by_role("tabpanel")).to_contain_text("Working checkout")
-    expect(page.get_by_role("tabpanel")).to_contain_text("separate Hermes profile")
     page.get_by_role("button", name="Close dialog").click()
     page.set_viewport_size({"width": 390, "height": 844})
     expect(page.locator(".topbar .environment-badge")).to_have_text("Dev")
@@ -132,7 +131,6 @@ def test_managed_release_ui_is_clear_and_commands_are_copyable(page, monkeypatch
             "managed": True,
             "branch": "main",
             "installed_at": "2026-09-08T20:00:00Z",
-            "previous": {"version": "0.1.0", "commit": "b" * 40},
             "update_command": "sudo talaria update",
             "update": {
                 "error": error,
@@ -141,11 +139,12 @@ def test_managed_release_ui_is_clear_and_commands_are_copyable(page, monkeypatch
             },
         },
     )
-    page.get_by_role("button", name="Your space").click()
+    page.get_by_role("button", name="Settings").click()
     page.get_by_role("tab", name="Talaria", exact=True).click()
     panel = page.get_by_role("tabpanel")
     expect(panel).to_contain_text("Production")
-    expect(panel).to_contain_text("sudo talaria rollback")
+    expect(panel).not_to_contain_text("Previous release")
+    expect(panel).not_to_contain_text("talaria rollback")
     if error:
         expect(panel).to_contain_text(error)
         expect(panel).not_to_contain_text("Up to date")
@@ -176,7 +175,7 @@ def test_refresh_information_reloads_the_update_result(page, monkeypatch):
         "update": {"available": False, "checked_at": "2026-09-08T21:00:00Z"},
     }
     monkeypatch.setattr(installation, "public_info", lambda _: info)
-    page.get_by_role("button", name="Your space").click()
+    page.get_by_role("button", name="Settings").click()
     page.get_by_role("tab", name="Talaria", exact=True).click()
     expect(page.get_by_role("tabpanel")).to_contain_text("Up to date at last check")
     info["update"]["available"] = True

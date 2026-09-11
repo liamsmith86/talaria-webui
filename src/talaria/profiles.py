@@ -203,7 +203,7 @@ class Profiles:
             for channel in app.state.relay.channels.values()
         )
         if active + self.pending_runs >= MAX_ACTIVE_RUNS:
-            raise APIError("There are too many active conversations. Wait for one to finish.", 429)
+            raise APIError("There are too many active sessions. Wait for one to finish.", 429)
         self.pending_runs += 1
         try:
             yield
@@ -225,7 +225,7 @@ class Profiles:
                     relay.channels.pop(channel.run_id)
                     channels.remove((relay, channel))
             if len(channels) >= 32:
-                raise APIError("Too many live conversations. Wait for one to finish.", 429)
+                raise APIError("Too many live sessions. Wait for one to finish.", 429)
         return state.relay.attach(run_id)
 
 

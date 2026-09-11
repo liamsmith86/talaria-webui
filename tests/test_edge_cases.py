@@ -59,7 +59,7 @@ def test_mobile_sidebar_keyboard_focus(page):
     home = page.get_by_role("button", name="Talaria home")
     expect(home).to_be_focused()
     page.keyboard.press("Shift+Tab")
-    expect(page.get_by_role("button", name="Your space")).to_be_focused()
+    expect(page.get_by_role("button", name="Settings")).to_be_focused()
     page.keyboard.press("Tab")
     expect(home).to_be_focused()
     page.keyboard.press("Escape")
@@ -82,7 +82,7 @@ def test_subagent_lifecycle_keeps_its_name(page):
 
 def test_tool_history_retains_command_and_readable_output(page, live_app):
     peer = live_app[1]
-    peer.sessions["tool-history"] = {"id": "tool-history", "title": "A tool conversation"}
+    peer.sessions["tool-history"] = {"id": "tool-history", "title": "A tool session"}
     peer.messages["tool-history"] = [
         {
             "id": 1,
@@ -103,7 +103,7 @@ def test_tool_history_retains_command_and_readable_output(page, live_app):
         },
     ]
     page.reload()
-    page.get_by_role("button", name="A tool conversation", exact=True).click()
+    page.get_by_role("button", name="A tool session", exact=True).click()
     card = page.locator(".tool-card")
     expect(card.locator("summary")).to_contain_text("printf hello")
     card.locator("summary").click()

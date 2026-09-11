@@ -61,7 +61,7 @@ def test_context_status_is_private_and_degrades_independently(page, live_app):
         },
     }
     page.reload()
-    page.get_by_role("button", name="Your space").click()
+    page.get_by_role("button", name="Settings").click()
     page.get_by_role("tab", name="Connection", exact=True).click()
     section = page.locator(".extended-access")
     expect(section).to_contain_text("Some profile context could not be loaded")

@@ -295,10 +295,12 @@ def test_browser_switching_separates_drafts_images_preferences_and_live_requests
             == ""
         )
         # Download uses the selected profile too.
-        page.get_by_role("button", name="Conversation options", exact=True).click()
+        page.get_by_role("button", name="Session options", exact=True).click()
         page.get_by_role("button", name="Download transcript", exact=True).click()
         with page.expect_download() as download:
-            page.get_by_role("button", name="JSON Original message structure", exact=False).click()
+            page.get_by_role(
+                "button", name="JSON Messages, tools, and image data.", exact=False
+            ).click()
         data = json.loads(Path(download.value.path()).read_text())
         assert any(
             "scoped streaming" in str(message.get("content")) for message in data["messages"]
@@ -312,7 +314,7 @@ def test_missing_profile_shows_a_chooser_without_loading_default_sessions(page, 
     page.goto(live_app[0] + "/?profile=" + "f" * 32)
     expect(page.get_by_role("dialog", name="Choose a profile")).to_be_visible()
     expect(
-        page.get_by_text("This profile is no longer available. Choose one to continue.")
+        page.get_by_text("This profile is no longer available. Choose another.")
     ).to_be_visible()
     expect(page.get_by_role("button", name="Close dialog")).to_have_count(0)
     page.get_by_role("link", name="Default profile default", exact=False).click()
@@ -336,7 +338,7 @@ def test_missing_profile_can_test_and_add_an_existing_connection(page, live_app,
 
 
 def test_add_profile_form_reuses_connection_validation(page, research):
-    page.get_by_role("button", name="Your space").click()
+    page.get_by_role("button", name="Settings").click()
     page.get_by_role("tab", name="Connection", exact=True).click()
     page.get_by_role("button", name="Add profile", exact=True).click()
     expect(page.get_by_label("Display name")).to_be_visible()

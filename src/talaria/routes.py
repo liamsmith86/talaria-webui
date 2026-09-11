@@ -211,7 +211,7 @@ async def sessions(request: Request):
             )
         )
     data = await body(request)
-    payload = {"title": text_field(data, "title", 160, "New conversation"), "source": "api_server"}
+    payload = {"title": text_field(data, "title", 160, "New session"), "source": "api_server"}
     for attempt in range(6):
         try:
             result = await client.request("POST", "/api/sessions", json=payload)
@@ -219,7 +219,7 @@ async def sessions(request: Request):
         except APIError as exc:
             if exc.code != "invalid_title":
                 raise
-            base = text_field(data, "title", 160, "New conversation")[:140]
+            base = text_field(data, "title", 160, "New session")[:140]
             payload["title"] = f"{base} ({attempt + 2})"
     payload.pop("title", None)
     result = await client.request("POST", "/api/sessions", json=payload)
@@ -232,12 +232,12 @@ async def session(request: Request):
     if request.method == "PATCH":
         data = await body(request)
         if not data or set(data) - {"title", "pinned"}:
-            raise APIError("Choose a name or pin this conversation.", 400)
+            raise APIError("Choose a name or pin this session.", 400)
         fields = {}
         if "title" in data:
             title = text_field(data, "title", 160).strip()
             if not title:
-                raise APIError("Give this conversation a name.", 400)
+                raise APIError("Give this session a name.", 400)
             fields["title"] = title
         if "pinned" in data:
             if type(data["pinned"]) is not bool:

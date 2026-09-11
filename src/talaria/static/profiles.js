@@ -29,7 +29,7 @@ export function ProfilePicker({ app, onClose }) {
       .catch((e) => setError(e.message));
   }, []);
   return html`<${Dialog} title="Choose a profile" onClose=${onClose} dismissible=${!app.profileMissing}>
-    <p class="dialog-intro">${app.profileMissing ? "This profile is no longer available. Choose one to continue." : "Each profile has its own conversations, models, and memory in Hermes."}</p>
+    ${app.profileMissing && html`<p class="dialog-intro">This profile is no longer available. Choose another.</p>`}
     ${error && html`<p class="form-error" role="status">${error}</p>`}
     <div class="profile-options">${app.profiles.map(
       (profile) =>
@@ -56,7 +56,6 @@ export function ProfilePicker({ app, onClose }) {
           html`<${Icon} name="check" size=${18} />`}
         </a>`,
     )}</div>
-    <p class="field-help">Active responses continue in their profile. Drafts stay in this browser, separate for each profile.</p>
     <div class="dialog-actions"><button class="button secondary" onClick=${() => update({ modal: { type: "settings", section: "connection" } })}>Manage profiles</button></div>
   </${Dialog}>`;
 }
@@ -141,7 +140,7 @@ export function ProfileConnections({ app, onRefresh }) {
       ${removing &&
       html`<div class="profile-removal">
         <p>
-          Remove ${removing.label} from Talaria? Its conversations stay in
+          Remove ${removing.label} from Talaria? Its sessions stay in
           Hermes.
         </p>
         <div class="dialog-actions">

@@ -57,7 +57,6 @@ def public_info(development: bool) -> dict:
         data.update(
             branch=str(config.get("branch", "main"))[:120],
             installed_at=release_info(root / "current")["installed_at"],
-            previous=release_info(root / "previous") if (root / "previous").is_symlink() else None,
             update_command=("sudo " if config.get("scope") == "system" else "") + "talaria update",
             update={
                 **{

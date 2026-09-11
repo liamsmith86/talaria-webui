@@ -24,7 +24,7 @@ def test_chat_and_settings(page, live_app):
     assert len(live_app[1].runs) == 1
     page.reload()
     expect(page.get_by_role("heading", name="A thoughtful place to start")).to_be_visible()
-    page.get_by_role("button", name="Your space").click()
+    page.get_by_role("button", name="Settings").click()
     page.get_by_role("tab", name="Appearance", exact=True).click()
     page.get_by_role("button", name="Dark", exact=True).click()
     page.get_by_role("button", name="Sage", exact=True).click()
@@ -54,7 +54,7 @@ def test_mobile(page):
     page.set_viewport_size({"width": 390, "height": 844})
     screenshot(page, "mobile-welcome")
     page.get_by_role("button", name="Open sidebar").click()
-    page.get_by_role("button", name="Your space").click()
+    page.get_by_role("button", name="Settings").click()
     expect(page.get_by_role("dialog", name="Settings", exact=True)).to_be_visible()
     screenshot(page, "mobile-settings")
     page.get_by_role("button", name="Close dialog").click()

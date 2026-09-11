@@ -47,15 +47,15 @@ async def message_page(client, sid, offset=0, *, order="latest", limit=100):
                 raise
             limit = max(1, limit // 2)
     if not isinstance(result, dict) or not isinstance(result.get("data"), list):
-        raise APIError("Hermes did not return readable conversation history.")
+        raise APIError("Hermes did not return readable session history.")
     data = result["data"]
     if any(not isinstance(row, dict) for row in data):
-        raise APIError("Hermes did not return readable conversation history.")
+        raise APIError("Hermes did not return readable session history.")
     if "session_id" in result:
         try:
             identifier(result["session_id"])
         except APIError as exc:
-            raise APIError("Hermes did not return readable conversation history.") from exc
+            raise APIError("Hermes did not return readable session history.") from exc
     return {
         **result,
         "limit": limit,
@@ -88,11 +88,11 @@ async def download(request):
     client = request.app.state.hermes
     result = await client.request("GET", f"/api/sessions/{sid}")
     if not isinstance(result, dict):
-        raise APIError("Hermes did not return readable conversation details.")
+        raise APIError("Hermes did not return readable session details.")
     session = result.get("session", result)
     if not isinstance(session, dict):
-        raise APIError("Hermes did not return readable conversation details.")
-    title = str(session.get("title") or "Conversation")
+        raise APIError("Hermes did not return readable session details.")
+    title = str(session.get("title") or "Session")
     # Finish fetching before sending headers: a failed page must never look like a complete export.
     spool = SpooledTemporaryFile(max_size=2 * 1024 * 1024, mode="w+b")
 
@@ -123,7 +123,7 @@ async def download(request):
                 canonical = page.get("session_id") or sid
                 if canonical != sid and offset:
                     raise APIError(
-                        "The conversation changed during download. Please try again.", 409
+                        "The session changed during download. Please try again.", 409
                     )
                 sid = identifier(canonical)
                 for message in page["data"]:
@@ -152,7 +152,7 @@ async def download(request):
     spool.seek(0)
 
     extension = "json" if format_ == "json" else "md"
-    filename = re.sub(r'[\x00-\x1f<>:"/\\|?*]', "_", title).strip(" .")[:100] or "Conversation"
+    filename = re.sub(r'[\x00-\x1f<>:"/\\|?*]', "_", title).strip(" .")[:100] or "Session"
     return TranscriptResponse(
         spool,
         media_type="application/json" if format_ == "json" else "text/markdown",

@@ -110,12 +110,12 @@ def page(browser, live_app):
         page = context.new_page()
         page.goto(live_app[0])
         page.get_by_label("Password", exact=True).fill("test-password")
-        page.get_by_role("button", name="Step inside").click()
+        page.get_by_role("button", name="Sign in").click()
         page.locator(".topbar-title").wait_for()
         # Let the simulator's initial discovery finish before starting a scenario.
         wait_for_store(page, "state => !!state.defaultModel && state.readiness.status === 'ok'")
         # Startup listing is independent of discovery; finish/supersede it
-        # before tests install artificial conversation state.
+        # before tests install artificial session state.
         page.evaluate("async () => (await import('/static/store.js')).refreshSessions()")
         yield page
     finally:

@@ -8,20 +8,20 @@ def test_model_selection_and_session_actions(page, live_app):
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
     assert next(iter(live_app[1].runs.values()))["model"] == "hermes-fast"
-    page.get_by_role("button", name="Conversation options", exact=True).click()
+    page.get_by_role("button", name="Session options", exact=True).click()
     page.get_by_role("button", name="Rename", exact=True).click()
-    page.get_by_label("Conversation name").fill("A better name")
+    page.get_by_label("Session name").fill("A better name")
     page.get_by_role("button", name="Save name").click()
     expect(page.locator(".topbar-title")).to_have_text("A better name")
-    page.get_by_role("button", name="Conversation options", exact=True).click()
-    page.get_by_role("button", name="Branch conversation", exact=True).click()
+    page.get_by_role("button", name="Session options", exact=True).click()
+    page.get_by_role("button", name="Branch session", exact=True).click()
     page.get_by_role("button", name="Create branch").click()
     expect(page.locator(".topbar-title")).to_have_text("A better name #2")
     assert len(live_app[1].sessions) == 2
-    page.get_by_role("button", name="Conversation options", exact=True).click()
-    page.get_by_role("button", name="Delete conversation", exact=True).click()
-    page.get_by_role("button", name="Delete conversation", exact=True).click()
-    expect(page.locator(".topbar-title")).to_have_text("New conversation")
+    page.get_by_role("button", name="Session options", exact=True).click()
+    page.get_by_role("button", name="Delete session", exact=True).click()
+    page.get_by_role("button", name="Delete session", exact=True).click()
+    expect(page.locator(".topbar-title")).to_have_text("New session")
     assert len(live_app[1].sessions) == 1
 
 

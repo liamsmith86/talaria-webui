@@ -149,7 +149,7 @@ export async function connect(configured = true) {
       agent: caps.talaria_agent || state.agent,
     });
     // The sidebar, current transcript, catalog, and readiness are independent.
-    // A slow conversation listing must not postpone showing the last reply.
+    // A slow session listing must not postpone showing the last reply.
     const sessions = caps.features?.session_resources
       ? refreshSessions()
       : Promise.resolve(update({ sessions: [], hasMore: false, history: [] }));
@@ -226,7 +226,7 @@ export async function refreshSessionDetails(id = state.active) {
     const parent =
       session.source === "subagent" &&
       typeof session.parent_session_id === "string"
-        ? { id: session.parent_session_id, title: "Parent conversation" }
+        ? { id: session.parent_session_id, title: "Parent session" }
         : state.readOnlyParent;
     update({ sessionDetails: session, readOnlyParent: parent });
     if (parent) writeStorage("child-view", JSON.stringify({ id, parent }));
@@ -241,7 +241,7 @@ export async function pinSession(session) {
   await refreshSessions();
   if (state.active === session.id)
     await refreshSessionDetails().catch(() => {});
-  toast(session.pinned ? "Conversation unpinned" : "Conversation pinned");
+  toast(session.pinned ? "Session unpinned" : "Session pinned");
 }
 let sessionsRequest = 0;
 let sessionsPending;
@@ -290,7 +290,7 @@ export async function openSession(id, parent = null) {
     const saved = JSON.parse(readStorage("child-view", "null"));
     if (!parent && saved?.id === id) parent = saved.parent;
   } catch {
-    /* An invalid presentation hint does not affect the conversation. */
+    /* An invalid presentation hint does not affect the session. */
   }
   writeStorage("child-view", JSON.stringify(parent ? { id, parent } : null));
   const generation = ++navigation;

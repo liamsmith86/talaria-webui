@@ -136,7 +136,7 @@ export async function browserAttachments(session, ids = null) {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
     // The index and originals form one snapshot, with one transaction even
-    // when a conversation has many cached attachments.
+    // when a session has many cached attachments.
     const transaction = db.transaction("pending", "readonly");
     const records = transaction.objectStore("pending");
     const request = records.get("image-index");
