@@ -336,6 +336,7 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
         "HOME": str(tmp_path / "home"),
         "HERMES_HOME": str(tmp_path / "absent"),
         "UV_PYTHON": sys._base_executable,
+        "UV_CACHE_DIR": str(tmp_path / "cold-cache"),
     }
     for name in ("VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "PYTHONPATH"):
         env.pop(name, None)
@@ -368,6 +369,9 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
                 occupied.listen()
             result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=180)
         assert result.returncode == 0, result.stdout + result.stderr
+        runtime = root / "current/venv"
+        packages = list(runtime.glob("lib/python*/site-packages/starlette/__init__.py"))
+        assert packages and all(package.stat().st_mode & 0o004 for package in packages)
         settings = load(config)
         assert settings.public_url == "https://example.com/telaria"
         assert "Update manually:" in result.stdout

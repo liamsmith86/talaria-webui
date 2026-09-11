@@ -77,6 +77,16 @@ def write_json(path: Path, data: dict):
     write_file(path, json.dumps(data, indent=2) + "\n")
 
 
+def readable_runtime(directory):
+    # Dependencies may have been cached under a private bootstrap umask. These
+    # are independent copies: never chmod a shared cache or interpreter symlink.
+    for parent, _, files in os.walk(directory):
+        for path in [Path(parent), *(Path(parent) / name for name in files)]:
+            if not path.is_symlink():
+                mode = path.stat().st_mode
+                path.chmod(0o755 if path.is_dir() or mode & 0o111 else 0o644)
+
+
 def stop(process):
     """Also stop build-tool children when an update is interrupted."""
 
@@ -370,11 +380,18 @@ class Deployment:
                 )
                 run([uv, "venv", "--python", sys._base_executable, release / "venv"])
                 python = release / "venv/bin/python"
-                run([uv, "pip", "sync", "--python", python, "--require-hashes", requirements])
+                run([
+                    uv, "pip", "sync", "--python", python, "--require-hashes",
+                    "--link-mode", "copy", requirements,
+                ])
                 wheels = list((release / "artifacts").glob("talaria_webui-*.whl"))
                 if len(wheels) != 1:
                     raise DeploymentError("Expected exactly one Talaria wheel.")
-                run([uv, "pip", "install", "--python", python, "--no-deps", wheels[0]])
+                run([
+                    uv, "pip", "install", "--python", python, "--no-deps",
+                    "--link-mode", "copy", wheels[0],
+                ])
+                readable_runtime(release / "venv")
                 self.report("Checking startup, configuration, and packaged assets…")
                 self.probe(release)
                 version = run([python, "-c", "from talaria import __version__; print(__version__)"])

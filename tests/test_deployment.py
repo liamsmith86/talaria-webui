@@ -15,6 +15,7 @@ from talaria.deployment import (
     DeploymentError,
     check_health,
     locked,
+    readable_runtime,
     run,
     select,
     selected,
@@ -23,6 +24,22 @@ from talaria.deployment import (
 from talaria.installation import read_json
 
 A, B, C = "a" * 40, "b" * 40, "c" * 40
+
+
+def test_runtime_permissions_preserve_external_interpreter(tmp_path):
+    runtime = tmp_path / "venv"
+    runtime.mkdir(mode=0o700)
+    module = runtime / "module.py"
+    module.write_text("pass")
+    module.chmod(0o600)
+    outside = tmp_path / "python"
+    outside.write_text("interpreter")
+    outside.chmod(0o700)
+    (runtime / "python").symlink_to(outside)
+    readable_runtime(runtime)
+    assert runtime.stat().st_mode & 0o777 == 0o755
+    assert module.stat().st_mode & 0o777 == 0o644
+    assert outside.stat().st_mode & 0o777 == 0o700
 
 
 def release(root, commit):
