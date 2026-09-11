@@ -6,7 +6,6 @@ import plistlib
 import pty
 import select
 import shutil
-import signal
 import socket
 import subprocess
 import sys
@@ -25,7 +24,10 @@ from talaria.setup_services import preflight, service_plan, unit_quote
 def test_interactive_setup_uses_controlling_terminal(piped_stdin):
     """Exercise real prompts and password echo with shell and curl-style stdin."""
     script = """
+import fcntl
 import sys
+import termios
+fcntl.ioctl(1, termios.TIOCSCTTY, 0)
 sys.path.insert(0, sys.argv[1])
 from talaria import setup as wizard
 def check(args, prompts):
@@ -36,19 +38,20 @@ def check(args, prompts):
 wizard.setup = check
 wizard.main([])
 """
-    pid, terminal = pty.fork()
-    if pid == 0:
-        if piped_stdin:
-            read_fd, write_fd = os.pipe()
-            os.close(write_fd)
-            os.dup2(read_fd, 0)
-            os.close(read_fd)
-        os.execv(
-            sys.executable,
+    terminal, slave = pty.openpty()
+    try:
+        child = subprocess.Popen(
             [sys.executable, "-c", script, str(Path(wizard.__file__).resolve().parents[1])],
+            stdin=subprocess.PIPE if piped_stdin else slave,
+            stdout=slave,
+            stderr=slave,
+            start_new_session=True,
         )
+    finally:
+        os.close(slave)
+    if child.stdin is not None:
+        child.stdin.close()
     transcript = b""
-    status = None
     try:
         for prompt, answer in [
             (b'Service [auto]: ', b'none\n'),
@@ -66,17 +69,13 @@ wizard.main([])
                 transcript += chunk
             if answer is not None:
                 os.write(terminal, answer)
-        _, status = os.waitpid(pid, 0)
-        assert os.waitstatus_to_exitcode(status) == 0
+        assert child.wait(timeout=10) == 0
         assert b'test-private-password' not in transcript
     finally:
         os.close(terminal)
-        if status is None:
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            os.waitpid(pid, 0)
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=10)
 
 
 @pytest.fixture
