@@ -5,7 +5,7 @@ import { Dialog, Connection } from "./dialogs.js";
 import { ExtendedAccess } from "./access-settings.js";
 import { update, refreshProfiles, toast } from "./store.js";
 
-export const profileHref = (id) => `/?profile=${encodeURIComponent(id)}`;
+const profileHref = (id) => `/?profile=${encodeURIComponent(id)}`;
 
 export function ProfileSwitch({ app }) {
   return html`<button

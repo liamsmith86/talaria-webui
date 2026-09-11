@@ -111,26 +111,39 @@ export function reasoningOptions(model) {
     ...efforts,
   ];
 }
-export function readReasoningChoices() {
+function readChoices(key, valid) {
   try {
     return Object.fromEntries(
-      Object.entries(JSON.parse(readStorage("session-reasoning", "{}")))
+      Object.entries(JSON.parse(readStorage(key, "{}")))
         .slice(-200)
-        .filter(
-          ([, v]) => typeof v === "string" && Object.hasOwn(reasoningNames, v),
-        ),
+        .filter(([, value]) => valid(value)),
     );
   } catch {
     return {};
   }
 }
-export function saveReasoningChoice(choices, id, value) {
+function saveChoice(key, choices, id, value) {
   const next = { ...choices };
   delete next[id];
-  next[id] = Object.hasOwn(reasoningNames, value) ? value : "auto";
+  next[id] = value;
   const bounded = Object.fromEntries(Object.entries(next).slice(-200));
-  writeStorage("session-reasoning", JSON.stringify(bounded));
+  writeStorage(key, JSON.stringify(bounded));
   return bounded;
+}
+export function readReasoningChoices() {
+  return readChoices(
+    "session-reasoning",
+    (value) =>
+      typeof value === "string" && Object.hasOwn(reasoningNames, value),
+  );
+}
+export function saveReasoningChoice(choices, id, value) {
+  return saveChoice(
+    "session-reasoning",
+    choices,
+    id,
+    Object.hasOwn(reasoningNames, value) ? value : "auto",
+  );
 }
 export function sessionReasoning(app) {
   const choice = app.active
@@ -154,25 +167,18 @@ function valid(model) {
 }
 
 export function readModelChoices() {
-  try {
-    const data = JSON.parse(readStorage("session-models", "{}"));
-    return Object.fromEntries(
-      Object.entries(data)
-        .slice(-200)
-        .filter(([, m]) => m === null || valid(m)),
-    );
-  } catch {
-    return {};
-  }
+  return readChoices(
+    "session-models",
+    (model) => model === null || valid(model),
+  );
 }
-
 export function saveModelChoice(choices, id, model) {
-  const next = { ...choices };
-  delete next[id];
-  next[id] = valid(model) ? { id: model.id, provider: model.provider } : null;
-  const bounded = Object.fromEntries(Object.entries(next).slice(-200));
-  writeStorage("session-models", JSON.stringify(bounded));
-  return bounded;
+  return saveChoice(
+    "session-models",
+    choices,
+    id,
+    valid(model) ? { id: model.id, provider: model.provider } : null,
+  );
 }
 
 export function sessionModel(app) {

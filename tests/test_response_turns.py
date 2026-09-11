@@ -6,6 +6,8 @@ import json
 import pytest
 from playwright.sync_api import expect
 
+from .conftest import wait_for_store
+
 
 @pytest.mark.parametrize("cancelled", [False, True])
 def test_tool_rounds_settle_to_one_ordered_response(page, live_app, monkeypatch, cancelled):
@@ -65,14 +67,9 @@ def test_tool_rounds_settle_to_one_ordered_response(page, live_app, monkeypatch,
     assert order == ["message-text", "tool-stack", "message-text", "tool-stack"]
     if cancelled:
         page.get_by_role("button", name="Stop response", exact=True).click()
-        page.wait_for_function("""async () => {
-          const {state}=await import('/static/store.js');
-          return state.lives[state.active]?.status === 'stopping';
-        }""")
+        wait_for_store(page, "state => state.lives[state.active]?.status === 'stopping'")
     peer.finish_rounds()
-    page.wait_for_function("""async () => {
-      const {state}=await import('/static/store.js');return state.lives[state.active]?.persisted;
-    }""")
+    wait_for_store(page, "state => state.lives[state.active]?.persisted")
     response = page.locator(".message.assistant")
     expect(response).to_have_count(1)
     expect(response.locator(".tool-card")).to_have_count(2)
@@ -154,3 +151,92 @@ def test_late_reasoning_does_not_split_or_duplicate_the_current_markdown(page):
     }""")
     assert result == [{"kind": "reasoning", "text": "Final thinking"},
                       {"kind": "text", "text": "**One paragraph**"}]
+
+
+def test_expired_live_updates_use_the_same_saved_turn_reconciliation(page, live_app):
+    peer = live_app[1]
+    peer.sessions["expired"] = {"id": "expired", "title": "Expired updates", "source": "api_server"}
+    peer.messages["expired"] = [
+        {"id": 3, "role": "user", "content": "Question"},
+        {"id": 4, "role": "assistant", "content": "The saved answer"},
+    ]
+    page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      const {subscribe}=await import('/static/runs.js');
+      update({active:'expired',loading:false,history:[],lives:{expired:{id:'expired-run',
+        status:'running',text:'The saved',userText:'Question',baseUserId:1,baseMessageId:2,
+        tools:[{id:'unfinished',name:'terminal',status:'running'}]}}});
+      const original=window.EventSource;
+      window.EventSource=class {
+        constructor(){window.expiredSource=this}
+        close(){this.closed=true}
+      };
+      try {subscribe('expired')} finally {window.EventSource=original}
+      expiredSource.onmessage({data:JSON.stringify({event:'talaria.unavailable',
+        message:'Live updates expired.'})});
+    }""")
+    wait_for_store(page, "state => state.lives.expired.persisted")
+    expect(page.locator(".message.assistant")).to_have_count(1)
+    expect(page.locator(".message.assistant")).to_contain_text("The saved answer")
+    assert page.evaluate("expiredSource.closed")
+    assert page.evaluate("""async () => (await import('/static/store.js'))
+      .state.lives.expired.tools[0].status""") == "not_reported"
+    page.get_by_role("button", name="Response details", exact=True).click()
+    assert page.evaluate("""async () => (await import('/static/store.js'))
+      .state.modal.message.responseStatus""") is None
+
+
+def test_saved_turn_can_be_recognized_when_its_user_row_is_on_an_older_page(page):
+    assert page.evaluate("""async () => {
+      const {responseSaved}=await import('/static/runs.js');
+      const history=[{id:150,role:'assistant',tool_calls:[{id:'tool'}]},
+        {id:151,role:'tool',content:'result'},
+        {id:152,role:'assistant',content:'Finished a long turn'}];
+      const live={status:'completed',baseMessageId:10,baseUserId:9,userText:'Long task',
+        text:'Partial preview'};
+      return responseSaved(history,live) &&
+        !responseSaved(history,{...live,baseMessageId:152}) &&
+        !responseSaved(history,{...live,baseMessageId:undefined}) &&
+        !responseSaved(history,{...live,status:'running'});
+    }""")
+
+
+def test_cached_run_status_stays_with_its_saved_message_after_history_grows(page):
+    page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      update({active:'extended',loading:false,history:[
+        {id:1,role:'user',content:'First'}, {id:2,role:'assistant',content:'Stopped first reply'},
+        {id:3,role:'user',content:'Second'},
+        {id:4,role:'assistant',content:'New reply from another tab'}],
+        lives:{extended:{id:'old-run',persisted:true,savedMessageId:2,status:'cancelled',
+          userText:'First',text:'Stopped first reply',tools:[{id:'old-child',kind:'agent',
+          name:'Earlier child',status:'completed'}]}}});
+    }""")
+    expect(page.locator(".completed-children")).to_have_count(0)
+    details = page.get_by_role("button", name="Response details", exact=True)
+    details.first.click()
+    assert page.evaluate("""async () => (await import('/static/store.js'))
+      .state.modal.message.responseStatus""") == "cancelled"
+    page.get_by_role("button", name="Close dialog").click()
+    details.last.click()
+    assert page.evaluate("""async () => (await import('/static/store.js'))
+      .state.modal.message.responseStatus""") is None
+
+
+def test_prior_delegation_does_not_hide_current_unsaved_child_details(page):
+    page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      update({active:'delegations',loading:false,history:[
+        {id:1,role:'user',content:'Old task'},
+        {id:2,role:'assistant',content:'',tool_calls:[{id:'old-tool',function:{
+          name:'delegate_task',arguments:'{"goal":"Old task"}'}}]},
+        {id:3,role:'tool',tool_call_id:'old-tool',
+          content:'{"task_index":0,"summary":"Old result"}'},
+        {id:4,role:'assistant',content:'Old reply'},
+        {id:5,role:'user',content:'New task'}, {id:6,role:'assistant',content:'New reply'}],
+        lives:{delegations:{id:'new-run',persisted:true,savedMessageId:6,status:'completed',
+          userText:'New task',text:'New reply',tools:[{id:'new-child',kind:'agent',
+          name:'New task',preview:'Current child result',status:'completed'}]}}});
+    }""")
+    expect(page.locator(".tool-card")).to_have_count(2)
+    expect(page.locator(".completed-children")).to_contain_text("New task")

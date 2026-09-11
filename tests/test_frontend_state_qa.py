@@ -6,6 +6,53 @@ from playwright.sync_api import expect
 from .test_conversation_features import IMAGE, seed
 
 
+def test_image_submission_keeps_its_original_boundary_during_navigation(page):
+    result = page.evaluate("""async image => {
+      const {state,update,newConversation}=await import('/static/store.js');
+      const {sendMessage}=await import('/static/runs.js');
+      update({active:'origin',loading:false,history:[
+        {id:10,role:'user',content:'Earlier'}, {id:11,role:'assistant',content:'Earlier answer'}]});
+      const original=window.fetch;
+      let release;
+      window.fetch=async (url,options)=>{
+        if(String(url).includes('/origin/messages')) {
+          await new Promise(resolve=>release=resolve);
+          return Response.json({data:[{id:11}]});
+        }
+        if(String(url)==='/api/runs') return Response.json({error:'Rejected'}, {status:400});
+        return original(url,options);
+      };
+      try {
+        const sending=sendMessage('Question',null,{images:[{id:'image',url:image}]}).catch(()=>{});
+        newConversation();
+        update({active:'elsewhere',history:[{id:99,role:'user',content:'Unrelated'}]});
+        release();await sending;
+        const live=state.lives.origin;
+        return {active:state.active,user:live.baseUserId,message:live.baseMessageId,
+          length:live.baseHistoryLength};
+      } finally {window.fetch=original}
+    }""", IMAGE)
+    assert result == {"active": "elsewhere", "user": 10, "message": 11, "length": 2}
+
+
+def test_send_waits_for_the_selected_conversation_history(page, live_app):
+    page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      update({active:'loading-history',history:[],loading:true});
+    }""")
+    page.get_by_label("Message Hermes").fill("Prepare this while history loads")
+    expect(page.get_by_role("button", name="Send message", exact=True)).to_be_disabled()
+    page.get_by_label("Message Hermes").press("Enter")
+    assert page.evaluate("""async () => {
+      const {sendMessage}=await import('/static/runs.js');
+      return sendMessage('No premature submission').then(()=>false,
+        error=>error.message.includes('conversation to load'));
+    }""")
+    assert not live_app[1].runs
+    page.evaluate("""async () => (await import('/static/store.js')).update({loading:false})""")
+    expect(page.get_by_role("button", name="Send message", exact=True)).to_be_enabled()
+
+
 @pytest.mark.parametrize("body", ['{"run_id":', "{}", "aborted body"])
 def test_incomplete_run_acknowledgement_preserves_draft_and_safe_retry(page, live_app, body):
     def incomplete_acknowledgement(route):

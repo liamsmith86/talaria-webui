@@ -94,6 +94,7 @@ export function Composer({
       operation.current ||
       attaching ||
       loadingImages ||
+      app.loading ||
       live?.uncertain ||
       (!text && !attachments.length)
     )
@@ -413,6 +414,7 @@ export function Composer({
               sending ||
               attaching ||
               loadingImages ||
+              app.loading ||
               (active && images.length > 0) ||
               !app.connected ||
               !supports("run_submission") ||

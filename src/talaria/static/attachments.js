@@ -279,7 +279,7 @@ export function messageImages(message) {
     }),
   );
 }
-export function imageParts(content) {
+function imageParts(content) {
   if (!Array.isArray(content)) return [];
   return content
     .filter((p) => p && ["image_url", "input_image", "image"].includes(p.type))

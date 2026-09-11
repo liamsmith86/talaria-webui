@@ -58,6 +58,7 @@ function remember() {
         requestId: r.requestId,
         userText: r.userText,
         baseUserId: r.baseUserId,
+        baseMessageId: r.baseMessageId,
         imageReceipt: !!r.imageReceipt,
         ...(!r.id
           ? {
@@ -227,6 +228,7 @@ export function applyEvent(live, event) {
   }
   if (type?.startsWith("run.") && terminal.has(type.slice(4))) {
     next.status = type.slice(4);
+    next.outcomeUnknown = event.outcome_unknown === true;
     if (typeof event.output === "string" && event.output) {
       next.parts = finishText(live, event.output);
       next.text = next.parts
@@ -238,7 +240,8 @@ export function applyEvent(live, event) {
       tool.status === "running"
         ? {
             ...tool,
-            status: next.status === "completed" ? "not_reported" : next.status,
+            status: next.status === "completed" || next.outcomeUnknown
+              ? "not_reported" : next.status,
           }
         : tool,
     );
@@ -261,6 +264,12 @@ export async function sendMessage(
 ) {
   let sid = state.active;
   const generation = navigationVersion();
+  if (state.loading)
+    throw new Error("Wait for this conversation to load before sending.");
+  // Capture the originating transcript before image storage or submission can
+  // yield to navigation into another conversation.
+  const history = sid ? state.history : [];
+  const previousUser = history.findLast((message) => message.role === "user");
   if (state.readOnlyParent)
     throw new Error("Return to the parent conversation to continue.");
   if (Object.hasOwn(recoveryRecords, sid))
@@ -332,16 +341,14 @@ export async function sendMessage(
       imageBoundary,
     });
   }
-  const previousUser = state.history.findLast(
-    (message) => message.role === "user",
-  );
   const live = {
     id: null,
     requestId,
     userText: text,
-    baseHistoryLength: state.history.length,
+    baseHistoryLength: history.length,
     // A full history page can retain its length after this message is saved.
     baseUserId: previousUser ? previousUser.id : null,
+    baseMessageId: history.at(-1)?.id ?? 0,
     userImages: images,
     imageBoundary,
     imageReceipt: images.length > 0,
@@ -448,18 +455,12 @@ export function subscribe(sid) {
       return;
     }
     if (event.event === "talaria.unavailable") {
-      source.close();
-      sources.delete(sid);
-      publish(sid, {
-        ...state.lives[sid],
-        status: "interrupted",
-        reconnecting: false,
-        approval: null,
+      event = {
+        event: "run.interrupted",
         error: event.message,
-      });
-      refreshHistory(sid).catch(fail);
-      remember();
-      return;
+        needs_history: true,
+        outcome_unknown: true,
+      };
     }
     const next = applyEvent(state.lives[sid], event);
     publish(sid, next);
@@ -483,13 +484,13 @@ export function responseSaved(history, live) {
   const lastUser = history.findLastIndex((message) => message.role === "user");
   const user = history[lastUser];
   if (
-    !user ||
+    user &&
     withoutImagePlaceholders(plainContent(user.content)) !== live.userText
   )
     return false;
   // Repeated prompts are different turns. A failed save must never adopt the
   // previous response just because the user sent identical text again.
-  if (live.baseUserId !== undefined && user.id === live.baseUserId)
+  if (user && live.baseUserId !== undefined && user.id === live.baseUserId)
     return false;
   const final = history.findLast(
     (message, index) =>
@@ -501,28 +502,46 @@ export function responseSaved(history, live) {
         message.reasoning ||
         message.reasoning_content),
   );
+  if (!final) return false;
+  if (typeof live.baseMessageId === "number" && typeof final.id === "number")
+    return terminal.has(live.status) && final.id > live.baseMessageId;
+  // Older recovery receipts lack a message boundary. Require the originating
+  // user row before using text-based reconciliation for those receipts.
+  if (!user) return false;
   const content = plainContent(final?.content);
-  const tail = responseParts(live).findLast((part) => part.kind === "text")?.text;
+  const tail = responseParts(live).findLast(
+    (part) => part.kind === "text",
+  )?.text;
   return !!(
-    final &&
-    ((live.baseUserId !== undefined && terminal.has(live.status)) ||
-      ["cancelled", "interrupted"].includes(live.status) ||
-      (live.text && content.trim() === live.text.trim()) ||
-      (tail && content.trim() === tail.trim()) ||
-      (live.needsHistory && live.status === "completed"))
+    (live.baseUserId !== undefined && terminal.has(live.status)) ||
+    ["cancelled", "interrupted"].includes(live.status) ||
+    (live.text && content.trim() === live.text.trim()) ||
+    (tail && content.trim() === tail.trim()) ||
+    (live.needsHistory && live.status === "completed")
   );
 }
 
 async function settle(sid, live) {
+  let savedResponse;
+  const savedState = (history) =>
+    savedResponse ??= responseSaved(history, live)
+      ? {
+          persisted: true,
+          savedMessageId: history.findLast(
+            (message) =>
+              message.role === "assistant" && message.display_kind !== "hidden",
+          )?.id,
+        }
+      : {};
   const history = await refreshHistory(
     sid,
     () => state.lives[sid]?.id === live.id,
     (history) =>
-      responseSaved(history, live)
+      savedState(history).persisted
         ? {
             lives: {
               ...state.lives,
-              [sid]: { ...state.lives[sid], persisted: true },
+              [sid]: { ...state.lives[sid], ...savedState(history) },
             },
           }
         : {},
@@ -557,20 +576,18 @@ async function settle(sid, live) {
     );
   if (state.lives[sid]?.id !== live.id) return;
   if (state.history === history) update({ history: [...history] }, true);
+  const saved = savedState(history);
   publish(sid, {
     ...state.lives[sid],
+    ...saved,
     imageReceipt: !imageSaved,
+    ...((saved.persisted || imageMessage) && imageSaved
+      ? { userImages: [], payload: undefined }
+      : {}),
     ...(imageMessage && imageSaved
-      ? { userImages: [], userPersisted: true, payload: undefined }
+      ? { userPersisted: true }
       : {}),
   });
-  if (responseSaved(history, live)) {
-    publish(sid, {
-      ...state.lives[sid],
-      persisted: true,
-      ...(imageSaved ? { userImages: [], payload: undefined } : {}),
-    });
-  }
   remember();
   await refreshSessions();
   refreshSessionDetails(sid).catch(() => {});

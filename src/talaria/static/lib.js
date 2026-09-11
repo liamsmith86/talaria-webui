@@ -3,7 +3,7 @@ import htm from "./vendor/htm.js";
 import { useEffect, useState } from "./vendor/hooks.js";
 import { storagePrefix } from "./profile-context.js";
 export { useEffect, useState };
-export { useRef, useMemo, useCallback, useLayoutEffect } from "./vendor/hooks.js";
+export { useRef, useMemo, useLayoutEffect } from "./vendor/hooks.js";
 export const html = htm.bind(h);
 export { render };
 
@@ -87,7 +87,6 @@ const paths = {
   down: "M12 5v14m-6-6 6 6 6-6",
   logout: "M9 3H3v18h6m5-5 4-4-4-4M8 12h13",
   alert: "M12 3 2 21h20zM12 9v5m0 3v.5",
-  paperclip: "m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L13 2",
 };
 export function Icon({ name, size = 20, ...props }) {
   return html`<svg
