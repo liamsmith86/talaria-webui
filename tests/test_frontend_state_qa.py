@@ -84,7 +84,7 @@ def test_repeated_default_branches_use_distinct_hermes_names(page, live_app):
     assert {s["title"] for s in children} == {"Original #2", "Original #3", "Original #4"}
 
 
-def test_rejected_branch_can_close_and_open_context_usage(page, live_app):
+def test_rejected_branch_can_close_and_open_session_details(page, live_app):
     peer = live_app[1]
     peer.extension = {"session_fork": True}
     sid = seed(peer, "rejected-original", count=2)
@@ -99,8 +99,8 @@ def test_rejected_branch_can_close_and_open_context_usage(page, live_app):
     expect(page.get_by_role("button", name="Create branch", exact=True)).to_be_enabled()
     page.keyboard.press("Escape")
     expect(page.get_by_role("dialog")).to_have_count(0)
-    page.get_by_role("button", name="Context usage", exact=True).click()
-    expect(page.get_by_role("dialog", name="Context usage")).to_be_visible()
+    page.get_by_role("button", name="Session details", exact=True).click()
+    expect(page.get_by_role("dialog", name="Session details")).to_be_visible()
     page.get_by_role("button", name="Close dialog", exact=True).click()
     expect(page.get_by_role("dialog")).to_have_count(0)
     assert len(peer.sessions) == 1

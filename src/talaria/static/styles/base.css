@@ -87,10 +87,21 @@ summary {
 .initial-loader {
   height: 100dvh;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 16px;
   color: var(--muted);
+}
+.startup-reload {
+  visibility: hidden;
+  animation: show-startup-retry 0s 10s forwards;
+}
+.startup-reload.is-visible {
+  visibility: visible;
+}
+@keyframes show-startup-retry {
+  to { visibility: visible; }
 }
 .brand-mark {
   color: var(--accent);

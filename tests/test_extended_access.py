@@ -34,10 +34,9 @@ def test_response_details_context_and_line_breaks(page, live_app):
     expect(dialog).to_contain_text("High")
     expect(dialog).to_contain_text("12,000")
     page.get_by_role("button", name="Close dialog").click()
-    page.get_by_role("button", name="Context usage", exact=True).click()
-    expect(page.get_by_role("dialog")).to_contain_text("116,000")
-    expect(page.get_by_role("dialog")).to_contain_text("last request")
-    page.get_by_role("button", name="Close dialog").click()
+    expect(page.locator(".context-indicator")).to_have_attribute(
+        "aria-label", "9% context used · last request"
+    )
     peer.messages["notes"][-1]["content"] = (
         "First line\nSecond line\nThird line\n\nNew paragraph\n\n```text\ncode one\ncode two\n```"
     )
@@ -59,8 +58,9 @@ def test_missing_extension_keeps_chat_and_truthful_response_details(page, live_a
     expect(page.get_by_role("dialog")).to_contain_text("Not reported")
     expect(page.get_by_role("dialog")).not_to_contain_text("hermes-test")
     page.get_by_role("button", name="Close dialog").click()
-    page.get_by_role("button", name="Context usage", exact=True).click()
-    expect(page.get_by_role("dialog")).to_contain_text("Enable the Talaria plugin")
+    expect(page.locator(".context-indicator")).to_have_attribute(
+        "aria-label", "Context usage unavailable"
+    )
 
 
 def test_edit_resend_reuses_run_transport_and_removes_following_turns(page, live_app):
@@ -270,15 +270,16 @@ def test_context_tokens_remain_visible_without_a_model_limit(page, live_app):
         200,
     )
     open_seed(page, peer)
-    indicator = page.get_by_role("button", name="Context usage", exact=True)
+    indicator = page.locator(".context-indicator")
     expect(indicator).to_contain_text("43,565 tokens")
     for width in (1280, 390, 320):
         page.set_viewport_size({"width": width, "height": 844})
         expect(indicator).to_be_visible()
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     indicator.click()
-    expect(page.get_by_role("dialog")).to_contain_text("43,565")
-    expect(page.get_by_role("dialog")).not_to_contain_text("NaN")
+    expect(page.get_by_role("dialog")).to_have_count(0)
+    expect(page.get_by_role("button", name="Context usage", exact=True)).to_have_count(0)
+    assert indicator.evaluate("el => el.tabIndex") == -1
 
 
 def test_inherited_reasoning_is_shown_without_overriding_hermes(page, live_app):

@@ -108,9 +108,11 @@ export function fail(error) {
       error: error.message || "Something went wrong. Please try again.",
     });
 }
-export async function initialize() {
+export async function initialize(signal = new AbortController().signal) {
+  const options = () => ({ signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) });
   try {
-    const data = await api("/bootstrap");
+    const data = await api("/bootstrap", options());
+    signal.throwIfAborted();
     document.title =
       data.environment === "development" ? "Talaria · Dev" : "Talaria";
     setCSRF(data.csrf || "");
@@ -121,28 +123,27 @@ export async function initialize() {
       environment: data.environment || "production",
       profiles: data.profiles || [],
       profile: data.profile || null,
+      error: "",
     });
     if (data.authenticated) await connect(data.connected);
   } catch (error) {
-    let reported = error;
     if (error.code === "profile_missing") {
-      try {
-        const data = await api("/profiles");
-        setCSRF(data.csrf || "");
-        update({
-          auth: true,
-          connected: false,
-          profileMissing: true,
-          profiles: data.profiles,
-          modal: "profiles",
-        });
-        return;
-      } catch (failure) {
-        reported = failure;
-      }
+      const data = await api("/profiles", options());
+      signal.throwIfAborted();
+      setCSRF(data.csrf || "");
+      update({
+        auth: true,
+        connected: false,
+        profileMissing: true,
+        profiles: data.profiles,
+        modal: "profiles",
+        error: "",
+      });
+      return;
     }
-    fail(reported);
-    update({ auth: false });
+    // A transport failure says nothing about the login cookie. The caller
+    // retains the startup/retry screen until authentication can be checked.
+    throw error;
   }
 }
 export async function refreshProfiles() {

@@ -24,12 +24,14 @@
     <link rel="stylesheet" href="__TALARIA_BASE__static/styles/conversation-features.css" />
     <script src="__TALARIA_BASE__static/appearance.js"></script>
     <script defer src="__TALARIA_BASE__static/vendor/prism.js"></script>
-    <script type="module" src="__TALARIA_BASE__static/app.js"></script>
+    <link rel="modulepreload" href="__TALARIA_BASE__static/app.js" />
+    <script type="module" src="__TALARIA_BASE__static/boot.js"></script>
   </head>
   <body>
     <div id="app">
-      <div class="initial-loader" role="status">
-        Opening Talaria<span class="loading-dots">…</span>
+      <div class="initial-loader">
+        <span role="status">Opening Talaria<span class="loading-dots">…</span></span>
+        <a class="button secondary startup-reload" href="">Reload Talaria</a>
       </div>
     </div>
     <noscript>Talaria needs JavaScript to display sessions and live updates.</noscript>
