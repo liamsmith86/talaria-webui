@@ -286,7 +286,7 @@ function App() {
               <${Icon} name="back" size=${17} />Back to parent session
             </button>
           </div>`
-        : html`<div class="composer-area">
+        : html`<div key="composer-area" class="composer-area">
             <${Composer}
               app=${app}
               model=${model}
