@@ -19,6 +19,7 @@ from pathlib import Path
 STREAMING = [
     "tests/test_response_turns.py",
     "tests/test_stream_reveal.py",
+    "tests/test_reply_settlement.py",
 ]
 FOCUSED = [*STREAMING, "tests/test_frontend_state_qa.py", "tests/test_message_submission.py"]
 INSTALL_TESTS = [
