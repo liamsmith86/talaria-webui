@@ -7,7 +7,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 
-from .hermes import APIError, Hermes, object_result
+from .hermes import MAX_STREAMS, APIError, Hermes, object_result
 
 TERMINAL = {"completed", "failed", "cancelled", "interrupted"}
 TERMINAL_EVENTS = {f"run.{status}" for status in TERMINAL}
@@ -53,12 +53,12 @@ class Relay:
                 self.channels.pop(key)
         if run_id in self.channels:
             return self.channels[run_id]
-        while len(self.channels) >= 32:
+        while len(self.channels) >= MAX_STREAMS:
             finished = next((key for key, item in self.channels.items() if item.finished), None)
             if finished is None:
                 break
             self.channels.pop(finished)
-        if len(self.channels) >= 32:
+        if len(self.channels) >= MAX_STREAMS:
             raise APIError("Too many live sessions. Close an active run and try again.", 429)
         channel = self.channels[run_id] = Channel(run_id)
         channel.task = asyncio.create_task(self.observe(channel))

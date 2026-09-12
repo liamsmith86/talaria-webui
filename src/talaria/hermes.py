@@ -8,6 +8,8 @@ import httpx
 
 MAX_RESPONSE = 16 * 1024 * 1024
 MAX_EVENT = 2 * 1024 * 1024
+MAX_STREAMS = 32
+REQUEST_CONNECTIONS = 8
 IDENTIFIER = re.compile(r"[A-Za-z0-9_.:-]{1,256}\Z")
 
 
@@ -102,7 +104,10 @@ class Hermes:
             base_url=url.rstrip("/") + "/",
             headers={"Authorization": f"Bearer {key}"} if key else {},
             timeout=httpx.Timeout(30, connect=5),
-            limits=httpx.Limits(max_connections=32, max_keepalive_connections=12),
+            # A full stream budget must leave room for status, stop, and history.
+            limits=httpx.Limits(
+                max_connections=MAX_STREAMS + REQUEST_CONNECTIONS, max_keepalive_connections=12
+            ),
             follow_redirects=False,
             trust_env=False,
             transport=transport,
