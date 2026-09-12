@@ -60,7 +60,7 @@ def test_public_url_flag_configures_runtime_and_first_start(tmp_path, monkeypatc
         "argv",
         ["talaria", "--config", str(path), "--public-url", "https://EXAMPLE.com:443/telaria/"],
     )
-    monkeypatch.setattr("uvicorn.run", lambda *a, **kw: None)
+    monkeypatch.setattr("talaria.server.run", lambda *a, **kw: None)
     monkeypatch.setattr(
         "talaria.app.create_app", lambda settings, _: captured.append(settings.public_url)
     )
