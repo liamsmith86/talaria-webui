@@ -1,6 +1,7 @@
 """Canonical message pagination and disposable, complete transcript downloads."""
 
 import asyncio
+import hashlib
 import json
 import re
 from datetime import UTC, datetime
@@ -13,6 +14,7 @@ from .content import content_text
 from .hermes import APIError, identifier
 
 MAX_EXPORT = 128 * 1024 * 1024
+HISTORY_CHANGED = "The session changed during download. Please try again."
 
 
 class TranscriptResponse(StreamingResponse):
@@ -86,13 +88,6 @@ async def download(request):
     if format_ not in {"markdown", "json"}:
         raise APIError("Choose Markdown or JSON.", 400)
     client = request.app.state.hermes
-    result = await client.request("GET", f"/api/sessions/{sid}")
-    if not isinstance(result, dict):
-        raise APIError("Hermes did not return readable session details.")
-    session = result.get("session", result)
-    if not isinstance(session, dict):
-        raise APIError("Hermes did not return readable session details.")
-    title = str(session.get("title") or "Session")
     # Finish fetching before sending headers: a failed page must never look like a complete export.
     # Ownership transfers to TranscriptResponse; its ASGI finally closes the spool.
     spool = SpooledTemporaryFile(max_size=2 * 1024 * 1024, mode="w+b")  # noqa: SIM115
@@ -105,7 +100,7 @@ async def download(request):
 
     try:
         async with asyncio.timeout(180):
-            await write_transcript(request, client, sid, session, title, format_, write)
+            title = await write_transcript(request, client, sid, format_, write)
     except BaseException as exc:
         spool.close()
         if isinstance(exc, TimeoutError):
@@ -126,7 +121,58 @@ async def download(request):
     )
 
 
-async def write_transcript(request, client, sid, session, title, format_, write):
+async def session_details(client, sid):
+    result = await client.request("GET", f"/api/sessions/{sid}")
+    if not isinstance(result, dict):
+        raise APIError("Hermes did not return readable session details.")
+    session = result.get("session", result)
+    if not isinstance(session, dict):
+        raise APIError("Hermes did not return readable session details.")
+    if session.get("id", sid) != sid:
+        raise APIError(HISTORY_CHANGED, 409)
+    return session
+
+
+def page_signature(page):
+    # Retain bounded comparison facts, not another copy of the transcript.
+    digest = hashlib.sha256()
+    for message in page["data"]:
+        digest.update(json.dumps(message, ensure_ascii=False, sort_keys=True).encode())
+        digest.update(b"\n")
+    return digest.digest()
+
+
+async def same_session_page(client, sid, **kwargs):
+    page = await message_page(client, sid, **kwargs)
+    if page.get("session_id", sid) != sid:
+        raise APIError(HISTORY_CHANGED, 409)
+    return page
+
+
+async def verify_history(client, sid, session, boundaries):
+    # Native Hermes exposes no snapshot token. Recheck the head, tail, and
+    # available counts/activity to reject detectable rewinds or appends.
+    # This cannot prove that arbitrary edits within unchanged boundaries did
+    # not occur, or make these separate HTTP reads an atomic snapshot.
+    for order, limit, signature in boundaries:
+        page = await same_session_page(client, sid, order=order, limit=limit)
+        if page_signature(page) != signature:
+            raise APIError(HISTORY_CHANGED, 409)
+    current = await session_details(client, sid)
+    if any(session.get(key) != current.get(key) for key in ("message_count", "last_active")):
+        raise APIError(HISTORY_CHANGED, 409)
+
+
+async def write_transcript(request, client, sid, format_, write):
+    page = await message_page(client, sid, order="oldest")
+    sid = identifier(page.get("session_id") or sid)
+    session = await session_details(client, sid)
+    title = str(session.get("title") or "Session")
+    boundaries = [("oldest", page["limit"], page_signature(page))]
+    if page["has_more"]:
+        tail = await same_session_page(client, sid, order="latest", limit=1)
+        boundaries.append(("latest", tail["limit"], page_signature(tail)))
+        del tail
     stamp = datetime.now(UTC).isoformat()
     if format_ == "json":
         meta = {
@@ -138,15 +184,10 @@ async def write_transcript(request, client, sid, session, title, format_, write)
         write(json.dumps(meta, ensure_ascii=False, indent=2)[:-2] + ',\n  "messages": [\n')
     else:
         write(f"# {title.replace(chr(10), ' ')}\n\nExported {stamp}\n\n")
-    offset, first = 0, True
+    first = True
     while True:
         if await request.is_disconnected():
             raise asyncio.CancelledError
-        page = await message_page(client, sid, offset, order="oldest")
-        canonical = page.get("session_id") or sid
-        if canonical != sid and offset:
-            raise APIError("The session changed during download. Please try again.", 409)
-        sid = identifier(canonical)
         for message in page["data"]:
             if format_ == "json":
                 write(("" if first else ",\n") + json.dumps(message, ensure_ascii=False, indent=2))
@@ -156,8 +197,10 @@ async def write_transcript(request, client, sid, session, title, format_, write)
             # Formatting a large page must not monopolize the server
             # while other tabs are submitting messages or streaming.
             await asyncio.sleep(0)
-        offset = page["next_offset"]
         if not page["has_more"]:
             break
+        page = await same_session_page(client, sid, offset=page["next_offset"], order="oldest")
+    await verify_history(client, sid, session, boundaries)
     if format_ == "json":
         write("\n  ]\n}\n")
+    return title

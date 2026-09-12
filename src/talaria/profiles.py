@@ -16,7 +16,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from . import auth, config
-from .hermes import APIError, Hermes, decode_json, object_result, valid_api_key
+from .hermes import MAX_STREAMS, APIError, Hermes, decode_json, object_result, valid_api_key
 from .relay import Channel
 
 PROFILE = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
@@ -230,12 +230,12 @@ class Profiles:
                 for channel in app.state.relay.channels.values()
             ]
             for relay, channel in sorted(channels, key=lambda item: item[1].touched):
-                if len(channels) < 32:
+                if len(channels) < MAX_STREAMS:
                     break
                 if channel.finished:
                     relay.channels.pop(channel.run_id)
                     channels.remove((relay, channel))
-            if len(channels) >= 32:
+            if len(channels) >= MAX_STREAMS:
                 raise APIError("Too many live sessions. Wait for one to finish.", 429)
         return state.relay.attach(run_id)
 
