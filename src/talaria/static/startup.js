@@ -1,5 +1,6 @@
 import { html, Mark, useEffect, useRef, useState } from "./lib.js";
 import { initialize } from "./store.js";
+import { t } from "./i18n.js";
 
 export function Startup() {
   const [failed, setFailed] = useState(false);
@@ -42,7 +43,7 @@ export function Startup() {
   }, []);
   return html`<div class="initial-loader">
     <${Mark} size=${40} />
-    <span role="status">${failed ? "Reconnecting to Talaria…" : "Loading…"}</span>
-    ${failed && html`<button class="button secondary" onClick=${() => retry.current()}>Retry connection</button>`}
+    <span role="status">${failed ? t("Reconnecting to Talaria…") : t("Loading…")}</span>
+    ${failed && html`<button class="button secondary" onClick=${() => retry.current()}>${t("Retry connection")}</button>`}
   </div>`;
 }

@@ -18,11 +18,12 @@ import {
   fail,
 } from "./store.js";
 import { SessionSearch } from "./session-search.js";
-import { activityLabel, useSessionActivity } from "./session-activity.js";
+import { activityLabel, activityStatus, useSessionActivity } from "./session-activity.js";
 import { sourceLabel } from "./content.js";
 import { readinessLabel } from "./readiness.js";
 import { ProfileSwitch } from "./profiles.js";
 import { sessionURL } from "./session-navigation.js";
+import { t, msg, useLanguage } from "./i18n.js";
 
 function groupName(session, day) {
   const now = new Date(day);
@@ -36,20 +37,21 @@ function groupName(session, day) {
   date.setHours(0, 0, 0, 0);
   const days = Math.round((now - date) / 86400000);
   return days <= 0
-    ? "Today"
+    ? msg("Today")
     : days === 1
-      ? "Yesterday"
+      ? msg("Yesterday")
       : days < 7
-        ? "Previous 7 days"
-        : "Earlier";
+        ? msg("Previous 7 days")
+        : msg("Earlier");
 }
 
 export function Sidebar({ app }) {
+  const { locale, formatLocale } = useLanguage();
   const mobile = useMediaQuery("(max-width: 700px)");
   const drawer = useRef();
   useLayoutEffect(() => {
     if (!mobile || !app.sidebar) return;
-    const previous = document.querySelector('[aria-label="Open sidebar"]');
+    const previous = document.getElementById("talaria-sidebar-toggle");
     drawer.current?.querySelector("button")?.focus();
     return () => {
       if (!document.querySelector("dialog[open]")) previous?.focus();
@@ -68,9 +70,11 @@ export function Sidebar({ app }) {
   const activity = useSessionActivity(app.connected && app.caps.talaria_extensions?.session_activity &&
     (mobile ? app.sidebar : !app.sidebarCollapsed));
   const liveKey = JSON.stringify([...new Set([...Object.keys(activity), ...Object.keys(app.lives)])]
-    .sort().map((id) => [id, activityLabel(
-      Object.hasOwn(app.lives, id) ? app.lives[id] : null,
-      Object.hasOwn(activity, id) ? activity[id] : null)]));
+    .sort().map((id) => {
+      const live = Object.hasOwn(app.lives, id) ? app.lives[id] : null;
+      const remote = Object.hasOwn(activity, id) ? activity[id] : null;
+      return [id, { status: activityStatus(live, remote), label: activityLabel(live, remote) }];
+    }));
   const day = new Date().toDateString();
   // Text deltas do not change the sidebar. Retain row VNodes until the list,
   // selection, date grouping, or running indicators actually change.
@@ -78,13 +82,13 @@ export function Sidebar({ app }) {
     const labels = new Map(JSON.parse(liveKey));
     let lastGroup = "";
     return sessions.map((session) => {
-      const label = labels.get(session.id);
-      const working = label === "Running";
-      const group = session.pinned ? "Pinned" : query ? "" : groupName(session, day);
+      const { status, label } = labels.get(session.id) || {};
+      const working = status === "running";
+      const group = session.pinned ? msg("Pinned") : query ? "" : groupName(session, day);
       const heading = group && group !== lastGroup;
       lastGroup = group;
       return html`<div key=${session.id}>
-          ${heading && html`<div class="session-group">${group}</div>`}
+          ${heading && html`<div class="session-group">${t(group)}</div>`}
           <div
             class=${`session-row ${app.active === session.id ? "active" : ""}`}
           >
@@ -97,7 +101,7 @@ export function Sidebar({ app }) {
                 openSession(session.id);
               }}
               aria-current=${app.active === session.id ? "page" : undefined}
-              aria-label=${session.title || "Untitled session"}
+              aria-label=${session.title || t("Untitled session")}
               aria-description=${
                 [sourceLabel(session.source), label].filter(Boolean).join(" · ") || undefined
               }
@@ -113,10 +117,10 @@ export function Sidebar({ app }) {
                     class=${`session-dot ${working ? "live" : ""}`}
                   ></span>`
               }<span class="session-caption"
-                >${session.title || "Untitled session"}</span
-              >${label && html`<span class=${`session-activity ${label === "Needs input" ? "needs-input" : ""}`}
+                >${session.title || t("Untitled session")}</span
+              >${label && html`<span class=${`session-activity ${status === "needs_input" ? "needs-input" : ""}`}
                 title=${label} aria-label=${label}><${Icon} size=${13}
-                  name=${label === "Finished" ? "check" : label === "Running" ? "context" : "alert"} /></span>`}${
+                  name=${status === "finished" ? "check" : working ? "context" : "alert"} /></span>`}${
                 sourceLabel(session.source) &&
                 html`<small class="source-badge" aria-hidden="true"
                 >${sourceLabel(session.source)}</small
@@ -125,8 +129,8 @@ export function Sidebar({ app }) {
             </a>
             <button
               class="session-more"
-              title="Session options"
-              aria-label=${`Options for ${session.title || "session"}`}
+              title=${t("Session options")}
+              aria-label=${session.title ? t("Options for {title}", { title: session.title }) : t("Options for session")}
               onClick=${() =>
                 update({ modal: { type: "session-menu", session } })}
             >
@@ -135,12 +139,14 @@ export function Sidebar({ app }) {
           </div>
         </div>`;
     });
-  }, [sessions, query, app.active, liveKey, day]);
+    // Labels read the selected locale through t()/formatters without changing session identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, query, app.active, liveKey, day, locale, formatLocale]);
   return html`<aside
     ref=${drawer}
     class=${`sidebar ${app.sidebar ? "open" : ""}`}
     hidden=${!mobile && app.sidebarCollapsed}
-    aria-label="Sessions"
+    aria-label=${t("Sessions")}
     role=${mobile && app.sidebar ? "dialog" : undefined}
     aria-modal=${mobile && app.sidebar ? "true" : undefined}
     inert=${mobile && !app.sidebar}
@@ -163,39 +169,39 @@ export function Sidebar({ app }) {
       <button
         class="brand"
         onClick=${newConversation}
-        aria-label="Talaria home"
+        aria-label=${t("Talaria home")}
       >
         <${Mark} size=${30} /><span>Talaria</span> ${
           app.environment === "development" &&
-          html`<small class="environment-badge">Dev</small>`
+          html`<small class="environment-badge">${t("Dev")}</small>`
         }</button
       ><${IconButton}
         name="sidebar"
-        label="Close sidebar"
+        label=${t("Close sidebar")}
         onClick=${() => {
           if (mobile) update({ sidebar: false });
           else {
             collapseSidebar(true);
-            requestAnimationFrame(() => document.querySelector('[aria-label="Open sidebar"]')?.focus());
+            requestAnimationFrame(() => document.getElementById("talaria-sidebar-toggle")?.focus());
           }
         }}
       />
     </div>
     <${ProfileSwitch} app=${app} />
     <button class="new-chat" onClick=${newConversation}>
-      <${Icon} name="plus" size=${18} /><span>New session</span
+      <${Icon} name="plus" size=${18} /><span>${t("New session")}</span
       ><kbd>⌘ N</kbd>
     </button>
     <div class="search-field sidebar-search">
       <${Icon} name="search" size=${17} /><input
-        aria-label="Search sessions"
-        placeholder="Search sessions"
+        aria-label=${t("Search sessions")}
+        placeholder=${t("Search sessions")}
         value=${query}
         maxlength="200"
         onInput=${(e) => setQuery(e.target.value)}
       /><kbd>⌘ K</kbd>
     </div>
-    <nav class="session-list" aria-label="Session history">
+    <nav class="session-list" aria-label=${t("Session history")}>
       ${rows}
       ${query.trim() && app.caps.talaria_extensions?.history_search &&
         html`<${SessionSearch} key=${query.trim()} query=${query.trim()} />`}
@@ -204,8 +210,8 @@ export function Sidebar({ app }) {
         html`<div class="sidebar-empty">
         ${
           query
-            ? "No sessions found."
-            : "No sessions yet."
+            ? t("No sessions found.")
+            : t("No sessions yet.")
         }
       </div>`
       }
@@ -225,7 +231,7 @@ export function Sidebar({ app }) {
           }
         }}
       >
-        ${moreBusy ? "Loading…" : "Load more sessions"}
+        ${moreBusy ? t("Loading…") : t("Load more sessions")}
       </button>`
       }
     </nav>
@@ -236,7 +242,7 @@ export function Sidebar({ app }) {
       >
         <span class="avatar"><${Icon} name="spark" size=${17} /></span
         ><span
-          >Settings<small
+          >${t("Settings")}<small
             ><span
               class=${`connection-dot ${app.connected && ["ok", "ready", "unknown"].includes(app.readiness.status) ? "connected" : ""}`}
             ></span

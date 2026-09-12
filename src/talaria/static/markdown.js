@@ -1,8 +1,9 @@
-import { html, useEffect, useMemo, useRef, useState } from "./lib.js";
+import { html, useEffect, useLayoutEffect, useMemo, useRef, useState } from "./lib.js";
 import { marked } from "./vendor/marked.js";
 import DOMPurify from "./vendor/purify.js";
 import { MarkdownStream, flatList } from "./markdown-stream.js";
 import { StreamText, useStreamReveal } from "./stream-reveal.js";
+import { t, useLanguage } from "./i18n.js";
 
 const renderer = new marked.Renderer();
 const escape = (text) =>
@@ -13,10 +14,10 @@ const escape = (text) =>
     .replace(/"/g, "&quot;");
 renderer.html = ({ text }) => escape(text);
 renderer.image = ({ text, href }) =>
-  `<a href="${escape(href)}">${escape(text || "Image attachment")}</a>`;
+  `<a href="${escape(href)}"${text ? "" : ' data-talaria-image-fallback="true"'}>${escape(text || t("Image attachment"))}</a>`;
 const table = renderer.table;
 renderer.table = function (token) {
-  return `<div class="table-scroll" role="region" aria-label="Table" tabindex="0">${table.call(this, token)}</div>`;
+  return `<div class="table-scroll" role="region" aria-label="${escape(t("Table"))}" tabindex="0">${table.call(this, token)}</div>`;
 };
 function code({ text, lang }, highlight = true) {
   const language = (lang || "text")
@@ -30,7 +31,7 @@ function code({ text, lang }, highlight = true) {
     highlight && grammar && text.length < 10000
       ? window.Prism.highlight(text, grammar, language)
       : escape(text);
-  return `<div class="code-block"><div class="code-heading"><span>${language}</span><button type="button" data-copy-code="true">Copy code</button></div><pre tabindex="0" role="region" aria-label="${language} code"><code>${highlighted}</code></pre></div>`;
+  return `<div class="code-block"><div class="code-heading"><span>${language}</span><button type="button" data-copy-code="true">${escape(t("Copy code"))}</button></div><pre tabindex="0" role="region" aria-label="${escape(t("{language} code", { language }))}"><code>${highlighted}</code></pre></div>`;
 }
 renderer.code = (token) => code(token);
 marked.use({ renderer, gfm: true, breaks: true });
@@ -55,12 +56,33 @@ export function renderMarkdown(text, highlight = true) {
     }),
   );
 }
+
+function copyLabel(button) {
+  if (button.dataset.copyState === "copied") return t("Copied");
+  if (button.dataset.copyState === "failed") return t("Select text to copy");
+  return t("Copy code");
+}
+
+function localizeControls(root) {
+  for (const button of root.querySelectorAll("[data-copy-code]"))
+    button.textContent = copyLabel(button);
+  for (const block of root.querySelectorAll(".code-block")) {
+    const language = block.querySelector(".code-heading span").textContent;
+    block.querySelector("pre").setAttribute("aria-label", t("{language} code", { language }));
+  }
+  for (const table of root.querySelectorAll(".table-scroll"))
+    table.setAttribute("aria-label", t("Table"));
+  for (const image of root.querySelectorAll("[data-talaria-image-fallback]"))
+    image.textContent = t("Image attachment");
+}
+
 export function Markdown({
   text,
   streaming = false,
   deferHighlight = false,
   smooth = false,
 }) {
+  const { locale } = useLanguage();
   text = useStreamReveal(text || "", smooth && streaming);
   const root = useRef();
   const streamed = useRef(false);
@@ -138,12 +160,15 @@ export function Markdown({
           .slice(0, 30);
         const grammar = window.Prism?.languages[language];
         const highlighted = highlight && grammar && token.text.length < 10000;
+        // Keep the VNode's baseline stable while an imperative copied/failed
+        // label survives a language switch and subsequent streaming chunks.
+        block.copyText = old?.copyText || t("Copy code");
         block.content = html`<div class="code-block">
           <div class="code-heading">
             <span>${language}</span
-            ><button type="button" data-copy-code="true">Copy code</button>
+            ><button type="button" data-copy-code="true">${block.copyText}</button>
           </div>
-          <pre tabindex="0" role="region" aria-label=${`${language} code`}><code
+          <pre tabindex="0" role="region" aria-label=${t("{language} code", { language })}><code
             dangerouslySetInnerHTML=${highlighted ? { __html: sanitize(window.Prism.highlight(token.text, grammar, language)) } : undefined}
           >${
             highlighted
@@ -173,7 +198,7 @@ export function Markdown({
         block.content = html`<div
           class="table-scroll"
           role="region"
-          aria-label="Table"
+          aria-label=${t("Table")}
           tabindex="0"
         >
           <table>
@@ -241,6 +266,11 @@ export function Markdown({
     previous.current = next;
     return next;
   }, [text, streaming, highlightVisible, deferHighlight, smooth]);
+  useLayoutEffect(() => {
+    // Update owned labels in place. Locale changes must not reparse Markdown,
+    // replace code nodes, or discard focus, selection, scrolling, and copy state.
+    localizeControls(root.current);
+  }, [locale]);
   useEffect(() => {
     if (streamed.current || !deferHighlight || !highlightVisible) return;
     // Enrich code in place: replacing the whole saved message would discard
@@ -266,12 +296,17 @@ export function Markdown({
         await navigator.clipboard.writeText(
           button.closest(".code-block").querySelector("code").textContent,
         );
-        button.textContent = "Copied";
+        button.dataset.copyState = "copied";
+        button.textContent = copyLabel(button);
         setTimeout(() => {
-          if (button.isConnected) button.textContent = "Copy code";
+          if (button.isConnected) {
+            button.dataset.copyState = "ready";
+            button.textContent = copyLabel(button);
+          }
         }, 1800);
       } catch {
-        button.textContent = "Select text to copy";
+        button.dataset.copyState = "failed";
+        button.textContent = copyLabel(button);
       }
     }}
   >

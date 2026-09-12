@@ -18,8 +18,10 @@ import {
   pendingStorage,
   consumePendingImages,
   MAX_IMAGES_TOTAL,
+  imageName,
 } from "./attachments.js";
 import { sessionReasoning, sessionModel, reasoningLabel } from "./models.js";
+import { t, msg, formatNumber } from "./i18n.js";
 
 export function Composer({
   app,
@@ -45,6 +47,12 @@ export function Composer({
   const displayedModel = model || app.defaultModel;
   const reasoning = sessionReasoning(app);
   const reasoningText = reasoningLabel(reasoning, sessionModel(app) || app.defaultModel);
+  const sendLabel = active
+    ? live.clarification ? t("Send answer") : t("Send guidance")
+    : t("Send message");
+  const modelTitle = displayedModel
+    ? `${displayedModel.providerLabel ? displayedModel.providerLabel + " · " : ""}${displayedModel.id}`
+    : "";
   const key = `draft.${app.active || "new"}`;
   const currentKey = useRef(key);
   const currentDraft = useRef(draft);
@@ -169,7 +177,7 @@ export function Composer({
     if (!files.length || operation.current || submission.current || state.loading) return;
     if (active) {
       setAttachmentError(
-        "Attachments can be sent after this response finishes.",
+        msg("Attachments can be sent after this response finishes."),
       );
       return;
     }
@@ -185,14 +193,14 @@ export function Composer({
       for (const file of files) {
         if (file.type.startsWith("image/")) {
           if (nextImages.length >= 4)
-            throw new Error("You can attach up to four images per message.");
+            throw new Error(msg("You can attach up to four images per message."));
           nextImages.push(await prepareImage(file));
           if (
             nextImages.reduce((n, image) => n + image.size, 0) >
             MAX_IMAGES_TOTAL
           )
             throw new Error(
-              "Images must total no more than 6 MB. Remove an image or choose smaller files.",
+              msg("Images must total no more than 6 MB. Remove an image or choose smaller files."),
             );
         } else {
           if (
@@ -205,13 +213,13 @@ export function Composer({
             )
           )
             throw new Error(
-              "Attach an image, or a text/code file up to 200 KB.",
+              msg("Attach an image, or a text/code file up to 200 KB."),
             );
           const text = await file.text();
           appendedText += `${appendedText ? "\n\n" : ""}File: ${file.name}\n\n\`\`\`\n${text}\n\`\`\``;
           if (appendedText.length > 800000)
             throw new Error(
-              "The message is too long. Remove some text before attaching another file.",
+              msg("The message is too long. Remove some text before attaching another file."),
             );
         }
       }
@@ -225,7 +233,7 @@ export function Composer({
           (appendedText ? `${latestText ? "\n\n" : ""}${appendedText}` : "");
         if (next.length > 800000)
           throw new Error(
-            "The message is too long. Remove some text before attaching another file.",
+            msg("The message is too long. Remove some text before attaching another file."),
           );
         return next;
       };
@@ -292,55 +300,53 @@ export function Composer({
   >
     ${commands.panel}
     ${images.length > 0 &&
-    html`<div class="attachment-tray" aria-label="Image attachments">
+    html`<div class="attachment-tray" aria-label=${t("Image attachments")}>
       ${images.map(
-        (image) =>
-          html`<div class="attachment-chip" key=${image.id}>
-            <img src=${image.url} alt=${image.name} /><span
-              >${image.name}<small
-                >${image.resized ? "Resized · " : ""}${Math.max(
-                  1,
-                  Math.round(image.size / 1024),
-                )}
-                KB</small
+        (image) => {
+          const name = imageName(image);
+          const size = formatNumber(Math.max(1, Math.round(image.size / 1024)));
+          return html`<div class="attachment-chip" key=${image.id}>
+            <img src=${image.url} alt=${name} /><span
+              >${name}<small
+                >${image.resized ? t("Resized · {size} KB", { size }) : t("{size} KB", { size })}</small
               ></span
             >
             <${IconButton}
               name="close"
-              label=${`Remove ${image.name}`}
+              label=${t("Remove {name}", { name })}
               disabled=${sending || attaching || app.loading}
               onClick=${() => removeImage(image)}
             />
-          </div>`,
+          </div>`;
+        },
       )}
     </div>`}
     ${images.length > 0 &&
     html`<p class="attachment-progress">
-      Some Hermes versions save only image placeholders. Talaria keeps recent
-      originals in this browser; download images you want to keep.
+      ${t("Some Hermes versions save only image placeholders. Talaria keeps recent originals in this browser; download images you want to keep.")}
     </p>`}
     ${attaching &&
     html`<p class="attachment-progress" role="status">
-      Preparing attachments…
+      ${t("Preparing attachments…")}
     </p>`}
     ${attachmentError &&
     html`<div class="attachment-error" role="alert">
-      ${attachmentError}<${IconButton}
+      ${t(attachmentError)}<${IconButton}
         name="close"
-        label="Dismiss attachment error"
+        label=${t("Dismiss attachment error")}
         onClick=${() => setAttachmentError("")}
       />
     </div>`}
     <div class="composer-input">
       <textarea
         ref=${textarea}
-        aria-label="Message Hermes"
+        aria-label=${t("Message Hermes")}
         aria-autocomplete="list"
         aria-controls=${commands.expanded ? "command-picker" : undefined}
         aria-activedescendant=${commands.expanded ? commands.option : undefined}
         placeholder=${active
-          ? live.clarification ? "Answer your agent’s question…" : "Guide Hermes while it works…"
-          : "Message Hermes"}
+          ? live.clarification ? t("Answer your agent’s question…") : t("Guide Hermes while it works…")
+          : t("Message Hermes")}
         value=${draft}
         rows="1"
         onInput=${(e) => {
@@ -374,7 +380,7 @@ export function Composer({
       <div class="composer-left">
         <${IconButton}
           name="plus"
-          label="Attach files"
+          label=${t("Attach files")}
           disabled=${!app.connected ||
           app.loading ||
           active ||
@@ -387,7 +393,7 @@ export function Composer({
           type="file"
           class="sr-only"
           tabindex="-1"
-          aria-label="File attachment"
+          aria-label=${t("File attachment")}
           multiple
           accept="image/png,image/jpeg,image/webp,image/gif,text/*,.md,.py,.js,.ts,.json,.csv,.yaml,.yml"
           onChange=${(e) => {
@@ -397,30 +403,30 @@ export function Composer({
         /><span class="toolbar-divider" /><button
           class="model-button"
           type="button"
-          aria-label="Choose model"
+          aria-label=${t("Choose model")}
           title=${displayedModel
-            ? `${displayedModel.providerLabel ? displayedModel.providerLabel + " · " : ""}${displayedModel.id}${!model ? " · Default" : ""}`
-            : "Use the default model configured in Hermes"}
+            ? !model ? t("{model} · Default", { model: modelTitle }) : modelTitle
+            : t("Use the default model configured in Hermes")}
           onClick=${onModel}
           disabled=${active || !app.connected}
         >
           <span class="model-caption"
             ><small>${displayedModel?.providerLabel || "Hermes"}</small
-            ><span>${displayedModel?.id || "Configured model"}</span></span
+            ><span>${displayedModel?.id || t("Configured model")}</span></span
           >
           <${Icon} name="chevron" size=${14} />
         </button>
         <button
           class="model-button reasoning-button"
           type="button"
-          aria-label="Choose reasoning"
+          aria-label=${t("Choose reasoning")}
           aria-haspopup="dialog"
-          title=${`Reasoning · ${reasoningText}`}
+          title=${t("Reasoning · {reasoning}", { reasoning: reasoningText })}
           onClick=${onReasoning}
           disabled=${active || !app.connected}
         >
           <span class="model-caption"
-            ><small>Reasoning</small
+            ><small>${t("Reasoning")}</small
             ><span>${reasoningText}</span></span
           >
           <${Icon} name="chevron" size=${14} />
@@ -430,17 +436,17 @@ export function Composer({
         ${active &&
         html`<span class="working-label"
           ><span class="live-dot" />${live.status === "stopping"
-            ? "Stopping"
+            ? t("Stopping")
             : live.approval
-              ? "Awaiting approval"
-              : live.clarification ? "Your input" : "Working"}</span
+              ? t("Awaiting approval")
+              : live.clarification ? t("Your input") : t("Working")}</span
         >`}
         ${active && !draft.trim()
           ? html`<button
               type="button"
               class="send-button stop-button"
-              aria-label="Stop response"
-              title="Stop response"
+              aria-label=${t("Stop response")}
+              title=${t("Stop response")}
               disabled=${!supports("run_stop") ||
               live.status === "stopping" ||
               !live.id}
@@ -451,8 +457,8 @@ export function Composer({
           : html`<button
               class="send-button"
               type="submit"
-              aria-label=${active ? live.clarification ? "Send answer" : "Send guidance" : "Send message"}
-              title=${active ? live.clarification ? "Send answer" : "Send guidance" : "Send message"}
+              aria-label=${sendLabel}
+              title=${sendLabel}
               disabled=${(!draft.trim() && !images.length) ||
               sending ||
               commands.busy ||

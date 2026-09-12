@@ -101,6 +101,7 @@ hermes gateway restart
 
 - Mobile and desktop layouts with a collapsible sidebar.
 - Light and dark themes with accent colors.
+- Seven interface languages with automatic language selection.
 - Switch between Hermes profiles and connections.
 - Per-session model and reasoning settings.
 - Inline approval requests and clarification questions.

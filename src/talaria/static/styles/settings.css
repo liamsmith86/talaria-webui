@@ -469,3 +469,25 @@
     font-size: 16px;
   }
 }
+@media (max-width: 420px) {
+  .settings-navigation {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+  }
+  .settings-navigation button {
+    justify-content: center;
+    text-align: center;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .settings-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .settings-footer > div {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

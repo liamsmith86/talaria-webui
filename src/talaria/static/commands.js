@@ -2,13 +2,14 @@ import { html, useEffect, useState } from "./lib.js";
 import { commandRunning } from "./command-activity.js";
 import { api } from "./api.js";
 import { update, newConversation } from "./store.js";
+import { msg, t } from "./i18n.js";
 
 function webCommand(name, args, app, controls) {
-  if (args) throw new Error(`Use /${name} without arguments to open its controls.`);
+  if (args) throw new Error(t("Use /{command} without arguments to open its controls.", { command: name }));
   if (name === "new") return newConversation();
   if (name === "model") return controls.onModel();
   if (name === "reasoning") return controls.onReasoning();
-  if (!app.active) throw new Error("Open a session first.");
+  if (!app.active) throw new Error(msg("Open a session first."));
   const types = { title: "rename", branch: "fork", status: "details", save: "download" };
   update({ modal: { type: types[name], session: app.sessionDetails || { id: app.active } } });
 }
@@ -39,21 +40,20 @@ export function useCommands(app, draft, choose, controls, activity) {
   async function submit(text, attachments) {
     const match = /^\/([a-z][\w-]*)(?:\s+([\s\S]*))?$/i.exec(text);
     if (!match) return false;
-    if (attachments.length) throw new Error("Send attachments separately from commands.");
-    if (!enabled) throw new Error("Install or update the Talaria plugin to use slash commands.");
+    if (attachments.length) throw new Error(msg("Send attachments separately from commands."));
+    if (!enabled) throw new Error(msg("Install or update the Talaria plugin to use slash commands."));
     const command = catalog.find((c) => [c.name, ...c.aliases].includes(match[1].toLowerCase()));
-    if (!command) throw new Error("Unknown command. Type / to see Hermes commands.");
+    if (!command) throw new Error(msg("Unknown command. Type / to see Hermes commands."));
     if (command.mode === "unavailable") throw new Error(command.reason);
     const args = (match[2] || "").trim();
     if (controls.active && !["help", "commands", "version", "profile", "egress", "bundles", "status"].includes(command.name))
-      throw new Error("Wait for this response to finish before running the command.");
+      throw new Error(msg("Wait for this response to finish before running the command."));
     if (["help", "commands"].includes(command.name)) {
-      activity.show({ id: crypto.randomUUID(), command: command.name, status: "completed", afterId: app.history.at(-1)?.id || 0, session: app.active || "", text: catalog.map((c) =>
-        `/${c.name} — ${c.mode === "unavailable" ? "Unavailable in Talaria" : c.description}`).join("\n") });
+      activity.show({ id: crypto.randomUUID(), command: command.name, status: "completed", afterId: app.history.at(-1)?.id || 0, session: app.active || "", commands: catalog });
     } else if (command.mode === "web") {
       webCommand(command.name, args, app, controls);
     } else {
-      if (command.name === "compress" && !app.active) throw new Error("Open a session first.");
+      if (command.name === "compress" && !app.active) throw new Error(msg("Open a session first."));
       await activity.start(command.name, args, app.active || "", text);
     }
     return true;
@@ -70,13 +70,13 @@ export function useCommands(app, draft, choose, controls, activity) {
     return true;
   }
   const panel = html`
-    ${matches.length > 0 && html`<div class="command-picker" id="command-picker" role="listbox" aria-label="Hermes commands">
+    ${matches.length > 0 && html`<div class="command-picker" id="command-picker" role="listbox" aria-label=${t("Hermes commands")}>
       ${matches.map((c, i) => html`<div key=${c.name} id=${`command-${i}`} role="option"
         aria-selected=${index === i} class=${index === i ? "selected" : ""}
         onMouseDown=${(event) => event.preventDefault()}
         onClick=${() => choose(`/${c.name} `)}>
         <strong>/${c.name}</strong>${c.args && html`<small>${c.args}</small>`}<span>${c.mode === "unavailable" ? c.reason : c.description}</span>
-        ${c.mode === "unavailable" && html`<small class="command-unavailable">Unavailable</small>`}
+        ${c.mode === "unavailable" && html`<small class="command-unavailable">${t("Unavailable")}</small>`}
       </div>`)}
     </div>`}`;
   return { submit, keyDown, panel, busy, expanded: !!matches.length, option: `command-${index}` };

@@ -6,18 +6,19 @@ import { update, pinSession, supports } from "./store.js";
 import { running } from "./runs.js";
 import { count, money, numberValue, sourceLabel } from "./content.js";
 import { browserAttachments } from "./attachments.js";
+import { t, msg } from "./i18n.js";
 
 export function ConversationMenu({ session, onClose, readOnly = false }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const actions = [
-    ["details", "chart", "Session details"],
-    ["download", "download", "Download transcript"],
-    ["rename", "edit", "Rename"],
-    ["fork", "branch", "Branch session"],
-    ["delete", "trash", "Delete session"],
+    ["details", "chart", msg("Session details")],
+    ["download", "download", msg("Download transcript")],
+    ["rename", "edit", msg("Rename")],
+    ["fork", "branch", msg("Branch session")],
+    ["delete", "trash", msg("Delete session")],
   ].filter(([type]) => !readOnly || ["details", "download"].includes(type));
-  return html`<${Dialog} title=${session.title || "Session"} onClose=${onClose} dismissible=${!busy}>
+  return html`<${Dialog} title=${session.title || t("Session")} onClose=${onClose} dismissible=${!busy}>
     <div class="session-menu">
       ${
         !readOnly &&
@@ -36,8 +37,8 @@ export function ConversationMenu({ session, onClose, readOnly = false }) {
           }}
         >
           <${Icon} name="pin" size=${19} />${session.pinned
-            ? "Unpin session"
-            : "Pin session"}
+            ? t("Unpin session")
+            : t("Pin session")}
         </button>`
       }
       ${actions.map(
@@ -49,11 +50,11 @@ export function ConversationMenu({ session, onClose, readOnly = false }) {
             (type === "delete" && running(session.id))}
             onClick=${() => update({ modal: { type, session } })}
           >
-            <${Icon} name=${icon} size=${19} />${label}
+            <${Icon} name=${icon} size=${19} />${t(label)}
           </button>`,
       )}
     </div>
-    ${error && html`<div class="form-error" role="alert">${error}</div>`}
+    ${error && html`<div class="form-error" role="alert">${t(error)}</div>`}
   </${Dialog}>`;
 }
 
@@ -68,7 +69,7 @@ export function ConversationDetails({ session, onClose }) {
         const next = value?.session || value;
         if (!next || typeof next !== "object" || Array.isArray(next))
           throw new Error(
-            "Session details are not available from Hermes.",
+            msg("Session details are not available from Hermes."),
           );
         if (current) setDetails(next);
       })
@@ -88,26 +89,26 @@ export function ConversationDetails({ session, onClose }) {
       : details.estimated_cost_usd;
   const actual = numberValue(details.actual_cost_usd) !== null;
   const counters = [
-    ["Input tokens", details.input_tokens],
-    ["Output tokens", details.output_tokens],
-    ["Cache read tokens", details.cache_read_tokens],
-    ["Cache write tokens", details.cache_write_tokens],
-    ["Reasoning tokens", details.reasoning_tokens],
-    ["Model calls", details.api_call_count],
+    [msg("Input tokens"), details.input_tokens],
+    [msg("Output tokens"), details.output_tokens],
+    [msg("Cache read tokens"), details.cache_read_tokens],
+    [msg("Cache write tokens"), details.cache_write_tokens],
+    [msg("Reasoning tokens"), details.reasoning_tokens],
+    [msg("Model calls"), details.api_call_count],
   ];
-  return html`<${Dialog} title="Session details" className="usage-dialog" onClose=${onClose}>
-    <p class="detail-title">${details.title || "Untitled session"}${busy && html`<span class="details-refresh" role="status" aria-label="Refreshing details"><span class="spinner" /></span>`}</p>
+  return html`<${Dialog} title=${t("Session details")} className="usage-dialog" onClose=${onClose}>
+    <p class="detail-title">${details.title || t("Untitled session")}${busy && html`<span class="details-refresh" role="status" aria-label=${t("Refreshing details")}><span class="spinner" /></span>`}</p>
     <div class="detail-context">${sourceLabel(details.source) && html`<span class="quiet-badge">${sourceLabel(details.source)}</span>`}${details.model && html`<span>${details.model}</span>`}</div>
-    ${error && html`<div class="form-error" role="alert">${error}</div>`}
-    <section class="usage-total"><span>${actual ? "Reported cost" : "Estimated cost"}</span><strong>${money(cost)}</strong><small>USD · this session</small></section>
+    ${error && html`<div class="form-error" role="alert">${t(error)}</div>`}
+    <section class="usage-total"><span>${actual ? t("Reported cost") : t("Estimated cost")}</span><strong>${money(cost)}</strong><small>${t("{currency} · this session", { currency: "USD" })}</small></section>
     <dl class="usage-grid">${counters.map(
       ([label, value]) =>
         html`<div>
-          <dt>${label}</dt>
+          <dt>${t(label)}</dt>
           <dd>${count(value)}</dd>
         </div>`,
     )}</dl>
-    ${actual && numberValue(details.estimated_cost_usd) !== null && html`<p class="field-help">Hermes’s estimate: ${money(details.estimated_cost_usd)}</p>`}
+    ${actual && numberValue(details.estimated_cost_usd) !== null && html`<p class="field-help">${t("Hermes’s estimate: {cost}", { cost: money(details.estimated_cost_usd) })}</p>`}
   </${Dialog}>`;
 }
 
@@ -130,7 +131,7 @@ export function TranscriptDownload({ session, onClose }) {
       if (!response.ok) {
         const detail = await response.json().catch(() => ({}));
         throw new Error(
-          detail.error || "The transcript could not be downloaded. Try again.",
+          detail.error || msg("The transcript could not be downloaded. Try again."),
         );
       }
       const attachments =
@@ -151,7 +152,7 @@ export function TranscriptDownload({ session, onClose }) {
       const link = document.createElement("a");
       link.href = url;
       // eslint-disable-next-line no-control-regex -- strip control characters from filenames
-      link.download = `${(session.title || "Session").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").slice(0, 100)}.${format === "json" ? "json" : "md"}`;
+      link.download = `${(session.title || t("Session")).replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").slice(0, 100)}.${format === "json" ? "json" : "md"}`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       onClose();
@@ -161,12 +162,12 @@ export function TranscriptDownload({ session, onClose }) {
       setBusy("");
     }
   }
-  return html`<${Dialog} title="Download transcript" onClose=${onClose}>
+  return html`<${Dialog} title=${t("Download transcript")} onClose=${onClose}>
     <div class="download-formats">
-      <button disabled=${!!busy} onClick=${() => download("markdown")}><${Icon} name="file"/><span><strong>Markdown</strong><small>Text transcript; image placeholders.</small></span><${Icon} name="download" size=${18}/></button>
-      <button disabled=${!!busy} onClick=${() => download("json")}><${Icon} name="terminal"/><span><strong>JSON</strong><small>Messages, tools, and image data.</small></span><${Icon} name="download" size=${18}/></button>
+      <button disabled=${!!busy} onClick=${() => download("markdown")}><${Icon} name="file"/><span><strong>Markdown</strong><small>${t("Text transcript; image placeholders.")}</small></span><${Icon} name="download" size=${18}/></button>
+      <button disabled=${!!busy} onClick=${() => download("json")}><${Icon} name="terminal"/><span><strong>JSON</strong><small>${t("Messages, tools, and image data.")}</small></span><${Icon} name="download" size=${18}/></button>
     </div>
-    ${busy && html`<p class="download-progress" role="status"><span class="spinner" />Preparing the complete transcript…</p>`}
-    ${error && html`<div class="form-error" role="alert">${error}</div>`}
+    ${busy && html`<p class="download-progress" role="status"><span class="spinner" />${t("Preparing the complete transcript…")}</p>`}
+    ${error && html`<div class="form-error" role="alert">${t(error)}</div>`}
   </${Dialog}>`;
 }

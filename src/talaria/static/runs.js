@@ -25,6 +25,7 @@ import {
 } from "./attachments.js";
 import { plainContent } from "./content.js";
 import { responseParts, appendText, finishText } from "./response-parts.js";
+import { t, msg } from "./i18n.js";
 
 const sources = new Map();
 let recoveryRecords = {};
@@ -104,10 +105,10 @@ function canRetry(live) {
   );
 }
 const receiptError =
-  "The submission confirmation was lost. Check the session before sending another message.";
+  msg("The submission confirmation was lost. Check the session before sending another message.");
 function runError(status, error) {
   return error || status === "failed"
-    ? errorMessage(error, "Hermes could not finish this response. Check the model/provider and try again.")
+    ? errorMessage(error, msg("Hermes could not finish this response. Check the model/provider and try again."))
     : null;
 }
 export const running = (sid, lives = state.lives) =>
@@ -116,7 +117,7 @@ export const running = (sid, lives = state.lives) =>
 function runID(result) {
   if (typeof result?.run_id === "string" && result.run_id) return result.run_id;
   throw new RequestError(
-    "The submission confirmation was incomplete.",
+    msg("The submission confirmation was incomplete."),
     0,
     "invalid_response",
   );
@@ -125,7 +126,7 @@ function runID(result) {
 export function clearCompletedRun(sid) {
   if (running(sid) || state.lives[sid]?.uncertain)
     throw new Error(
-      "Wait for the current response to finish before changing this turn.",
+      msg("Wait for the current response to finish before changing this turn."),
     );
   sources.get(sid)?.close();
   sources.delete(sid);
@@ -237,7 +238,7 @@ export function applyEvent(live, event) {
         event.goal ||
         event.preview ||
         next.tools[index]?.name ||
-        "Delegated task",
+        "",
       preview: event.summary || event.output_tail || "",
       status: type.endsWith("start") ? "running" : event.status || "completed",
     };
@@ -315,16 +316,16 @@ export async function sendMessage(
   const existingSession = !!sid;
   const generation = navigationVersion();
   if (state.loading)
-    throw new Error("Wait for this session to load before sending.");
+    throw new Error(msg("Wait for this session to load before sending."));
   // Capture the originating transcript before image storage or submission can
   // yield to navigation into another session.
   const history = sid ? state.history : [];
   const previousUser = history.findLast((message) => message.role === "user");
   if (state.readOnlyParent)
-    throw new Error("Return to the parent session to continue.");
+    throw new Error(msg("Return to the parent session to continue."));
   if (Object.hasOwn(recoveryRecords, sid))
     throw new Error(
-      "This session is reconnecting. Wait a moment before sending.",
+      msg("This session is reconnecting. Wait a moment before sending."),
     );
   if (state.lives[sid]?.uncertain) {
     await retrySubmission(sid);
@@ -332,10 +333,10 @@ export async function sendMessage(
   }
   if (running(sid)) {
     if (images.length)
-      throw new Error("Images can be sent after this response finishes.");
+      throw new Error(msg("Images can be sent after this response finishes."));
     const live = state.lives[sid];
     if (!live.id)
-      throw new Error("Wait for the current message to finish sending.");
+      throw new Error(msg("Wait for the current message to finish sending."));
     if (live.clarification) {
       await answerClarification(sid, live.clarification.request_id, text);
       return sid;
@@ -344,18 +345,18 @@ export async function sendMessage(
       method: "POST",
       body: { input: text },
     });
-    toast("Guidance sent. Hermes will read it at the next tool boundary.");
+    toast(msg("Guidance sent. Hermes will read it at the next tool boundary."));
     return sid;
   }
   if (!sid) {
     const result = await api("/sessions", {
       method: "POST",
       body: {
-        title: text.replace(/\s+/g, " ").slice(0, 70) || "Image session",
+        title: text.replace(/\s+/g, " ").slice(0, 70) || t("Image session"),
       },
     });
     sid = result.id || result.session_id || result.session?.id;
-    if (!sid) throw new Error("Hermes did not return a session ID.");
+    if (!sid) throw new Error(msg("Hermes did not return a session ID."));
     chooseModel(model, sid);
     chooseReasoning(reasoning, sid);
     writeStorage(`draft.${sid}`, text);
@@ -621,7 +622,7 @@ export async function prepareRunReconciliation(sid, history, current) {
   }
   if (live.imageReceipt && !imageMessage)
     toast(
-      "Hermes received the image, but its transcript could not be linked to the original in this browser.",
+      msg("Hermes received the image, but its transcript could not be linked to the original in this browser."),
     );
   // Apply synchronously with the history commit, after all asynchronous work.
   // The view must not see the live copy retire before its saved rows appear.
@@ -649,7 +650,7 @@ async function settle(sid, live) {
   refreshSessionDetails(sid).catch(() => {});
   refreshReadiness();
   if (live.pendingSteer)
-    toast("Some guidance arrived after the response. It is available below.");
+    toast(msg("Some guidance arrived after the response. It is available below."));
 }
 
 export function restoreRuns() {
@@ -723,7 +724,7 @@ async function recoverRuns() {
         };
         live.submissionFailed = canRetry(live);
         live.error = live.submissionFailed
-          ? "The submission confirmation was lost. Retry safely to recover this response."
+          ? msg("The submission confirmation was lost. Retry safely to recover this response.")
           : receiptError;
         publish(sid, live);
         return;
@@ -733,7 +734,7 @@ async function recoverRuns() {
       if (Object.hasOwn(state.lives, sid)) return;
       if (!status || typeof status.status !== "string")
         throw new RequestError(
-          "The response status is unavailable.",
+          msg("The response status is unavailable."),
           0,
           "invalid_response",
         );
@@ -767,8 +768,8 @@ async function recoverRuns() {
           needsHistory: true,
           error:
             error.status === 404
-              ? "Live updates expired. Check the session for the response."
-              : "Could not check this response. Reload to reconnect before sending another message.",
+              ? msg("Live updates expired. Check the session for the response.")
+              : msg("Could not check this response. Reload to reconnect before sending another message."),
         };
         publish(sid, live);
         if (error.status === 404) await settle(sid, live).catch(() => {});
@@ -818,7 +819,7 @@ const answering = new Set();
 export async function answerClarification(sid, requestId, answer) {
   const live = state.lives[sid];
   if (!live?.id || live.clarification?.request_id !== requestId || !running(sid))
-    throw new Error("This question is no longer waiting for an answer.");
+    throw new Error(msg("This question is no longer waiting for an answer."));
   if (answering.has(requestId)) return;
   answering.add(requestId);
   try {

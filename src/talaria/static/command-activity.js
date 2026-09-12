@@ -1,6 +1,8 @@
 import { html, useEffect, useRef, useState, Icon, IconButton, readStorage, writeStorage } from "./lib.js";
 import { api } from "./api.js";
 import { state, openSession, refreshHistory, refreshSessionDetails, refreshSessions, navigationVersion } from "./store.js";
+import { duration } from "./content.js";
+import { msg, t } from "./i18n.js";
 
 function savedCommand() {
   try {
@@ -63,8 +65,7 @@ export function useCommandActivity(app) {
       } catch (error) {
         if (!current) return;
         if (error.status >= 400 && error.status < 500) {
-          setFeedback({ ...pending, status: "failed",
-            text: "Command result unavailable. Refresh the session before retrying." });
+          setFeedback({ ...pending, status: "failed", resultUnavailable: true });
           setPending(null);
           forgetCommand(pending.id);
         } else {
@@ -83,7 +84,7 @@ export function useCommandActivity(app) {
   }, [feedback, app.active, app.history, app.loading]);
 
   async function start(command, args, session, text) {
-    if (starting.current || pendingRef.current) throw new Error("Wait for the current command to finish.");
+    if (starting.current || pendingRef.current) throw new Error(msg("Wait for the current command to finish."));
     const job = { id: crypto.randomUUID(), session, command, args, started: Date.now(), afterId: state.history.at(-1)?.id || 0 };
     starting.current = true;
     setWaiting(false);
@@ -119,14 +120,14 @@ export function useCommandActivity(app) {
 }
 
 function activityHeading(activity) {
-  if (activity.status === "reconnecting") return "Reconnecting to Hermes…";
-  if (activity.status === "failed") return "Command failed";
-  if (commandRunning(activity)) return activity.command === "compress" ? "Compressing context…" : "Running command…";
+  if (activity.status === "reconnecting") return t("Reconnecting to Hermes…");
+  if (activity.status === "failed") return t("Command failed");
+  if (commandRunning(activity)) return activity.command === "compress" ? t("Compressing context…") : t("Running command…");
   if (activity.command === "compress") {
-    if (/--(?:preview|dry-run|dryrun)\b/.test(activity.args || "")) return "Compression preview";
-    return activity.changed ? "Context compressed" : "Compression result";
+    if (/--(?:preview|dry-run|dryrun)\b/.test(activity.args || "")) return t("Compression preview");
+    return activity.changed ? t("Context compressed") : t("Compression result");
   }
-  return "Command result";
+  return t("Command result");
 }
 
 export function CommandCard({ activity, onDismiss }) {
@@ -138,14 +139,20 @@ export function CommandCard({ activity, onDismiss }) {
     return () => clearInterval(timer);
   }, [busy]);
   const seconds = Math.max(0, Math.floor((now - (activity.started || now)) / 1000));
-  const elapsed = seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
+  const elapsed = duration(seconds);
   const failed = activity.status === "failed";
+  const output = activity.resultUnavailable
+    ? t("Command result unavailable. Refresh the session before retrying.")
+    : Array.isArray(activity.commands)
+      ? activity.commands.map((command) =>
+        `/${command.name} — ${command.mode === "unavailable" ? t("Unavailable in Talaria") : command.description}`).join("\n")
+      : activity.text;
   return html`<section class=${`command-card${busy ? " is-running" : failed ? " is-failed" : ""}`}
-    aria-label=${`/${activity.command} command`}>
+    aria-label=${t("/{command} command", { command: activity.command })}>
     <div class="command-card-topline">
       <span class="command-card-label"><${Icon} name="terminal" size=${14} />/${activity.command}</span>
-      ${busy ? html`<span class="command-elapsed" aria-label=${`Elapsed ${elapsed}`}>${elapsed}</span>` :
-        html`<${IconButton} name="close" label="Dismiss command result" onClick=${onDismiss} />`}
+      ${busy ? html`<span class="command-elapsed" aria-label=${t("Elapsed {duration}", { duration: elapsed })}>${elapsed}</span>` :
+        html`<${IconButton} name="close" label=${t("Dismiss command result")} onClick=${onDismiss} />`}
     </div>
     <div class="command-card-result" role="status" aria-live="polite" aria-atomic="true">
       <div class="command-card-heading">
@@ -153,7 +160,7 @@ export function CommandCard({ activity, onDismiss }) {
           html`<${Icon} name=${failed ? "alert" : "check"} size=${18} />`}</span>
         <strong>${activityHeading(activity)}</strong>
       </div>
-      ${!busy && activity.text && html`<pre class="command-output">${activity.text}</pre>`}
+      ${!busy && output && html`<pre class="command-output">${output}</pre>`}
     </div>
   </section>`;
 }

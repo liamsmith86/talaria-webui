@@ -2,6 +2,7 @@ import { h, render } from "./vendor/preact.js";
 import htm from "./vendor/htm.js";
 import { useEffect, useState } from "./vendor/hooks.js";
 import { storagePrefix } from "./profile-context.js";
+import { formatDate } from "./i18n.js";
 export { useEffect, useState };
 export { useRef, useMemo, useCallback, useLayoutEffect } from "./vendor/hooks.js";
 export const html = htm.bind(h);
@@ -43,13 +44,11 @@ export function writeStorage(key, value) {
     /* Storage is optional. */
   }
 }
-const timeFormat = new Intl.DateTimeFormat([], {
-  hour: "numeric",
-  minute: "2-digit",
-});
 export const humanTime = (stamp) => {
   const date = new Date(typeof stamp === "number" ? stamp * 1000 : stamp);
-  return Number.isNaN(date.getTime()) ? "" : timeFormat.format(date);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : formatDate(date, { hour: "numeric", minute: "2-digit" });
 };
 
 const paths = {

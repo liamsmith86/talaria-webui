@@ -3,6 +3,7 @@ import { api, setCSRF } from "./api.js";
 import { migratePendingImages, withCachedImages } from "./attachments.js";
 import { selectedSession, selectedMessage, rememberSession } from "./session-navigation.js";
 import { historyWindow } from "./history-page.js";
+import { msg } from "./i18n.js";
 import {
   modelInventory,
   readModelChoices,
@@ -105,7 +106,7 @@ export function fail(error) {
     refreshProfiles().catch(() => {});
   } else
     update({
-      error: error.message || "Something went wrong. Please try again.",
+      error: error.message || msg("Something went wrong. Please try again."),
     });
 }
 export async function initialize(signal = new AbortController().signal) {
@@ -259,7 +260,7 @@ export async function refreshSessionDetails(id = state.active, signal) {
     const parent =
       session.source === "subagent" &&
       typeof session.parent_session_id === "string"
-        ? { id: session.parent_session_id, title: "Parent session" }
+        ? { id: session.parent_session_id, title: msg("Parent session") }
         : state.readOnlyParent;
     update({ sessionDetails: session, readOnlyParent: parent });
     if (parent) writeStorage("child-view", JSON.stringify({ id, parent }));
@@ -274,7 +275,7 @@ export async function pinSession(session) {
   await refreshSessions();
   if (state.active === session.id)
     await refreshSessionDetails().catch(() => {});
-  toast(session.pinned ? "Session unpinned" : "Session pinned");
+  toast(session.pinned ? msg("Session unpinned") : msg("Session pinned"));
 }
 let sessionsRequest = 0;
 let sessionsPending;

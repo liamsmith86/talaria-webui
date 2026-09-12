@@ -5,18 +5,19 @@ import { api } from "./api.js";
 import { Dialog, Connection } from "./dialogs.js";
 import { ExtendedAccess } from "./access-settings.js";
 import { update, refreshProfiles, toast } from "./store.js";
+import { msg, t } from "./i18n.js";
 
 const profileHref = (id) => siteURL(`?profile=${encodeURIComponent(id)}`);
 
 export function ProfileSwitch({ app }) {
   return html`<button
     class="agent-switcher"
-    aria-label="Switch profile"
+    aria-label=${t("Switch profile")}
     aria-haspopup="dialog"
     onClick=${() => update({ modal: "profiles" })}
   >
     <${Icon} name="branch" size=${17} /><span
-      ><small>Profile</small
+      ><small>${t("Profile")}</small
       ><strong>${app.profile?.label || app.agent.name}</strong></span
     ><${Icon} name="chevron" size=${15} />
   </button>`;
@@ -29,9 +30,9 @@ export function ProfilePicker({ app, onClose }) {
       .then((d) => setError(d.error || ""))
       .catch((e) => setError(e.message));
   }, []);
-  return html`<${Dialog} title="Choose a profile" onClose=${onClose} dismissible=${!app.profileMissing}>
-    ${app.profileMissing && html`<p class="dialog-intro">This profile is no longer available. Choose another.</p>`}
-    ${error && html`<p class="form-error" role="status">${error}</p>`}
+  return html`<${Dialog} title=${t("Choose a profile")} onClose=${onClose} dismissible=${!app.profileMissing}>
+    ${app.profileMissing && html`<p class="dialog-intro">${t("This profile is no longer available. Choose another.")}</p>`}
+    ${error && html`<p class="form-error" role="status">${t(error)}</p>`}
     <div class="profile-options">${app.profiles.map(
       (profile) =>
         html`<a
@@ -57,7 +58,7 @@ export function ProfilePicker({ app, onClose }) {
           html`<${Icon} name="check" size=${18} />`}
         </a>`,
     )}</div>
-    <div class="dialog-actions"><button class="button secondary" onClick=${() => update({ modal: { type: "settings", section: "connection" } })}>Manage profiles</button></div>
+    <div class="dialog-actions"><button class="button secondary" onClick=${() => update({ modal: { type: "settings", section: "connection" } })}>${t("Manage profiles")}</button></div>
   </${Dialog}>`;
 }
 
@@ -78,7 +79,7 @@ export function ProfileConnections({ app, onRefresh }) {
       await api(`/profiles/${profile.id}`, { method: "DELETE", body: {} });
       await refreshProfiles();
       setRemoving(null);
-      toast("Profile removed from Talaria");
+      toast(msg("Profile removed from Talaria"));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -87,9 +88,9 @@ export function ProfileConnections({ app, onRefresh }) {
   }
   if (adding)
     return html`<div class="section-heading">
-        <h3>Add profile</h3>
+        <h3>${t("Add profile")}</h3>
         <button class="text-button" onClick=${() => setAdding(false)}>
-          Back
+          ${t("Back")}
         </button>
       </div>
       <${Connection}
@@ -103,13 +104,13 @@ export function ProfileConnections({ app, onRefresh }) {
       />`;
   return html`<section class="settings-section">
       <div class="section-heading">
-        <h3>Profiles</h3>
+        <h3>${t("Profiles")}</h3>
         <button
           class="text-button"
           disabled=${app.profiles.length >= 8}
           onClick=${() => setAdding(true)}
         >
-          <${Icon} name="plus" size=${14} /> Add profile
+          <${Icon} name="plus" size=${14} /> ${t("Add profile")}
         </button>
       </div>
       <div class="saved-profiles">
@@ -121,16 +122,16 @@ export function ProfileConnections({ app, onRefresh }) {
                 ><small>${profile.profile}</small></span
               >
               ${profile.id === activeProfile
-                ? html`<span class="quiet-badge">Current</span>`
+                ? html`<span class="quiet-badge">${t("Current")}</span>`
                 : html`<a class="text-button" href=${profileHref(profile.id)}
-                    >Switch</a
+                    >${t("Switch")}</a
                   >`}
               ${profile.id !== "default" &&
               profile.id !== activeProfile &&
               html`<button
                 class="icon-button"
-                aria-label=${`Remove ${profile.label}`}
-                title="Remove profile"
+                aria-label=${t("Remove {name}", { name: profile.label })}
+                title=${t("Remove profile")}
                 onClick=${() => setRemoving(profile)}
               >
                 <${Icon} name="close" size=${15} />
@@ -141,8 +142,7 @@ export function ProfileConnections({ app, onRefresh }) {
       ${removing &&
       html`<div class="profile-removal">
         <p>
-          Remove ${removing.label} from Talaria? Its sessions stay in
-          Hermes.
+          ${t("Remove {name} from Talaria? Its sessions stay in Hermes.", { name: removing.label })}
         </p>
         <div class="dialog-actions">
           <button
@@ -150,21 +150,21 @@ export function ProfileConnections({ app, onRefresh }) {
             disabled=${busy}
             onClick=${() => setRemoving(null)}
           >
-            Cancel</button
+            ${t("Cancel")}</button
           ><button
             class="button danger"
             disabled=${busy}
             onClick=${() => remove(removing)}
           >
-            ${busy ? "Removing…" : "Remove profile"}
+            ${busy ? t("Removing…") : t("Remove profile")}
           </button>
         </div>
       </div>`}
-      ${error && html`<p class="form-error" role="alert">${error}</p>`}
+      ${error && html`<p class="form-error" role="alert">${t(error)}</p>`}
     </section>
     ${!app.profileMissing &&
     html`<section class="settings-section profile-connection">
-        <h3>${app.profile?.label || "Hermes API"}</h3>
+        <h3>${app.profile?.label || t("Hermes API")}</h3>
         <${Connection} embedded onClose=${onRefresh} />
       </section>
       <${ExtendedAccess} onSaved=${onRefresh} />`}`;

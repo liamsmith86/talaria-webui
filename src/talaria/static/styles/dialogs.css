@@ -276,8 +276,37 @@
 .login-footer {
   font-size: 10px;
   color: var(--faint);
-  margin-top: 50px;
+  margin-top: 24px;
   letter-spacing: 0.1px;
+}
+.login-language {
+  width: 100%;
+  max-width: 362px;
+  margin-top: 40px;
+}
+.language-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+}
+.language-control > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+}
+.language-control select {
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
 }
 .sidebar-overlay {
   display: none;

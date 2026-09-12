@@ -2,14 +2,15 @@ import { html, useState, Icon } from "./lib.js";
 import { api } from "./api.js";
 import { state, update, useStore } from "./store.js";
 import { Installation } from "./installation.js";
+import { msg, t } from "./i18n.js";
 
 const installURL = "hermes://plugin/install?repo=liamsmith86%2Ftalaria-webui%2Fsrc%2Ftalaria%2Fhermes_plugin&enable=1";
 const releaseLabels = {
-  current: "Matches this Talaria release",
-  outdated: "Plugin update available",
-  newer: "Plugin is newer than this Talaria release",
-  different: "Plugin differs from this Talaria release",
-  unknown: "Plugin version not reported",
+  current: msg("Matches this Talaria release"),
+  outdated: msg("Plugin update available"),
+  newer: msg("Plugin is newer than this Talaria release"),
+  different: msg("Plugin differs from this Talaria release"),
+  unknown: msg("Plugin version not reported"),
 };
 
 export function ExtendedAccess({ onSaved }) {
@@ -36,41 +37,40 @@ export function ExtendedAccess({ onSaved }) {
   }
   return html`<section class="extended-access">
     <div class="section-heading">
-      <h3>Extended access</h3>
-      <span class="quiet-badge">Optional</span>
+      <h3>${t("Extended access")}</h3>
+      <span class="quiet-badge">${t("Optional")}</span>
     </div>
     ${available && html`<p class="field-help" role="status">
-      ${release?.version && `${release.version} · `}${releaseLabels[release?.status] || releaseLabels.unknown}
+      ${release?.version && `${release.version} · `}${t(releaseLabels[release?.status] || releaseLabels.unknown)}
     </p>`}
     <div class="access-status" role="status">
       <${Icon} name=${available ? "check" : "info"} size=${16} /><span
         >${available
-          ? "Connected · Talaria plugin"
-          : "Talaria plugin not detected"}</span
+          ? t("Connected · Talaria plugin")
+          : t("Talaria plugin not detected")}</span
       >
     </div>
     ${available && inherited &&
       (context.instructions === "unavailable" || context.prefill === "unavailable") &&
       html`<p class="field-help" role="status">
-        Some profile context could not be loaded. Check its configuration in Hermes,
-        then check again.
+        ${t("Some profile context could not be loaded. Check its configuration in Hermes, then check again.")}
       </p>`}
     ${!available &&
     html`<p class="field-help">
-      Install the plugin on your Hermes host, then restart its gateway.
+      ${t("Install the plugin on your Hermes host, then restart its gateway.")}
     </p>`}
-    ${error && html`<p class="form-error" role="alert">${error}</p>`}
+    ${error && html`<p class="form-error" role="alert">${t(error)}</p>`}
     <div class="dialog-actions">
       ${needsInstall && html`<a class="button secondary"
         href=${installURL + (available ? "&force=1" : "")}>
-        ${available ? "Update in Hermes Desktop" : "Install in Hermes Desktop"}
+        ${available ? t("Update in Hermes Desktop") : t("Install in Hermes Desktop")}
       </a>`}
       <button class="button secondary" disabled=${busy} onClick=${refresh}>
-        ${busy ? "Checking…" : "Check again"}
+        ${busy ? t("Checking…") : t("Check again")}
       </button>
     </div>
     ${needsInstall && html`<p class="field-help">
-      <a href="https://github.com/liamsmith86/talaria-webui#hermes-plugin" target="_blank" rel="noopener noreferrer">Server installation instructions</a>
+      <a href="https://github.com/liamsmith86/talaria-webui#hermes-plugin" target="_blank" rel="noopener noreferrer">${t("Server installation instructions")}</a>
     </p>`}
     ${needsInstall && html`<${Installation} pluginOnly=${true} />`}
   </section>`;

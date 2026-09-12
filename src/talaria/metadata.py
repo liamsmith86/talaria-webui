@@ -45,11 +45,13 @@ def readiness_info(health):
         if not isinstance(check, dict) or text(check.get("status"), 32) in {"", "ok", "ready"}:
             continue
         detail = text(check.get("detail"), 240)
+        used_percent = None
         if (
             name == "disk"
             and type(check.get("used_percent")) in {int, float}
             and 0 <= check["used_percent"] <= 100
         ):
+            used_percent = check["used_percent"]
             detail = f"{check['used_percent']:g}% of storage is used."
         elif name == "model" and not detail:
             detail = "No default model is configured in Hermes."
@@ -61,6 +63,7 @@ def readiness_info(health):
                 "label": label,
                 "status": text(check.get("status"), 32),
                 "detail": detail,
+                **({"used_percent": used_percent} if used_percent is not None else {}),
             }
         )
     return {

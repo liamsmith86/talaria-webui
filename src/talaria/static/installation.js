@@ -1,5 +1,6 @@
 import { html, Icon, useEffect, useRef, useState } from "./lib.js";
 import { api } from "./api.js";
+import { msg, t } from "./i18n.js";
 
 const CHECK_COOLDOWN = 10 * 60 * 1000;
 let lastCheckAttempt = 0;
@@ -10,12 +11,12 @@ function recentlyChecked(timestamp) {
 }
 
 const phases = {
-  checking: "Checking for updates…",
-  building: "Preparing update…",
-  verifying: "Verifying update…",
-  restarting: "Restarting Talaria…",
-  plugin: "Updating local Hermes plugin…",
-  recovering: "Restoring previous release…",
+  checking: msg("Checking for updates…"),
+  building: msg("Preparing update…"),
+  verifying: msg("Verifying update…"),
+  restarting: msg("Restarting Talaria…"),
+  plugin: msg("Updating local Hermes plugin…"),
+  recovering: msg("Restoring previous release…"),
 };
 
 function delay(signal) {
@@ -37,7 +38,7 @@ export function Installation({ pluginOnly = false }) {
   const [info, setInfo] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
-  const [phase, setPhase] = useState("Loading…");
+  const [phase, setPhase] = useState(msg("Loading…"));
   const control = useRef(null);
   const acting = useRef(false);
 
@@ -63,18 +64,18 @@ export function Installation({ pluginOnly = false }) {
           location.reload();
           return;
         }
-        setPhase("Reconnecting to Talaria…");
+        setPhase(msg("Reconnecting to Talaria…"));
         continue;
       }
       const job = data.operation;
       if (job?.id !== operation.id) {
         if (Date.now() > acceptanceDeadline)
-          throw new Error("Could not confirm the update request. Check again before retrying.");
+          throw new Error(msg("Could not confirm the update request. Check again before retrying."));
         continue;
       }
       setPhase(job.phase === "checking" && operation.action === "update"
-        ? phases.building : phases[job.phase] || "Updating Talaria…");
-      if (job.status === "failed") throw new Error(job.error || "Update failed.");
+        ? phases.building : phases[job.phase] || msg("Updating Talaria…"));
+      if (job.status === "failed") throw new Error(job.error || msg("Update failed."));
       if (job.status === "completed") {
         if (operation.action === "update") {
           // Never reload against the old process merely because its socket responds.
@@ -84,7 +85,7 @@ export function Installation({ pluginOnly = false }) {
         return;
       }
     }
-    if (!signal.aborted) throw new Error("The update is taking longer than expected. Check again shortly.");
+    if (!signal.aborted) throw new Error(msg("The update is taking longer than expected. Check again shortly."));
   }
 
   async function submit(action, current, signal) {
@@ -154,28 +155,29 @@ export function Installation({ pluginOnly = false }) {
   const development = info?.environment === "development";
   const available = info?.update?.available;
   const problem = error || info?.update?.error;
+  const status = busy ? t(phase) : problem ? t("Update unavailable") : available
+    ? t("Update available") : info?.update?.checked_at ? t("Up to date") : t("Not checked");
   if (pluginOnly && !info?.updates_local_plugin) return null;
   return html`${!pluginOnly && html`<div class="section-heading">
-      <h3>Talaria ${info && html`<span class="installation-version" aria-label=${`Version ${info.version}`}>${info.version}</span>`}</h3>
-      ${development && html`<span class="environment-badge">Development</span>`}
+      <h3>Talaria ${info && html`<span class="installation-version" aria-label=${t("Version {version}", { version: info.version })}>${info.version}</span>`}</h3>
+      ${development && html`<span class="environment-badge">${t("Development")}</span>`}
     </div>
     ${info && html`<dl class="installation-details">
-      <div><dt>Build</dt><dd>${development ? "Working checkout" : info.commit?.slice(0, 10) || "Installed package"}</dd></div>
-      ${info.managed && html`<div><dt>Branch</dt><dd>${info.branch}</dd></div>`}
+      <div><dt>${t("Build")}</dt><dd>${development ? t("Working checkout") : info.commit?.slice(0, 10) || t("Installed package")}</dd></div>
+      ${info.managed && html`<div><dt>${t("Branch")}</dt><dd>${info.branch}</dd></div>`}
     </dl>`}`}
-    ${!development && html`<section class="installation-update" aria-label="Updates">
-      <p class="installation-status" role="status">${pluginOnly && !busy ? "Talaria: " : ""}${busy ? phase : problem ? "Update unavailable" : available
-        ? "Update available" : info?.update?.checked_at ? "Up to date" : "Not checked"}</p>
-      ${problem && !busy && html`<p class="form-error" role="alert">${problem}</p>`}
-      ${info?.updates_local_plugin && html`<p class="field-help">Linked local Hermes restarts if its plugin changes.</p>`}
+    ${!development && html`<section class="installation-update" aria-label=${t("Updates")}>
+      <p class="installation-status" role="status">${pluginOnly && !busy ? t("Talaria: {status}", { status }) : status}</p>
+      ${problem && !busy && html`<p class="form-error" role="alert">${t(problem)}</p>`}
+      ${info?.updates_local_plugin && html`<p class="field-help">${t("Linked local Hermes restarts if its plugin changes.")}</p>`}
       ${info?.can_update ? html`<div class="installation-actions">
         <button class="button secondary" disabled=${busy} onClick=${() => act("check")}>
-          <${Icon} name="refresh" size=${16} />Check for updates
+          <${Icon} name="refresh" size=${16} />${t("Check for updates")}
         </button>
         ${(available || info.updates_local_plugin) && html`<button class="button primary" disabled=${busy || !!problem || !info.update?.latest_commit}
-          onClick=${() => act("update")}><${Icon} name="download" size=${16} />${available ? pluginOnly ? "Update Talaria & plugin" : "Update" : "Sync linked plugin"}</button>`}
+          onClick=${() => act("update")}><${Icon} name="download" size=${16} />${available ? pluginOnly ? t("Update Talaria & plugin") : t("Update") : t("Sync linked plugin")}</button>`}
       </div>` : info && html`<p class="field-help">${info.managed
-        ? "Start Talaria with its managed launcher to enable updates."
-        : "Update using your package or container manager."}</p>`}
+        ? t("Start Talaria with its managed launcher to enable updates.")
+        : t("Update using your package or container manager.")}</p>`}
     </section>`}`;
 }

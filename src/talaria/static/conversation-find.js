@@ -1,5 +1,6 @@
 import { html, useCallback, useEffect, useRef, useState, Icon, IconButton } from "./lib.js";
 import { update } from "./store.js";
+import { t, formatNumber } from "./i18n.js";
 
 const searchable = ".message-text, .tool-content pre, .reasoning .markdown";
 
@@ -169,18 +170,18 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
   function close() {
     update({ findOpen: false });
     requestAnimationFrame(() =>
-      document.querySelector('[aria-label="Find in session"]')?.focus(),
+      document.getElementById("conversation-find-toggle")?.focus(),
     );
   }
   return html`<section
     class="conversation-find"
-    aria-label="Find in session"
+    aria-label=${t("Find in session")}
   >
     <div class="find-controls">
       <${Icon} name="search" size=${17} /><input
         ref=${input}
-        aria-label="Find text in session"
-        placeholder="Find in this session…"
+        aria-label=${t("Find text in session")}
+        placeholder=${t("Find in this session…")}
         value=${query}
         maxlength="200"
         onInput=${(e) => {
@@ -200,27 +201,29 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
       <span class="find-count" role="status"
         >${query.trim()
           ? ranges.length
-            ? `${index + 1} of ${ranges.length}${ranges.length === 2000 ? "+" : ""}`
-            : "No matches"
+            ? ranges.length === 2000
+              ? t("{index} of {count}+", { index: formatNumber(index + 1), count: formatNumber(ranges.length) })
+              : t("{index} of {count}", { index: formatNumber(index + 1), count: formatNumber(ranges.length) })
+            : t("No matches")
           : ""}</span
       >
       <${IconButton}
         name="arrow"
-        label="Previous match"
+        label=${t("Previous match")}
         disabled=${!ranges.length}
         onClick=${() => navigate(-1)}
       /><${IconButton}
         name="down"
-        label="Next match"
+        label=${t("Next match")}
         disabled=${!ranges.length}
         onClick=${() => navigate(1)}
-      /><${IconButton} name="close" label="Close find" onClick=${close} />
+      /><${IconButton} name="close" label=${t("Close find")} onClick=${close} />
     </div>
     <div class="find-scope">
       <span
         >${app.historyHasMore
-          ? "Searching loaded messages. Earlier messages are not included yet."
-          : "Searching the full loaded session."}</span
+          ? t("Searching loaded messages. Earlier messages are not included yet.")
+          : t("Searching the full loaded session.")}</span
       >
       ${app.historyHasMore &&
       html`<button
@@ -231,7 +234,7 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
           await onLoadEarlier();
         }}
       >
-        ${olderBusy ? "Loading…" : "Include earlier messages"}
+        ${olderBusy ? t("Loading…") : t("Include earlier messages")}
       </button>`}
     </div>
   </section>`;

@@ -42,7 +42,7 @@ def test_result_keeps_error_and_exit_metadata_and_neutral_saved_status(page, liv
     ]
     open_session(page, sid)
     for card, value in zip(page.locator(".tool-card").all(), values, strict=True):
-        expect(card.locator(".tool-status")).to_have_text("finished")
+        expect(card.locator(".tool-status")).to_have_text("Finished")
         expect(card.locator(".tool-status")).to_have_attribute(
             "title", "Outcome not reported by Hermes"
         )
@@ -69,15 +69,15 @@ def test_failure_outcome_belongs_only_to_its_settled_native_turn(page, live_app)
         sid,
     )
     statuses = page.locator(".tool-status")
-    expect(statuses).to_have_text(["finished", "failed"])
+    expect(statuses).to_have_text(["Finished", "Failed"])
     refresh(page, sid)
-    expect(statuses).to_have_text(["finished", "failed"])
+    expect(statuses).to_have_text(["Finished", "Failed"])
     # A different client's identical prompt and reused call ID are not this run.
     peer.messages[sid] += rows("Third result", 8)
     refresh(page, sid)
-    expect(statuses).to_have_text(["finished", "failed", "finished"])
+    expect(statuses).to_have_text(["Finished", "Failed", "Finished"])
     page.reload()
-    expect(statuses).to_have_text(["finished", "finished", "finished"])
+    expect(statuses).to_have_text(["Finished", "Finished", "Finished"])
 
 
 def test_large_result_download_is_complete_literal_and_rendering_stays_bounded(page, live_app):
@@ -144,15 +144,15 @@ def test_failed_tool_stream_settles_without_becoming_successful(page, live_app, 
     page.get_by_label("Message Hermes").fill("Same prompt")
     page.get_by_label("Message Hermes").press("Enter")
     try:
-        expect(page.locator(".tool-status")).to_have_text("failed")
+        expect(page.locator(".tool-status")).to_have_text("Failed")
     finally:
         release.set()
     wait_for_store(page, "s => s.lives[s.active]?.persisted === true")
-    expect(page.locator(".tool-status")).to_have_text("failed")
+    expect(page.locator(".tool-status")).to_have_text("Failed")
     page.locator(".tool-card summary").click()
     expect(page.get_by_role("region", name="Tool result")).to_contain_text("Synthetic failure")
     page.reload()
     # The persisted native contract has no outcome field: do not invent success.
-    expect(page.locator(".tool-status")).to_have_text("finished")
+    expect(page.locator(".tool-status")).to_have_text("Finished")
     page.locator(".tool-card summary").click()
     expect(page.get_by_role("region", name="Tool result")).to_contain_text("Synthetic failure")

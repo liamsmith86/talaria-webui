@@ -350,7 +350,8 @@ def test_live_events_render_before_the_next_upstream_event(
       const checks=[
         () => document.querySelectorAll('.reasoning').length===1,
         () => document.querySelectorAll('.tool-card').length===1,
-        () => document.querySelector('.tool-card')?.textContent.includes('completed'),
+        () => document.querySelector('.tool-card .tool-status .sr-only')
+          ?.textContent === 'Completed',
         () => document.querySelector('.message.assistant .message-text')
           ?.textContent.includes('First text'),
         () => document.querySelectorAll('.reasoning').length===2,

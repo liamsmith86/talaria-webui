@@ -36,6 +36,20 @@ import { ConversationFind } from "./conversation-find.js";
 import { responseParts } from "./response-parts.js";
 import { useReplyJump, scrollBehavior } from "./reply-jump.js";
 import { useHistoryAnchor } from "./history-anchor.js";
+import { t, msg, useLanguage } from "./i18n.js";
+
+const toolStatuses = {
+  running: msg("Running"),
+  completed: msg("Completed"),
+  finished: msg("Finished"),
+  failed: msg("Failed"),
+  error: msg("Error"),
+  cancelled: msg("Cancelled"),
+  interrupted: msg("Interrupted"),
+  timeout: msg("Timed out"),
+  timed_out: msg("Timed out"),
+  not_reported: msg("Not reported"),
+};
 
 function toolText(value, input = false) {
   if (typeof value !== "string") return "";
@@ -84,36 +98,36 @@ function ToolCard({ tool, matched = false }) {
       <span class="tool-icon"><${Icon} name=${icon} size=${17} /></span
       ><span class="tool-label"
         >${isAgent
-          ? "Subagent"
-          : (tool.name || "Tool").replace(/_/g, " ")}${isAgent &&
-          html`<small>${tool.name}</small>`}</span
-      ><span class="tool-status" title=${tool.status === "finished" ? "Outcome not reported by Hermes" : undefined}
+          ? t("Subagent")
+          : (tool.name || t("Tool")).replace(/_/g, " ")}${isAgent &&
+          html`<small>${tool.name || t("Delegated task")}</small>`}</span
+      ><span class="tool-status" title=${tool.status === "finished" ? t("Outcome not reported by Hermes") : undefined}
         >${tool.status === "running"
           ? html`<span class="spinner" />`
           : html`<${Icon}
               name=${failed ? "alert" : ["not_reported", "finished"].includes(tool.status) ? "info" : "check"}
               size=${15}
             />`}<span class="sr-only"
-          >${typeof tool.status === "string"
-            ? tool.status.replace(/_/g, " ")
-            : "Finished"}</span
+          >${Object.hasOwn(toolStatuses, tool.status)
+            ? t(toolStatuses[tool.status])
+            : typeof tool.status === "string" ? tool.status.replace(/_/g, " ") : t("Finished")}</span
         ></span
       ><${Icon} name="chevron" size=${14} />
     </summary>
     <div class="tool-content">
       ${preview
-        ? html`<${ToolCode} text=${preview} label="Tool details"
+        ? html`<${ToolCode} text=${preview} label=${t("Tool details")}
             shell=${!isAgent && tool.name === "terminal"} enabled=${open} />`
         : html`<p>
             ${tool.status === "running"
-              ? "Hermes is using this tool."
-              : "This tool has finished."}
+              ? t("Hermes is using this tool.")
+              : t("This tool has finished.")}
           </p>`}
       ${tool.output !== undefined &&
-      html`<small>Result</small>
+      html`<small>${t("Result")}</small>
         <${ToolResult} text=${tool.output}
           enabled=${open && tool.status !== "running"} />`}
-      ${tool.duration !== undefined && html`<small>${tool.duration}s</small>`}
+      ${tool.duration !== undefined && html`<small>${duration(tool.duration)}</small>`}
       ${isAgent &&
       html`<div class="child-facts">
         ${typeof tool.model === "string" &&
@@ -121,7 +135,7 @@ function ToolCard({ tool, matched = false }) {
         html`<span>${duration(tool.duration_seconds)}</span>`}${numberValue(
           tool.cost_usd,
         ) !== null &&
-        html`<span title="Cost reported by Hermes"
+        html`<span title=${t("Cost reported by Hermes")}
           >${money(tool.cost_usd)} USD</span
         >`}
       </div>`}
@@ -135,16 +149,16 @@ function ToolCard({ tool, matched = false }) {
             title:
               state.sessionDetails?.title ||
               state.sessions.find((s) => s.id === state.active)?.title ||
-              "Parent session",
+              t("Parent session"),
           })}
       >
-        Open child session<${Icon} name="link" size=${14} />
+        ${t("Open child session")}<${Icon} name="link" size=${14} />
       </button>`}
       ${isAgent &&
       tool.status !== "running" &&
       !tool.child_session_id &&
       html`<p class="field-help">
-        Hermes did not include a child transcript link.
+        ${t("Hermes did not include a child transcript link.")}
       </p>`}
     </div>
   </details>`;
@@ -166,6 +180,8 @@ function Message({
   matched = false,
   matchId = null,
   detailsEnabled = true,
+  locale,
+  formatLocale,
 }) {
   const [copied, setCopied] = useState(false);
   // Reconciliation adds a native record to the existing live message. Code
@@ -183,7 +199,9 @@ function Message({
           />`,
         ]),
       ),
-    [tools, matchId],
+    // Tool VNodes contain translated labels and locale-formatted durations/costs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tools, matchId, locale, formatLocale],
   );
   const partCounts = {};
   function renderPart(part, index, all) {
@@ -195,7 +213,7 @@ function Message({
       ? `tool:${!!part.agent}:${part.id}` : `${part.kind}:${position}`;
     if (part.kind === "reasoning")
       return html`<details class="reasoning" key=${key}>
-        <summary>Thinking<${Icon} name="chevron" size=${14} /></summary>
+        <summary>${t("Thinking")}<${Icon} name="chevron" size=${14} /></summary>
         <${Markdown} text=${part.text} streaming=${streaming && index === all.length - 1}
           deferHighlight=${deferHighlight} />
       </details>`;
@@ -224,7 +242,7 @@ function Message({
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
-      toast("Select the message text to copy it.");
+      toast(msg("Select the message text to copy it."));
     }
   }
   const showActions = !streaming &&
@@ -232,7 +250,7 @@ function Message({
   return html`<article
     class=${`message ${role} ${matched ? "search-match" : ""}`}
     tabindex=${role === "assistant" ? -1 : undefined}
-    aria-label=${role === "user" ? "Your message" : `${agentName} response`}
+    aria-label=${role === "user" ? t("Your message") : t("{name} response", { name: agentName })}
   >
     ${role !== "user" &&
     html`<div class="message-byline">
@@ -245,7 +263,7 @@ function Message({
             class="user-content message-text"
             tabindex="0"
             role="region"
-            aria-label="Your message text"
+            aria-label=${t("Your message text")}
           >
             ${text}
           </div>`}`
@@ -253,7 +271,7 @@ function Message({
     ${streaming &&
     !text &&
     html`<div class="thinking" role="status">
-      <span /><span /><span /><span class="sr-only">${agentName} is thinking</span>
+      <span /><span /><span /><span class="sr-only">${t("{name} is thinking", { name: agentName })}</span>
     </div>`}
     ${(role !== "user" || showActions) &&
     html`<div class="message-actions">
@@ -261,7 +279,7 @@ function Message({
       detailsEnabled && record?.id &&
       html`<${IconButton}
         name="info"
-        label="Response details"
+        label=${t("Response details")}
         onClick=${() =>
           update({
             modal: {
@@ -277,13 +295,13 @@ function Message({
       />`}
       <${IconButton}
         name=${copied ? "check" : "copy"}
-        label=${copied ? "Copied" : "Copy message"}
+        label=${copied ? t("Copied") : t("Copy message")}
         onClick=${copy}
       />
       ${canChange &&
       html`<${IconButton}
           name=${role === "user" ? "edit" : "refresh"}
-          label=${role === "user" ? "Edit and resend" : "Regenerate response"}
+          label=${role === "user" ? t("Edit and resend") : t("Regenerate response")}
           onClick=${() =>
             update({
               modal: {
@@ -296,7 +314,7 @@ function Message({
         />
         <${IconButton}
           name="trash"
-          label="Delete turn"
+          label=${t("Delete turn")}
           onClick=${() =>
             update({
               modal: {
@@ -326,20 +344,20 @@ function Approval({ sid, request }) {
   }
   const choices = request.choices || ["once", "deny"];
   const unavailable = !supports("run_approval_response");
-  return html`<section class="approval-card" aria-label="Approval required">
+  return html`<section class="approval-card" aria-label=${t("Approval required")}>
     <div class="approval-heading">
       <${Icon} name="alert" size=${18} /><strong
-        >A moment for your approval</strong
+        >${t("A moment for your approval")}</strong
       >
     </div>
-    <p>Hermes would like to run this command.</p>
-    <pre tabindex="0" role="region" aria-label="Command awaiting approval">
+    <p>${t("Hermes would like to run this command.")}</p>
+    <pre tabindex="0" role="region" aria-label=${t("Command awaiting approval")}>
 ${request.command ||
       request.description ||
       request.preview ||
-      "A tool needs your permission to continue."}</pre
+      t("A tool needs your permission to continue.")}</pre
     >
-    ${error && html`<div class="form-error" role="alert">${error}</div>`}
+    ${error && html`<div class="form-error" role="alert">${t(error)}</div>`}
     <div class="approval-actions">
       ${choices.includes("deny") &&
       html`<button
@@ -347,33 +365,32 @@ ${request.command ||
         disabled=${busy || unavailable}
         onClick=${() => respond("deny")}
       >
-        Deny
+        ${t("Deny")}
       </button>`}${choices.includes("session") &&
       html`<button
         class="button secondary"
         disabled=${busy || unavailable}
         onClick=${() => respond("session")}
       >
-        Allow for session
+        ${t("Allow for session")}
       </button>`}${choices.includes("once") &&
       html`<button
         class="button primary"
         disabled=${busy || unavailable}
         onClick=${() => respond("once")}
       >
-        ${busy ? "Sending…" : "Allow once"}
+        ${busy ? t("Sending…") : t("Allow once")}
       </button>`}
     </div>
     ${unavailable &&
     html`<p>
-      This Hermes version cannot receive approvals here. Respond in Hermes to
-      continue.
+      ${t("This Hermes version cannot receive approvals here. Respond in Hermes to continue.")}
     </p>`}
   </section>`;
 }
 
 function orphanTool(message) {
-  const tool = { id: message.tool_call_id || message.id, name: message.tool_name || "Tool",
+  const tool = { id: message.tool_call_id || message.id, name: message.tool_name || "",
     status: "finished", messageIds: [message.id] };
   return { record: message, id: message.id, role: "assistant", text: "", images: [],
     tools: [tool], time: message.timestamp, reasoning: "" };
@@ -442,7 +459,7 @@ function historyItems(history, live, excerpt = false) {
                     ...entry,
                     kind: "agent",
                     id: `${call.id}-${index}`,
-                    name: typeof goal === "string" ? goal : "Delegated task",
+                    name: typeof goal === "string" ? goal : "",
                     preview: entry.summary,
                     child_session_id:
                       entry.child_session_id || prior.child_session_id,
@@ -532,6 +549,7 @@ function historyItems(history, live, excerpt = false) {
 }
 
 export function Conversation({ app, command, onDismissCommand }) {
+  const { locale, formatLocale } = useLanguage();
   const scroll = useRef();
   const replyStart = useReplyJump(scroll, app.active);
   const bottom = useRef();
@@ -629,6 +647,8 @@ export function Conversation({ app, command, onDismissCommand }) {
             key=${messageKeys.get(m.id)}
             ...${m}
             agentName=${agentName}
+            locale=${locale}
+            formatLocale=${formatLocale}
             matched=${app.searchWindow && m.messageIds.some((id) => String(id) === String(app.searchWindow))}
             matchId=${app.searchWindow}
             detailsEnabled=${!app.searchWindow}
@@ -636,7 +656,7 @@ export function Conversation({ app, command, onDismissCommand }) {
             responseStatus=${m === savedTurn && !live.outcomeUnknown ? live.status : null}
           />`,
       ),
-    [items, messageKeys, canChange, app.loading, savedTurn, live?.status, live?.outcomeUnknown, agentName, app.searchWindow],
+    [items, messageKeys, canChange, app.loading, savedTurn, live?.status, live?.outcomeUnknown, agentName, app.searchWindow, locale, formatLocale],
   );
   async function loadEarlier() {
     if (olderBusy) return;
@@ -662,6 +682,8 @@ export function Conversation({ app, command, onDismissCommand }) {
     transcript.push(html`<${Message}
       key=${`${liveKey}:user`}
       role="user"
+      locale=${locale}
+      formatLocale=${formatLocale}
       text=${live.userText}
       images=${live.userImages}
     />`);
@@ -670,6 +692,8 @@ export function Conversation({ app, command, onDismissCommand }) {
     transcript.push(html`<${Message}
       key=${`${liveKey}:assistant`}
       role="assistant"
+      locale=${locale}
+      formatLocale=${formatLocale}
       agentName=${agentName}
       text=${live.text}
       tools=${live.tools}
@@ -714,13 +738,13 @@ export function Conversation({ app, command, onDismissCommand }) {
           disabled=${olderBusy}
           onClick=${loadEarlier}
         >
-          ${olderBusy ? "Loading…" : "Load earlier messages"}
+          ${olderBusy ? t("Loading…") : t("Load earlier messages")}
         </button>`}
         ${app.loading &&
         html`<div class="history-loading" role="status">
           <span class="skeleton long" /><span class="skeleton" /><span
             class="skeleton medium"
-          /><span class="sr-only">Loading session</span>
+          /><span class="sr-only">${t("Loading session")}</span>
         </div>`}
         ${transcript}
         ${savedTurn === items.at(-1) &&
@@ -729,7 +753,7 @@ export function Conversation({ app, command, onDismissCommand }) {
         live.tools.some((t) => t.kind === "agent") &&
         html`<div
           class="tool-stack completed-children"
-          aria-label="Child agent activity"
+          aria-label=${t("Child agent activity")}
         >
           ${live.tools
             .filter((t) => t.kind === "agent")
@@ -747,24 +771,24 @@ export function Conversation({ app, command, onDismissCommand }) {
           ${live.statusText}</div>`}
         ${live?.reconnecting &&
         html`<div class="run-notice" role="status">
-          <span class="spinner" /> Reconnecting to Hermes. The response status is not yet confirmed.
+          <span class="spinner" /> ${t("Reconnecting to Hermes. The response status is not yet confirmed.")}
         </div>`}
         ${live?.error &&
         html`<div class="run-error" role="alert">
-          ${live.error}${live.submissionFailed &&
+          ${t(live.error)}${live.submissionFailed &&
           html`<button
             class="text-button"
             disabled=${live.retrying}
             onClick=${() => retrySubmission(app.active).catch(fail)}
           >
-            ${live.retrying ? "Recovering…" : "Retry submission"}
+            ${live.retrying ? t("Recovering…") : t("Retry submission")}
           </button>`}
         </div>`}
         ${live?.status === "cancelled" &&
-        html`<div class="run-notice">You stopped this response.</div>`}
+        html`<div class="run-notice">${t("You stopped this response.")}</div>`}
         ${live?.pendingSteer &&
         html`<div class="run-notice">
-          Guidance arrived after this response: ${live.pendingSteer}
+          ${t("Guidance arrived after this response: {guidance}", { guidance: live.pendingSteer })}
         </div>`}
         <div ref=${bottom} class="scroll-anchor" />
       </div>
@@ -772,7 +796,7 @@ export function Conversation({ app, command, onDismissCommand }) {
       ${(away || replyStart) && html`<div class="conversation-jumps">
       ${replyStart && html`<button
         class="jump-reply"
-        aria-label="Jump to start of reply"
+        aria-label=${t("Jump to start of reply")}
         onClick=${() => {
           if (!replyStart.isConnected) return;
           sticky.current = false;
@@ -785,11 +809,11 @@ export function Conversation({ app, command, onDismissCommand }) {
             behavior: scrollBehavior(),
           });
         }}
-      ><${Icon} name="arrow" size=${16} />Reply start</button>`}
+      ><${Icon} name="arrow" size=${16} />${t("Reply start")}</button>`}
       ${away &&
       html`<button
         class="jump-bottom"
-        aria-label="Jump to latest message"
+        aria-label=${t("Jump to latest message")}
         onClick=${() => {
           sticky.current = true;
           bottom.current?.scrollIntoView({ behavior: scrollBehavior() });

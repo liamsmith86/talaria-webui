@@ -3,6 +3,7 @@ import { api } from "./api.js";
 import { Dialog } from "./dialogs.js";
 import { count, duration, numberValue } from "./content.js";
 import { reasoningNames } from "./models.js";
+import { t, n, msg, formatNumber } from "./i18n.js";
 
 function useDetails(path, enabled, initial = null) {
   const [result, set] = useState({ data: initial, busy: enabled, error: "" });
@@ -43,50 +44,50 @@ export function ResponseDetails({ session, message, enabled, onClose }) {
     },
   );
   const facts = [
-    ...(data?.status === "interrupted" ? [["Status", "Interrupted"]] : []),
-    ["Model", data?.model || "Not reported"],
-    ["Provider", data?.provider || "Not reported"],
+    ...(data?.status === "interrupted" ? [[msg("Status"), t("Interrupted")]] : []),
+    [msg("Model"), data?.model || t("Not reported")],
+    [msg("Provider"), data?.provider || t("Not reported")],
     [
-      "Reasoning setting",
-      reasoningNames[data?.reasoning] ||
-        (data?.reasoning === "enabled" ? "Enabled" : "Not reported"),
+      msg("Reasoning setting"),
+      reasoningNames[data?.reasoning] ? t(reasoningNames[data.reasoning]) :
+        (data?.reasoning === "enabled" ? t("Enabled") : t("Not reported")),
     ],
     [
-      "Reasoning text",
+      msg("Reasoning text"),
       data?.has_reasoning || message.reasoning || message.reasoning_content
-        ? "Available"
-        : "Not shared",
+        ? t("Available")
+        : t("Not shared"),
     ],
-    ["Model call duration", duration(data?.duration_seconds) || "—"],
+    [msg("Model call duration"), duration(data?.duration_seconds) || "—"],
     [
-      "Finish reason",
-      data?.finish_reason?.replaceAll("_", " ") || "Not reported",
+      msg("Finish reason"),
+      data?.finish_reason?.replaceAll("_", " ") || t("Not reported"),
     ],
   ];
-  return html`<${Dialog} title="Response details" className="usage-dialog" onClose=${onClose}>
-    ${busy && html`<p class="field-help" role="status"><span class="spinner" /> Loading response details…</p>`}
-    ${error && html`<p class="form-error" role="alert">${error}</p>`}
+  return html`<${Dialog} title=${t("Response details")} className="usage-dialog" onClose=${onClose}>
+    ${busy && html`<p class="field-help" role="status"><span class="spinner" /> ${t("Loading response details…")}</p>`}
+    ${error && html`<p class="form-error" role="alert">${t(error)}</p>`}
     <dl class="usage-grid response-facts">${facts.map(
       ([label, value]) =>
         html`<div>
-          <dt>${label}</dt>
+          <dt>${t(label)}</dt>
           <dd>${value}</dd>
         </div>`,
     )}</dl>
     ${
       data?.usage &&
       html`<div class="response-usage">
-        <p class="detail-title">Final model call</p>
+        <p class="detail-title">${t("Final model call")}</p>
         <dl class="usage-grid">
           ${[
-            ["Input tokens", data.usage.input_tokens],
-            ["Output tokens", data.usage.output_tokens],
-            ["Cached input", data.usage.cache_read_tokens],
-            ["Reasoning tokens", data.usage.reasoning_tokens],
+            [msg("Input tokens"), data.usage.input_tokens],
+            [msg("Output tokens"), data.usage.output_tokens],
+            [msg("Cached input"), data.usage.cache_read_tokens],
+            [msg("Reasoning tokens"), data.usage.reasoning_tokens],
           ].map(
             ([label, value]) =>
               html`<div>
-                <dt>${label}</dt>
+                <dt>${t(label)}</dt>
                 <dd>${count(value)}</dd>
               </div>`,
           )}
@@ -108,10 +109,13 @@ export function ContextIndicator({ app }) {
   if (used === null) return null;
   const percent =
     maximum > 0 ? Math.min(100, (used / maximum) * 100) : null;
+  const percentage = percent === null ? null : formatNumber(percent / 100, {
+    style: "percent", maximumFractionDigits: 0,
+  });
   const label = percent !== null
-    ? `${Math.round(percent)}% context used · last request`
-    : `${count(used)} input tokens · last request`;
+    ? t("{percent} context used · last request", { percent: percentage })
+    : n("{count} input token · last request", "{count} input tokens · last request", used);
   return html`<span class="context-indicator" role="img" aria-label=${label} title=${label}>
-    <${Icon} name="context" size=${18} /><span>${percent !== null ? `${Math.round(percent)}%` : `${count(used)} tokens`}</span>
+    <${Icon} name="context" size=${18} /><span>${percentage ?? n("{count} token", "{count} tokens", used)}</span>
   </span>`;
 }

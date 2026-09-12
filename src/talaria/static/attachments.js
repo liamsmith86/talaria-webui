@@ -1,3 +1,4 @@
+import { formatNumber, msg, t } from "./i18n.js";
 // Drafts, submission receipts, and a bounded cache of originals Hermes may omit.
 import { databaseName } from "./profile-context.js";
 const MAX_IMAGE = 2 * 1024 * 1024;
@@ -28,16 +29,12 @@ function openDatabase() {
       };
       request.onerror = () =>
         reject(
-          new Error(
-            "Browser storage is unavailable. Try again or enable storage for Talaria.",
-          ),
+          new Error(msg("Browser storage is unavailable. Try again or enable storage for Talaria.")),
         );
       request.onblocked = () => {
         abandoned = true;
         reject(
-          new Error(
-            "Close other Talaria tabs and try saving this attachment again.",
-          ),
+          new Error(msg("Close other Talaria tabs and try saving this attachment again.")),
         );
       };
     }).catch((error) => {
@@ -65,9 +62,7 @@ export async function pendingStorage(key, value) {
     transaction.oncomplete = () => resolve(request.result);
     transaction.onabort = transaction.onerror = () =>
       reject(
-        new Error(
-          "The images could not be saved in this browser. Free some browser storage and try again.",
-        ),
+        new Error(msg("The images could not be saved in this browser. Free some browser storage and try again.")),
       );
   });
 }
@@ -88,7 +83,7 @@ export async function consumePendingImages(key, images) {
     };
     transaction.oncomplete = resolve;
     transaction.onabort = transaction.onerror = () =>
-      reject(new Error("The image draft could not be updated in this browser."));
+      reject(new Error(msg("The image draft could not be updated in this browser.")));
   });
 }
 
@@ -135,9 +130,7 @@ export async function migratePendingImages(from, to) {
           combined.reduce((size, image) => size + image.size, 0) > MAX_IMAGES_TOTAL
         )
           throw Object.assign(
-            new Error(
-              "Both sessions have image drafts. Remove some attachments before reopening the continued session (four images, 6 MB maximum).",
-            ),
+            new Error(msg("Both sessions have image drafts. Remove some attachments before reopening the continued session (four images, 6 MB maximum).")),
             { code: "draft_conflict" },
           );
         records.put(combined, to);
@@ -154,14 +147,14 @@ export async function migratePendingImages(from, to) {
     transaction.oncomplete = resolve;
     transaction.onabort = transaction.onerror = () =>
       reject(
-        failure || new Error("The image draft could not be moved in this browser."),
+        failure || new Error(msg("The image draft could not be moved in this browser.")),
       );
   });
 }
 
 const CACHE_LIMIT = 32 * 1024 * 1024;
 const cacheError =
-  "This browser could not retain the image. Download a copy to keep it.";
+  msg("This browser could not retain the image. Download a copy to keep it.");
 function imageIndex(value) {
   return Array.isArray(value)
     ? value.filter(
@@ -361,8 +354,9 @@ export function messageImages(message) {
     { length: Math.min(4, placeholderCount(message.content)) },
     (_, i) => ({
       name: `Image ${i + 1}`,
+      fallbackIndex: i + 1,
       unavailable:
-        "Hermes saved an image placeholder. The original is not available in this browser.",
+        msg("Hermes saved an image placeholder. The original is not available in this browser."),
     }),
   );
 }
@@ -386,6 +380,7 @@ function imageParts(content) {
         href: external ? url : null,
         name:
           typeof p.name === "string" ? p.name.slice(0, 160) : `Image ${i + 1}`,
+        ...(typeof p.name !== "string" ? { fallbackIndex: i + 1 } : {}),
       };
     });
 }
@@ -394,15 +389,15 @@ function dataURL(blob) {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
     reader.onerror = () =>
-      reject(new Error("This image could not be read. Attach it again."));
+      reject(new Error(msg("This image could not be read. Attach it again.")));
     reader.readAsDataURL(blob);
   });
 }
 export async function prepareImage(file) {
   if (!TYPES.has(file.type))
-    throw new Error("Choose a PNG, JPEG, WebP, or GIF image.");
+    throw new Error(msg("Choose a PNG, JPEG, WebP, or GIF image."));
   if (file.size > 10 * 1024 * 1024)
-    throw new Error("Choose an image smaller than 10 MB.");
+    throw new Error(msg("Choose an image smaller than 10 MB."));
   const objectURL = URL.createObjectURL(file);
   let blob = file,
     resized = false;
@@ -412,15 +407,13 @@ export async function prepareImage(file) {
     try {
       await image.decode();
     } catch {
-      throw new Error("This image could not be opened. Try another file.");
+      throw new Error(msg("This image could not be opened. Try another file."));
     }
     if (
       !image.naturalWidth ||
       image.naturalWidth * image.naturalHeight > 40_000_000
     )
-      throw new Error(
-        "This image is too large. Choose one with fewer than 40 million pixels.",
-      );
+      throw new Error(msg("This image is too large. Choose one with fewer than 40 million pixels."));
     if (
       file.size > MAX_IMAGE ||
       Math.max(image.naturalWidth, image.naturalHeight) > 2560
@@ -445,10 +438,11 @@ export async function prepareImage(file) {
       resized = true;
     }
     if (!blob || blob.size > MAX_IMAGE)
-      throw new Error("This image is still too large. Try a smaller version.");
+      throw new Error(msg("This image is still too large. Try a smaller version."));
     return {
       id: crypto.randomUUID(),
-      name: file.name || "Pasted image",
+      name: file.name || msg("Pasted image"),
+      ...(!file.name ? { pastedName: true } : {}),
       url: await dataURL(blob),
       size: blob.size,
       resized,
@@ -456,4 +450,9 @@ export async function prepareImage(file) {
   } finally {
     URL.revokeObjectURL(objectURL);
   }
+}
+
+export function imageName(image) {
+  if (image.fallbackIndex) return t("Image {number}", { number: formatNumber(image.fallbackIndex) });
+  return image.pastedName ? t("Pasted image") : image.name;
 }

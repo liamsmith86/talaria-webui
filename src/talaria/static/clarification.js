@@ -1,5 +1,6 @@
 import { html, useRef, useState, Icon } from "./lib.js";
 import { answerClarification } from "./runs.js";
+import { t } from "./i18n.js";
 
 export function Clarification({ sid, request }) {
   const [selected, setSelected] = useState([]);
@@ -30,9 +31,9 @@ export function Clarification({ sid, request }) {
     if (multi ? values.length : text.trim())
       respond(multi ? JSON.stringify(values) : text.trim());
   }
-  return html`<section class="clarification-card" aria-label="Question from your agent">
+  return html`<section class="clarification-card" aria-label=${t("Question from your agent")}>
     <div class="clarification-heading"><${Icon} name="message" size=${18} />
-      <span>Your input</span></div>
+      <span>${t("Your input")}</span></div>
     <p class="clarification-question">${request.question}</p>
     <form onSubmit=${submit}>
       <div class="clarification-choices">
@@ -47,17 +48,17 @@ export function Clarification({ sid, request }) {
               disabled=${busy} onClick=${() => respond(choice)}>${choice}</button>`)}
       </div>
       <label class="clarification-answer">
-        <span>${choices.length ? "Or write an answer" : "Your answer"}</span>
+        <span>${choices.length ? t("Or write an answer") : t("Your answer")}</span>
         <textarea rows="2" maxlength="16000" value=${text} disabled=${busy}
           onInput=${(event) => setText(event.currentTarget.value)} />
       </label>
-      ${error && html`<div class="form-error" role="alert">${error}</div>`}
+      ${error && html`<div class="form-error" role="alert">${t(error)}</div>`}
       <div class="clarification-actions">
         <button type="button" class="button secondary" disabled=${busy}
-          onClick=${() => respond("")}>Skip</button>
+          onClick=${() => respond("")}>${t("Skip")}</button>
         <button type="submit" class="button primary"
           disabled=${busy || (!text.trim() && !(multi && selected.length))}>
-          ${busy ? "Sending…" : "Send answer"}</button>
+          ${busy ? t("Sending…") : t("Send answer")}</button>
       </div>
     </form>
   </section>`;
