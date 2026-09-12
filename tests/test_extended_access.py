@@ -12,6 +12,7 @@ from talaria.hermes_plugin.observations import Observations, reasoning
 from talaria.plugin_install import main as install_plugin
 
 from .test_app import signed_in
+from .test_browser import screenshot
 from .test_conversation_features import seed
 
 
@@ -58,9 +59,42 @@ def test_missing_extension_keeps_chat_and_truthful_response_details(page, live_a
     expect(page.get_by_role("dialog")).to_contain_text("Not reported")
     expect(page.get_by_role("dialog")).not_to_contain_text("hermes-test")
     page.get_by_role("button", name="Close dialog").click()
-    expect(page.locator(".context-indicator")).to_have_attribute(
-        "aria-label", "Context usage unavailable"
+    expect(page.locator(".context-indicator")).to_have_count(0)
+
+
+@pytest.mark.parametrize(
+    "context,status",
+    [
+        (None, 200),
+        ({"used": None, "maximum": 128000}, 200),
+        ({"used": -1, "maximum": 128000}, 200),
+        (None, 503),
+    ],
+)
+def test_unknown_context_is_hidden_even_when_session_totals_exist(page, live_app, context, status):
+    peer = live_app[1]
+    peer.extension = {}
+    sid = seed(peer, count=4)
+    peer.sessions[sid].update(source="api_server", input_tokens=14355, api_call_count=3)
+    peer.discovery_overrides[f"/talaria/v1/sessions/{sid}/context"] = (
+        {"context": context},
+        status,
     )
+    page.reload()
+    with page.expect_response(lambda response: f"/api/sessions/{sid}/context?" in response.url):
+        page.get_by_role("link", name="Design notes", exact=True).click()
+    for width in (1280, 390, 320):
+        page.set_viewport_size({"width": width, "height": 844})
+        expect(page.locator(".context-indicator")).to_have_count(0)
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        if context is None and status == 200:
+            screenshot(page, f"context-unavailable-{width}")
+    page.get_by_role("button", name="Session details", exact=True).click()
+    dialog = page.get_by_role("dialog", name="Session details", exact=True)
+    expect(dialog.locator(".usage-grid > div").filter(has_text="Input tokens")).to_contain_text(
+        "14,355"
+    )
+    expect(dialog.locator(".usage-grid > div").filter(has_text="Model calls")).to_contain_text("3")
 
 
 def test_edit_resend_reuses_run_transport_and_removes_following_turns(page, live_app):
@@ -263,19 +297,21 @@ def test_native_hermes_contract(tmp_path, contract, provider):
         assert captured == json.loads(expected.read_text())
 
 
-def test_context_tokens_remain_visible_without_a_model_limit(page, live_app):
+@pytest.mark.parametrize("used,label", [(43565, "43,565 tokens"), (0, "0 tokens")])
+def test_context_tokens_remain_visible_without_a_model_limit(page, live_app, used, label):
     peer = live_app[1]
     peer.discovery_overrides["/talaria/v1/sessions/notes/context"] = (
-        {"context": {"used": 43565, "maximum": None}},
+        {"context": {"used": used, "maximum": None}},
         200,
     )
     open_seed(page, peer)
     indicator = page.locator(".context-indicator")
-    expect(indicator).to_contain_text("43,565 tokens")
+    expect(indicator).to_contain_text(label)
     for width in (1280, 390, 320):
         page.set_viewport_size({"width": width, "height": 844})
         expect(indicator).to_be_visible()
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        screenshot(page, f"context-tokens-{used}-{width}")
     indicator.click()
     expect(page.get_by_role("dialog")).to_have_count(0)
     expect(page.get_by_role("button", name="Context usage", exact=True)).to_have_count(0)
