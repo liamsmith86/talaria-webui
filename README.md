@@ -27,7 +27,7 @@ Follow the prompts, then open the URL printed by the installer.
 ```text
 Install Talaria WebUI from https://github.com/liamsmith86/talaria-webui and
 connect it to my Hermes Agent, including the recommended plugin. Use the
-installer's --help for headless options and give me the URL and login details.
+installer's --help for headless options and give me the URL and login details file path.
 ```
 
 ## Hermes plugin
@@ -41,25 +41,25 @@ hermes plugins install liamsmith86/talaria-webui/src/talaria/hermes_plugin --ena
 hermes gateway restart
 ```
 
-For Hermes Desktop, use **Settings → Connection → Install in Hermes Desktop**, or open:
-
-```text
-hermes://plugin/install?repo=liamsmith86/talaria-webui/src/talaria/hermes_plugin&enable=1
-```
-
 ## Docker
 
-From a checkout of this repository:
+Install [Docker](https://docs.docker.com/get-started/get-docker/). For registry login, use your GitHub username and a [classic token](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic) with `read:packages` as the password.
 
 ```sh
-docker build -t talaria-webui .
+docker login ghcr.io
+docker pull ghcr.io/liamsmith86/talaria-webui:latest
 docker run -d --name talaria --restart unless-stopped \
   -p 127.0.0.1:8766:8766 -v talaria-data:/data \
-  talaria-webui --host 0.0.0.0
+  ghcr.io/liamsmith86/talaria-webui:latest
+```
+
+Open **http://127.0.0.1:8766**, then retrieve the login password:
+
+```sh
 docker exec talaria cat /data/talaria/initial-password.txt
 ```
 
-Open **http://127.0.0.1:8766** and connect to your Hermes API.
+Connect to your Hermes API in Settings.
 
 ## Features
 

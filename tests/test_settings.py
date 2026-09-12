@@ -65,7 +65,7 @@ def test_models_are_scoped_to_each_session(page, live_app):
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
     second = list(live_app[1].runs.values())[1]
     assert second["model"] is None and second["provider"] is None
-    page.get_by_role("button", name="A chosen model", exact=True).click()
+    page.get_by_role("link", name="A chosen model", exact=True).click()
     expect(chooser).to_contain_text("hermes-fast")
     page.reload()
     expect(chooser).to_contain_text("hermes-fast")

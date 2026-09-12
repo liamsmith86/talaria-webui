@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "talaria-webui"
-version = "0.3.2"
+version = "0.3.3"
 description = "A considered web client for Hermes Agent"
 requires-python = ">=3.12"
 dependencies = [
@@ -30,6 +30,7 @@ dev = [
     "playwright>=1.62,<2",
     {include-group = "lint"},
     "pytest-xdist>=3.8,<4",
+    "pytest-timeout>=2.4,<3",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -41,7 +42,11 @@ exclude-newer = "7 days"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-markers = ["browser: requires Playwright", "hermes: requires a native Hermes checkout"]
+markers = [
+    "browser: requires Playwright",
+    "hermes: requires a native Hermes checkout",
+    "quality: requires the developer JavaScript and lint toolchain",
+]
 
 [tool.ruff]
 line-length = 100

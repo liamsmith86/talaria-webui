@@ -132,6 +132,8 @@ async def verify_admission(client, db):
     jobs = CommandJobs()
     jobs.jobs["finished"] = {"created": 0, "result": {"status": "completed"}}
     jobs.jobs["active"] = {"created": 0, "result": {"status": "running"}}
-    jobs.prune()
+    # A fresh CI runner may have less than an hour of monotonic uptime.
+    with patch("talaria.hermes_plugin.commands.time.monotonic", return_value=3601):
+        jobs.prune()
     assert list(jobs.jobs) == ["active"]
     assert db.get_session("discord-command")["ended_at"] is None

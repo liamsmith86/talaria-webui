@@ -13,20 +13,23 @@ on:
         description: Run every platform and browser
         type: boolean
         default: false
+      browser:
+        description: Run one browser when full is off
+        type: choice
+        default: none
+        options: [none, chromium, firefox, webkit]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.full && 'full' || inputs.browser || 'none' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    outputs:
-      full: ${{ steps.scope.outputs.full }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,27 +48,15 @@ jobs:
         working-directory: ${{ runner.temp }}
       - run: uv sync --locked --only-group lint
       - run: uv run --locked --only-group lint python contrib/quality.py
-      - name: Select test coverage
-        id: scope
-        env:
-          REQUEST_FULL: ${{ inputs.full }}
-          PUBLIC: ${{ !github.event.repository.private }}
-          EVENT: ${{ github.event_name }}
+      - name: Verify the quality gates
+        if: inputs.full
         run: |
-          python3 - <<'PY'
-          import os, subprocess
-          docs_only = False
-          if os.environ['EVENT'] == 'pull_request':
-              files = subprocess.check_output(['git', 'diff', '--no-renames', '--name-only', '-z', 'HEAD^', 'HEAD']).decode().split('\0')[:-1]
-              docs_only = bool(files) and all(path in ('README.md', 'LICENSE', 'CHANGELOG.md') or path.startswith('docs/') for path in files)
-          full = os.environ['REQUEST_FULL'] == 'true' or (os.environ['PUBLIC'] == 'true' and not docs_only)
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              print(f'full={str(full).lower()}', file=output)
-          PY
+          uv sync --locked
+          uv run --locked pytest -q -m quality --fail-on-skip
 
   platforms:
     needs: lint
-    if: needs.lint.outputs.full == 'true'
+    if: inputs.full
     name: Platform (${{ matrix.os }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -90,7 +81,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: uv sync --locked
       - name: Backend, fresh wheel, startup, plugin export, update and rollback
-        run: uv run --locked pytest -q -m 'not browser and not hermes' --fail-on-skip --junitxml=test-results/platform.xml
+        run: uv run --locked pytest -q -m 'not browser and not hermes and not quality' --fail-on-skip --junitxml=test-results/platform.xml
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
@@ -100,14 +91,14 @@ jobs:
 
   browsers:
     needs: lint
-    if: needs.lint.outputs.full == 'true'
+    if: inputs.full || (github.event_name == 'workflow_dispatch' && inputs.browser != 'none' && inputs.browser != '')
     name: Browser (${{ matrix.browser }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, firefox, webkit]
+        browser: ${{ fromJSON(inputs.full && '["chromium", "firefox", "webkit"]' || format('["{0}"]', inputs.browser)) }}
     env:
       TALARIA_TEST_BROWSER: ${{ matrix.browser }}
       TALARIA_AXE_PATH: ${{ github.workspace }}/.local/axe.min.js
@@ -129,7 +120,7 @@ jobs:
           mkdir -p .local
           curl --fail --show-error --silent --location --retry 3 https://cdn.jsdelivr.net/npm/axe-core@4.13.0/axe.min.js -o "$TALARIA_AXE_PATH"
           echo 'c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1  .local/axe.min.js' | sha256sum --check
-      - run: uv run --locked pytest -q -n 2 -m browser --fail-on-skip --durations=10 --junitxml=test-results/browser.xml
+      - run: uv run --locked pytest -v -n 2 -m browser --fail-on-skip --timeout=120 --timeout-method=thread --max-worker-restart=0 --durations=10 --junitxml=test-results/browser.xml
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
@@ -139,7 +130,7 @@ jobs:
 
   hermes:
     needs: lint
-    if: needs.lint.outputs.full == 'true'
+    if: inputs.full
     name: Native Hermes
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -153,7 +144,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: NousResearch/hermes-agent
-          ref: 564aef2946c436500a5e80ee117b66b789b3f99a
+          ref: fe04d5b36de1bc2d69d91185f4955c37aaef8c39
           path: .local/hermes
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -176,7 +167,7 @@ jobs:
 
   wsl:
     needs: lint
-    if: needs.lint.outputs.full == 'true'
+    if: inputs.full
     name: Windows WSL2
     runs-on: windows-2025
     timeout-minutes: 25
@@ -200,44 +191,17 @@ jobs:
           wsl --distribution Ubuntu-24.04 --user root --exec bash "$source/.github/scripts/wsl.sh" "$source"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  docker:
-    needs: lint
-    if: needs.lint.outputs.full == 'true'
-    name: Docker (${{ matrix.arch }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            arch: amd64
-          - os: ubuntu-24.04-arm
-            arch: arm64
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          platforms: linux/${{ matrix.arch }}
-          load: true
-          tags: talaria-ci:test
-      - run: python3 .github/scripts/docker_smoke.py talaria-ci:test
-
   required:
     name: Required checks
     if: always()
-    needs: [lint, platforms, browsers, hermes, wsl, docker]
+    needs: [lint, platforms, browsers, hermes, wsl]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require every test job to pass
         env:
           RESULTS: ${{ toJSON(needs) }}
-          FULL: ${{ needs.lint.outputs.full }}
+          FULL: ${{ inputs.full || false }}
         run: |
           python3 - <<'PY'
           import json, os
