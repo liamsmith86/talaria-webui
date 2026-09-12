@@ -1,6 +1,6 @@
 # Local development checks
 
-CI stays lightweight while the repository is private. Run checks locally with Python 3.12+, uv, Git, Node.js 22.13+ (24 LTS recommended), and npm 12+; Linux (including WSL2) supports all three Playwright engines. WebKit on Linux does not replace occasional testing on a physical iPhone or Mac.
+Run checks locally with Python 3.12+, uv, Git, Node.js 22.13+ (24 LTS recommended), and npm 12+; Linux (including WSL2) supports all three Playwright engines. WebKit on Linux does not replace occasional testing on a physical iPhone or Mac.
 
 One-time setup:
 

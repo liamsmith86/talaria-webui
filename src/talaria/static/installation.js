@@ -72,7 +72,8 @@ export function Installation({ pluginOnly = false }) {
           throw new Error("Could not confirm the update request. Check again before retrying.");
         continue;
       }
-      setPhase(phases[job.phase] || "Updating Talaria…");
+      setPhase(job.phase === "checking" && operation.action === "update"
+        ? phases.building : phases[job.phase] || "Updating Talaria…");
       if (job.status === "failed") throw new Error(job.error || "Update failed.");
       if (job.status === "completed") {
         if (operation.action === "update") {
