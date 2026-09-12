@@ -2,6 +2,7 @@
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -177,3 +178,17 @@ def test_javascript_cache_tracks_lock_and_settings(tmp_path):
     before = quality.js_identity(tmp_path)
     (tmp_path / ".npmrc").write_text("ignore-scripts=true\nmin-release-age=14\n")
     assert quality.js_identity(tmp_path) != before
+
+
+def test_hanging_test_is_terminated_with_a_diagnostic(tmp_path):
+    source = tmp_path / "test_hang.py"
+    source.write_text("import time\ndef test_hang():\n    time.sleep(60)\n")
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "--timeout=0.2", "--timeout-method=thread", str(source)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode != 0
+    assert "Timeout" in result.stdout + result.stderr

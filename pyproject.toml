@@ -30,6 +30,7 @@ dev = [
     "playwright>=1.62,<2",
     {include-group = "lint"},
     "pytest-xdist>=3.8,<4",
+    "pytest-timeout>=2.4,<3",
 ]
 
 [tool.hatch.build.targets.wheel]
