@@ -168,6 +168,9 @@ function Message({
   detailsEnabled = true,
 }) {
   const [copied, setCopied] = useState(false);
+  // Reconciliation adds a native record to the existing live message. Code
+  // already shown must not return to deferred highlighting at that boundary.
+  const deferHighlight = useRef(!!record).current;
   const toolCards = useMemo(
     () =>
       new Map(
@@ -182,28 +185,35 @@ function Message({
       ),
     [tools, matchId],
   );
+  const partCounts = {};
   function renderPart(part, index, all) {
+    const position = partCounts[part.kind] || 0;
+    partCounts[part.kind] = position + 1;
+    // Native history can add or omit reasoning. Keep prose and tool identities
+    // independent of the number of preceding parts of another kind.
+    const key = part.kind === "tool"
+      ? `tool:${!!part.agent}:${part.id}` : `${part.kind}:${position}`;
     if (part.kind === "reasoning")
-      return html`<details class="reasoning" key=${index}>
+      return html`<details class="reasoning" key=${key}>
         <summary>Thinking<${Icon} name="chevron" size=${14} /></summary>
         <${Markdown} text=${part.text} streaming=${streaming && index === all.length - 1}
-          deferHighlight=${!!record} />
+          deferHighlight=${deferHighlight} />
       </details>`;
     if (part.kind === "tool")
-      return html`<div class="tool-stack" key=${index}>
+      return html`<div class="tool-stack" key=${key}>
         ${toolCards.get(`${!!part.agent}:${part.id}`)}
       </div>`;
     if (part.kind === "images")
-      return html`<${Images} key=${index} images=${part.images} />`;
+      return html`<${Images} key=${key} images=${part.images} />`;
     return (
       part.text &&
-      html`<div class="message-text" key=${index}
+      html`<div class="message-text" key=${key}
         data-search-target=${matchId && String(part.messageId) === String(matchId) ? "true" : undefined}>
         <${Markdown}
           text=${part.text}
           streaming=${streaming && index === all.length - 1}
           smooth=${true}
-          deferHighlight=${!!record}
+          deferHighlight=${deferHighlight}
         />
       </div>`
     );
@@ -217,6 +227,8 @@ function Message({
       toast("Select the message text to copy it.");
     }
   }
+  const showActions = !streaming &&
+    !!(text || images.length || tools.length || reasoning || parts?.length);
   return html`<article
     class=${`message ${role} ${matched ? "search-match" : ""}`}
     tabindex=${role === "assistant" ? -1 : undefined}
@@ -243,14 +255,9 @@ function Message({
     html`<div class="thinking" role="status">
       <span /><span /><span /><span class="sr-only">${agentName} is thinking</span>
     </div>`}
-    ${!streaming &&
-    (!!text ||
-      images.length > 0 ||
-      tools.length > 0 ||
-      reasoning ||
-      parts?.length) &&
+    ${(role !== "user" || showActions) &&
     html`<div class="message-actions">
-      ${role !== "user" &&
+      ${showActions && html`${role !== "user" &&
       detailsEnabled && record?.id &&
       html`<${IconButton}
         name="info"
@@ -299,7 +306,7 @@ function Message({
                 message: record,
               },
             })}
-        />`}
+        />`}`}
     </div>`}
   </article>`;
 }
@@ -594,6 +601,23 @@ export function Conversation({ app, command, onDismissCommand }) {
           ? lastUser?.record?.id === live.baseUserId
           : app.history.length <= live.baseHistoryLength) ||
         lastUser?.text !== live.userText);
+  const liveKey = `run:${live?.requestId || live?.id}`;
+  const savedUser = savedTurn
+    ? items[items.indexOf(savedTurn) - 1]
+    : null;
+  const previousKeys = useRef(new Map());
+  const messageKeys = useMemo(() => {
+    // The optimistic messages and their native rows share one keyed list.
+    // Retain adopted keys when the next run replaces the live cache, and keep
+    // this small identity map bounded to the currently loaded history.
+    const keys = new Map(items.map((item) => [item.id,
+      previousKeys.current.get(item.id) ||
+        (item === savedTurn ? `${liveKey}:assistant`
+          : item === savedUser ? `${liveKey}:user` : `history:${item.id}`),
+    ]));
+    previousKeys.current = keys;
+    return keys;
+  }, [items, savedTurn, savedUser, liveKey]);
   // History objects stay stable during streaming. Retain their VNodes so each
   // delta does not revisit every old message, tool card, and timestamp.
   const history = useMemo(
@@ -602,7 +626,7 @@ export function Conversation({ app, command, onDismissCommand }) {
       items.map(
         (m) =>
           html`<${Message}
-            key=${m.id}
+            key=${messageKeys.get(m.id)}
             ...${m}
             agentName=${agentName}
             matched=${app.searchWindow && m.messageIds.some((id) => String(id) === String(app.searchWindow))}
@@ -612,7 +636,7 @@ export function Conversation({ app, command, onDismissCommand }) {
             responseStatus=${m === savedTurn && !live.outcomeUnknown ? live.status : null}
           />`,
       ),
-    [items, canChange, app.loading, savedTurn, live?.status, live?.outcomeUnknown, agentName, app.searchWindow],
+    [items, messageKeys, canChange, app.loading, savedTurn, live?.status, live?.outcomeUnknown, agentName, app.searchWindow],
   );
   async function loadEarlier() {
     if (olderBusy) return;
@@ -626,7 +650,7 @@ export function Conversation({ app, command, onDismissCommand }) {
       setOlderBusy(false);
     }
   }
-  const transcript = command ? [...(history || [])] : history;
+  const transcript = [...(history || [])];
   if (command) {
     const next = commandRunning(command) || command.afterId == null ? -1 : items.findIndex(
       (item) => item.role === "user" && Number(item.record?.id) > command.afterId,
@@ -634,6 +658,25 @@ export function Conversation({ app, command, onDismissCommand }) {
     transcript.splice(next < 0 ? transcript.length : next, 0,
       html`<${CommandCard} key=${`command:${command.id}`} activity=${command} onDismiss=${onDismissCommand} />`);
   }
+  if (showUser)
+    transcript.push(html`<${Message}
+      key=${`${liveKey}:user`}
+      role="user"
+      text=${live.userText}
+      images=${live.userImages}
+    />`);
+  if (live && !live.persisted &&
+      (streaming || live.text || live.reasoning || live.tools.length))
+    transcript.push(html`<${Message}
+      key=${`${liveKey}:assistant`}
+      role="assistant"
+      agentName=${agentName}
+      text=${live.text}
+      tools=${live.tools}
+      streaming=${streaming && !live.clarification}
+      reasoning=${live.reasoning}
+      parts=${live.parts}
+    />`);
   return html`${app.findOpen &&
     html`<${ConversationFind}
       key=${app.active}
@@ -680,12 +723,6 @@ export function Conversation({ app, command, onDismissCommand }) {
           /><span class="sr-only">Loading session</span>
         </div>`}
         ${transcript}
-        ${showUser &&
-        html`<${Message}
-          role="user"
-          text=${live.userText}
-          images=${live.userImages}
-        />`}
         ${savedTurn === items.at(-1) &&
         savedTurn &&
         !savedTurn.tools.some((t) => t.kind === "agent") &&
@@ -698,18 +735,6 @@ export function Conversation({ app, command, onDismissCommand }) {
             .filter((t) => t.kind === "agent")
             .map((tool) => html`<${ToolCard} key=${tool.id} tool=${tool} />`)}
         </div>`}
-        ${live &&
-        !live.persisted &&
-        (streaming || live.text || live.reasoning || live.tools.length) &&
-        html`<${Message}
-          role="assistant"
-          agentName=${agentName}
-          text=${live.text}
-          tools=${live.tools}
-          streaming=${streaming && !live.clarification}
-          reasoning=${live.reasoning}
-          parts=${live.parts}
-        />`}
         ${live?.approval &&
         html`<${Approval}
           key=${live.approval.request_id || live.id}

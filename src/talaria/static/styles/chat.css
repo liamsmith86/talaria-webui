@@ -210,6 +210,10 @@
   opacity: 0;
   transition: opacity 0.15s;
 }
+.message.assistant .message-actions {
+  /* Reserve the controls while streaming so completion does not move the reply. */
+  min-height: 27px;
+}
 .message:hover .message-actions,
 .message:focus-within .message-actions {
   opacity: 1;
@@ -479,6 +483,10 @@
   border-left: 2px solid var(--line);
 }
 .thinking {
+  /* Share the reserved action area, including replies that contain only tools. */
+  position: absolute;
+  left: 0;
+  bottom: 0;
   display: flex;
   gap: 5px;
   padding: 12px 0;
