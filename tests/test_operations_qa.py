@@ -153,7 +153,7 @@ def test_interrupted_plugin_copy_keeps_the_previous_module(tmp_path, monkeypatch
 def test_initial_password_is_readable_before_its_hash_is_saved(tmp_path, monkeypatch):
     config_path = tmp_path / "private/config.json"
     monkeypatch.setattr(sys, "argv", ["talaria", "--config", str(config_path)])
-    monkeypatch.setattr("uvicorn.run", lambda *args, **kwargs: None)
+    monkeypatch.setattr("talaria.server.run", lambda *args, **kwargs: None)
     monkeypatch.setattr("talaria.app.create_app", lambda *args, **kwargs: None)
     cli.main()
     private_path = config_path.parent / "initial-password.txt"

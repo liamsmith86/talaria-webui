@@ -17,6 +17,7 @@ from starlette.responses import JSONResponse
 
 from . import auth, config
 from .hermes import APIError, Hermes, decode_json, object_result, valid_api_key
+from .relay import Channel
 
 PROFILE = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 MAX_PROFILES = 8
@@ -56,6 +57,7 @@ class Profiles:
         self.error = ""
         self.lock = asyncio.Lock()
         self.pending_runs = 0
+        self.stopping = False
         if self.path.exists():
             try:
                 with self.path.open() as file:
@@ -187,6 +189,10 @@ class Profiles:
         finally:
             self.writes.discard(task)
 
+    async def stop_streams(self):
+        self.stopping = True
+        await asyncio.gather(*(app.state.relay.close() for app in self.apps.values()))
+
     async def close(self):
         await asyncio.gather(*self.writes, return_exceptions=True)
         for app in self.apps.values():
@@ -212,6 +218,10 @@ class Profiles:
             self.pending_runs -= 1
 
     def attach(self, state, run_id):
+        if self.stopping:
+            # An in-flight submission may still be accepted by Hermes while
+            # draining. Return its result without opening another live stream.
+            return Channel(run_id, finished=True)
         # Switching profiles must not multiply the original replay memory budget.
         if run_id not in state.relay.channels:
             channels = [

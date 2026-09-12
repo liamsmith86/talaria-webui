@@ -78,9 +78,8 @@ def serve():
     if args.config is None:
         path = default_path()
         args.config = path.parent.with_name("talaria-dev") / path.name if args.dev else path
-    import uvicorn
-
     from .app import create_app
+    from .server import run
 
     settings = load(args.config)
     if args.public_url is not None:
@@ -106,7 +105,7 @@ def serve():
         print(f"Initial sign-in password saved to {private_path}", flush=True)
     if args.dev:
         os.environ["TALARIA_DEV_CONFIG"] = str(args.config.resolve())
-    uvicorn.run(
+    run(
         "talaria.cli:development_app" if args.dev else create_app(settings, args.config),
         factory=args.dev,
         reload=args.dev,

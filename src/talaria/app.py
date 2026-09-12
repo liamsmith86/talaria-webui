@@ -132,7 +132,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app):
         try:
-            yield
+            yield {"talaria_stop_streams": app.state.profiles.stop_streams}
         finally:
             await app.state.profiles.close()
 
