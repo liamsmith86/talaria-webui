@@ -211,7 +211,7 @@ def test_lost_update_ack_is_not_resent_and_reload_waits_for_new_build(page, upda
             **route.request.post_data_json,
             "action": "update",
             "status": "running",
-            "phase": "building",
+            "phase": "checking",
         }
         sent.append(operation)
         info["operation"] = operation
@@ -227,6 +227,7 @@ def test_lost_update_ack_is_not_resent_and_reload_waits_for_new_build(page, upda
     assert len(sent) == 1
     info["operation"]["status"] = "completed"
     page.wait_for_timeout(1200)
+    expect(page.get_by_role("status").filter(has_text="Preparing update")).to_be_visible()
     assert page.evaluate("sessionStorage.getItem('reloads')") == "0"
     info["commit"] = B
     page.wait_for_function("() => sessionStorage.getItem('reloads') === '1'")
