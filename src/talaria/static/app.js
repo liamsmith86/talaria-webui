@@ -47,6 +47,7 @@ import { MessageAction } from "./message-actions.js";
 import { sessionModel, sessionReasoning } from "./models.js";
 import { restoreRuns, running } from "./runs.js";
 import { observePage } from "./page-lifecycle.js";
+import { Startup } from "./startup.js";
 
 function Login({ development }) {
   const [password, setPassword] = useState("");
@@ -134,7 +135,6 @@ function App() {
   const restored = useRef(false);
   useEffect(observePage, []);
   useEffect(() => {
-    initialize();
     const keydown = (e) => {
       if (
         e.defaultPrevented ||
@@ -187,10 +187,7 @@ function App() {
     ...app.sessions.find((s) => s.id === app.active),
   };
   const close = () => update({ modal: null });
-  if (app.auth === null)
-    return html`<div class="initial-loader" role="status">
-      <${Mark} size=${40} /><span>Loading…</span>
-    </div>`;
+  if (app.auth === null) return html`<${Startup} />`;
   if (!app.auth)
     return html`<${Login} development=${app.environment === "development"} />`;
   return html`<div class="app-shell">

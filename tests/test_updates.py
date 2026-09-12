@@ -249,3 +249,126 @@ def test_update_failure_stays_visible_without_reloading(page, update_ui):
     page.get_by_role("button", name="Update", exact=True).click()
     expect(page.get_by_role("alert")).to_have_text("Previous release restored.")
     expect(page.get_by_role("button", name="Check for updates", exact=True)).to_be_enabled()
+
+
+def complete_browser_update(page, info):
+    def update(route):
+        info["operation"] = {
+            **route.request.post_data_json,
+            "action": "update",
+            "status": "completed",
+        }
+        info["commit"] = B
+        route.fulfill(json=info["operation"])
+
+    page.route("**/api/installation/update", update)
+    page.get_by_role("button", name="Update", exact=True).click()
+
+
+def test_update_reload_recovers_stalled_mobile_bootstrap(page, update_ui):
+    info, _ = update_ui
+    page.set_viewport_size({"width": 390, "height": 844})
+    requests = []
+
+    def bootstrap(route):
+        requests.append(route)
+        if len(requests) > 1:
+            route.continue_()
+
+    page.route("**/api/bootstrap", bootstrap)
+    try:
+        with page.expect_request("**/api/bootstrap"):
+            complete_browser_update(page, info)
+        expect(page.locator(".initial-loader")).to_be_visible()
+        expect(page.get_by_role("button", name="Retry connection")).to_be_visible(timeout=8000)
+        expect(page.locator(".topbar-title")).to_be_visible(timeout=10000)
+        assert len(requests) == 2
+        expect(page.get_by_label("Password", exact=True)).to_have_count(0)
+    finally:
+        for route in requests[:1]:
+            route.abort()
+
+
+def test_update_reload_recovers_interrupted_module_download(page, update_ui):
+    info, _ = update_ui
+    page.set_viewport_size({"width": 390, "height": 844})
+    requests = []
+
+    def module(route):
+        requests.append(route.request.url)
+        if len(requests) == 1:
+            route.abort("connectionreset")
+        else:
+            route.continue_()
+
+    page.route("**/static/conversation.js", module)
+    complete_browser_update(page, info)
+    expect(page.locator(".initial-loader")).to_be_visible()
+    expect(page.locator(".topbar-title")).to_be_visible(timeout=15000)
+    assert len(requests) == 2
+    expect(page.get_by_label("Password", exact=True)).to_have_count(0)
+
+
+def test_update_startup_recovers_when_mobile_connection_returns(page, update_ui):
+    info, _ = update_ui
+    page.set_viewport_size({"width": 390, "height": 844})
+    requests = []
+
+    def bootstrap(route):
+        requests.append(route)
+        if len(requests) > 1:
+            route.continue_()
+
+    page.route("**/api/bootstrap", bootstrap)
+    try:
+        with page.expect_request("**/api/bootstrap"):
+            complete_browser_update(page, info)
+        expect(page.locator(".initial-loader")).to_be_visible()
+        page.context.set_offline(True)
+        expect(page.get_by_role("button", name="Retry connection")).to_be_visible()
+        page.context.set_offline(False)
+        expect(page.locator(".topbar-title")).to_be_visible()
+        expect(page.get_by_label("Password", exact=True)).to_have_count(0)
+        assert len(requests) == 2
+    finally:
+        page.context.set_offline(False)
+        for route in requests[:1]:
+            route.abort()
+
+
+def test_failed_module_retry_is_bounded_and_manual_reload_works(page, update_ui):
+    info, _ = update_ui
+    requests = []
+    unavailable = True
+
+    def module(route):
+        requests.append(route.request.url)
+        if unavailable:
+            route.abort("connectionreset")
+        else:
+            route.continue_()
+
+    page.route("**/static/conversation.js", module)
+    complete_browser_update(page, info)
+    expect(page.get_by_role("link", name="Reload Talaria")).to_be_visible()
+    # A failed import is cached in the document: one full reload retries it,
+    # repeated failures leave a working manual control instead of looping.
+    page.wait_for_timeout(2500)
+    assert len(requests) == 2
+    unavailable = False
+    page.get_by_role("link", name="Reload Talaria").click()
+    expect(page.locator(".topbar-title")).to_be_visible()
+    assert len(requests) == 3
+    assert page.evaluate("sessionStorage.getItem('talaria-module-retry')") is None
+
+
+def test_missing_entry_script_has_accessible_reload_without_javascript(page):
+    page.emulate_media(reduced_motion="reduce")
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.route("**/static/boot.js", lambda route: route.abort("connectionreset"))
+    page.reload()
+    expect(page.get_by_role("link", name="Reload Talaria")).to_be_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.unroute("**/static/boot.js")
+    page.get_by_role("link", name="Reload Talaria").click()
+    expect(page.locator(".topbar-title")).to_be_visible()

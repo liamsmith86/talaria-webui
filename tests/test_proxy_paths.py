@@ -32,7 +32,7 @@ async def test_proxy_authentication_and_assets(tmp_path, path, strip):
         transport=httpx.ASGITransport(proxy), base_url="https://example.com"
     ) as client:
         page = await client.get(path + "/")
-        assert f'src="{path}/static/app.js"' in page.text
+        assert f'src="{path}/static/boot.js"' in page.text
         assert "base-uri 'none'" in page.headers["content-security-policy"]
         assert page.headers["x-robots-tag"] == "noindex, nofollow"
         robots = await client.get(path + "/robots.txt")
