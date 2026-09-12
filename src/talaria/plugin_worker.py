@@ -31,7 +31,9 @@ def stage(directory, source, owner):
     for path in source.iterdir():
         if path.is_file() and path.suffix in {".py", ".yaml"}:
             (bundle / path.name).write_bytes(path.read_bytes())
-    for path in [directory, *directory.rglob("*")]:
+    # Keep the owner out until every descendant is finished. After the final
+    # handoff no privileged chmod/chown may traverse this now-mutable tree.
+    for path in [*directory.rglob("*"), directory]:
         path.chmod(0o700 if path.is_dir() else 0o600)
         if os.geteuid() == 0:
             os.chown(path, owner.pw_uid, owner.pw_gid)

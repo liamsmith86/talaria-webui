@@ -33,6 +33,7 @@ from .deployment import (
 from .deployment import (
     main as manage,
 )
+from .hermes_owner import execution_identity, select_owner, validate_execution
 from .installation import read_json
 from .setup_services import (
     describe,
@@ -174,7 +175,7 @@ def find_hermes_python(home, command=None):
     return next((path for path in candidates if path.is_file()), None)
 
 
-def hermes_request(python, home, **request):
+def hermes_request(python, home, *, owner=None, **request):
     # Keep the native runtime isolated from Talaria's environment and never expose
     # native stdout/stderr: Hermes can include credentials in diagnostics.
     env = {
@@ -183,16 +184,10 @@ def hermes_request(python, home, **request):
         if key in os.environ
     }
     env.update(HERMES_HOME=str(home), HERMES_ENABLE_PROJECT_PLUGINS="false")
-    owner = home.stat()
-    identity = {}
-    if os.geteuid() == 0 and owner.st_uid != 0:
-        account = pwd.getpwuid(owner.st_uid)
-        identity = {
-            "user": owner.st_uid,
-            "group": owner.st_gid,
-            "extra_groups": os.getgrouplist(account.pw_name, account.pw_gid),
-        }
-        env["HOME"] = account.pw_dir
+    owner = owner or select_owner(home)
+    identity = execution_identity(owner, groups=True)
+    python = validate_execution(home, python, owner)
+    env["HOME"] = owner.pw_dir
     try:
         result = subprocess.run(
             [str(python), "-c", Path(__file__).with_name("setup_hermes.py").read_text()],
@@ -222,23 +217,7 @@ def hermes_request(python, home, **request):
         ) from exc
 
 
-def backup_hermes(home):
-    # Never replace the first backup on a retry; both files may contain secrets.
-    for name in ("config.yaml", ".env"):
-        source = home / name
-        target = home / (name + ".before-talaria")
-        if source.is_file() and not target.exists():
-            fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(fd, "wb") as file:
-                if os.geteuid() == 0:
-                    owner = source.stat()
-                    os.fchown(file.fileno(), owner.st_uid, owner.st_gid)
-                file.write(source.read_bytes())
-                file.flush()
-                os.fsync(file.fileno())
-
-
-def configure_hermes(args, prompts, settings, home, python, info):
+def configure_hermes(args, prompts, settings, home, python, info, *, owner=None):
     from .plugin_status import installed_status
 
     apply_hermes_credentials(args, settings)
@@ -247,6 +226,7 @@ def configure_hermes(args, prompts, settings, home, python, info):
     if info is None:
         configure_remote_hermes(args, prompts, settings)
         return False
+    owner = owner or select_owner(home)
     print(
         f"Found Hermes {info.get('version', '')} at {home} "
         f"(API {'enabled' if info['enabled'] else 'disabled'})."
@@ -274,7 +254,7 @@ def configure_hermes(args, prompts, settings, home, python, info):
     # A headless run never implicitly changes Hermes, even for recommended defaults.
     if prompts.terminal is None:
         plugin = args.plugin
-    info = apply_local_hermes(args, settings, home, python, info, enable, plugin)
+    info = apply_local_hermes(args, settings, home, python, info, enable, plugin, owner=owner)
     changed = info.get("changed", False)
     if changed:
         print(f"Hermes configuration backup: {home}/{{config.yaml,.env}}.before-talaria")
@@ -288,21 +268,22 @@ def configure_hermes(args, prompts, settings, home, python, info):
         pending and prompts.yes("Restart Hermes now? Active work may be interrupted.")
     )
     if restart:
-        restart_setup_hermes(home)
+        restart_setup_hermes(home, python, owner=owner)
     elif pending:
         print("Restart the Hermes gateway to apply its configuration changes.")
     return pending and not restart
 
 
-def restart_setup_hermes(home):
+def restart_setup_hermes(home, python, *, owner=None):
+    owner = owner or select_owner(home)
     pending = home / "plugins/.talaria-maintenance/restart-required"
     if pending.exists():
         from .plugin_updates import restart_and_verify
 
-        restart_and_verify(home, home / "plugins/talaria", None)
-        pending.unlink(missing_ok=True)
+        restart_and_verify(home, home / "plugins/talaria", None, owner=owner)
+        hermes_request(python, home, owner=owner, action="clear_restart")
     else:
-        restart_gateway(home)
+        restart_gateway(home, owner=owner)
 
 
 def verify_hermes(settings):
@@ -380,7 +361,7 @@ def default_hermes_home(args):
     return (
         (args.hermes_home or Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")))
         .expanduser()
-        .resolve()
+        .absolute()
     )
 
 
@@ -434,7 +415,10 @@ def elevate_setup(args, *, service="systemd"):
             continue
         argv.append("--" + name.replace("_", "-"))
         if value is not True:
-            argv.append(str(value.expanduser().resolve() if isinstance(value, Path) else value))
+            if isinstance(value, Path):
+                value = value.expanduser()
+                value = value.absolute() if name.startswith("hermes_") else value.resolve()
+            argv.append(str(value))
     command = [
         "sudo",
         "-n",
@@ -564,7 +548,7 @@ def _setup(args, prompts, stack):
     config = setup_config_path(args, metadata, system)
     settings = load(config)
     original = (settings.host, settings.port, settings.public_url)
-    home, python, info = inspect_hermes(args, prompts)
+    home, python, info, owner = inspect_hermes(args, prompts)
     configure_binding(args, prompts, settings, config, info)
     existing_service = metadata.get("service")
     if existing_service and original != (settings.host, settings.port, settings.public_url):
@@ -578,7 +562,7 @@ def _setup(args, prompts, stack):
         preflight(plan, root, config, resuming=bool(metadata) or pending_setup.exists())
     configure_password(args, prompts, settings)
     write_json(pending_setup, {"service": kind, "config": str(config)})
-    pending = configure_hermes(args, prompts, settings, home, python, info)
+    pending = configure_hermes(args, prompts, settings, home, python, info, owner=owner)
     settings_changed = settings != load(config)
     password_path = initialize_password(config, settings)
     # Shared runtime files must be readable by the optional dedicated service user.
@@ -612,22 +596,16 @@ def terminal(interactive, flag="--non-interactive"):
         yield Prompts(stream)
 
 
-def restart_gateway(home, command=None):
+def restart_gateway(home, command=None, *, owner=None):
+    owner = owner or select_owner(home)
     command = command or shutil.which("hermes")
     if not command:
         raise ValueError("Hermes CLI is not on PATH; restart your gateway manually.")
     env = {**os.environ, "HERMES_HOME": str(home)}
-    owner = home.stat()
-    identity = {}
-    if os.geteuid() == 0 and owner.st_uid != 0:
-        account = pwd.getpwuid(owner.st_uid)
-        identity = {
-            "user": owner.st_uid,
-            "group": owner.st_gid,
-            "extra_groups": os.getgrouplist(account.pw_name, account.pw_gid),
-        }
-        env["HOME"] = account.pw_dir
-    command = [command, "gateway", "restart"] + (["--system"] if owner.st_uid == 0 else [])
+    identity = execution_identity(owner, groups=True)
+    command = validate_execution(home, command, owner)
+    env["HOME"] = owner.pw_dir
+    command = [command, "gateway", "restart"] + (["--system"] if owner.pw_uid == 0 else [])
     # Restart diagnostics can contain private Hermes configuration; keep them private.
     try:
         result = subprocess.run(
@@ -639,19 +617,10 @@ def restart_gateway(home, command=None):
         raise ValueError("Hermes could not restart; check `hermes gateway status`.")
 
 
-def export_owned_plugin(home):
+def export_owned_plugin(home, *, owner=None):
     from .plugin_install import main as export_plugin
 
-    plugins = home / "plugins"
-    parent_exists = plugins.exists()
-    export_plugin(["--home", str(home)])
-    if os.geteuid() == 0:
-        owner = home.stat()
-        target = plugins / "talaria"
-        owned = [target, *target.iterdir()] + ([] if parent_exists else [plugins])
-        for path in owned:
-            if not path.is_symlink():
-                os.chown(path, owner.st_uid, owner.st_gid)
+    export_plugin(["--home", str(home)], owner=owner)
 
 
 def configure_remote_hermes(args, prompts, settings):
@@ -678,17 +647,18 @@ def apply_hermes_credentials(args, settings):
         settings.api_key = secret_file(args.hermes_key_file, "Hermes API key")
 
 
-def apply_local_hermes(args, settings, home, python, info, enable, plugin):
+def apply_local_hermes(args, settings, home, python, info, enable, plugin, *, owner=None):
     from .plugin_status import installed_status
 
+    owner = owner or select_owner(home)
     needs_files = plugin and installed_status(home)["status"] not in {"current", "newer"}
     needs_enable = plugin and not info.get("plugin_enabled")
     changed = bool(enable or needs_files or needs_enable)
     if changed:
-        backup_hermes(home)
+        hermes_request(python, home, owner=owner, action="backup")
         if needs_files:
-            export_owned_plugin(home)
-        info = hermes_request(python, home, enable=enable, plugin=needs_enable)
+            export_owned_plugin(home, owner=owner)
+        info = hermes_request(python, home, owner=owner, enable=enable, plugin=needs_enable)
     info = {**info, "changed": changed}
     if info["enabled"] and info["key"]:
         if not args.hermes_url and not settings.api_key:
@@ -813,16 +783,15 @@ def setup_config_path(args, metadata, system):
 
 def inspect_hermes(args, prompts):
     home = discover_hermes_home(args, prompts)
+    if args.skip_hermes or not home.is_dir() or (args.hermes_url and not args.hermes_home):
+        return home, None, None, None
     python = args.hermes_python or find_hermes_python(home)
-    info = None
-    if (
-        not args.skip_hermes
-        and home.is_dir()
-        and python
-        and (not args.hermes_url or args.hermes_home)
-    ) and (args.hermes_home or prompts.yes(f"Import the Hermes connection from {home}?", True)):
-        info = hermes_request(python, home)
-    return home, python, info
+    if not python or not (
+        args.hermes_home or prompts.yes(f"Import the Hermes connection from {home}?", True)
+    ):
+        return home, python, None, None
+    owner = select_owner(home)
+    return home, python, hermes_request(python, home, owner=owner), owner
 
 
 def configure_binding(args, prompts, settings, config, info):

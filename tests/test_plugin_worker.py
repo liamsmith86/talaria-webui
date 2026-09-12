@@ -83,7 +83,7 @@ def test_private_bootstrap_installs_and_verifies_as_owner(isolated_owner, monkey
     home, source, owner, bootstrap = isolated_owner
     verified = []
 
-    def verify(candidate, target, command):
+    def verify(candidate, target, command, *, owner):
         assert candidate == home and target == home / "plugins/talaria"
         with (
             pytest.raises(DeploymentError, match="Another update"),
@@ -103,13 +103,13 @@ def test_private_bootstrap_installs_and_verifies_as_owner(isolated_owner, monkey
 
 def test_owner_worker_keeps_lock_through_failed_restart_and_recovery(isolated_owner, monkeypatch):
     home, source, _, _ = isolated_owner
-    monkeypatch.setattr(plugin_updates, "restart_and_verify", lambda *args: None)
+    monkeypatch.setattr(plugin_updates, "restart_and_verify", lambda *args, **kw: None)
     plugin_updates.run_as_owner(home, source)
     old = fingerprint(source)
     bundle(source, "new")
     calls = []
 
-    def verify(_home, target, _command):
+    def verify(_home, target, _command, **kw):
         with (
             pytest.raises(DeploymentError, match="Another update"),
             locked(home / "plugins/.talaria-maintenance"),
@@ -147,12 +147,12 @@ def test_early_worker_exit_removes_staging(isolated_owner, monkeypatch):
 
 def test_parent_interruption_releases_lock_and_keeps_backup(isolated_owner, monkeypatch):
     home, source, _, _ = isolated_owner
-    monkeypatch.setattr(plugin_updates, "restart_and_verify", lambda *args: None)
+    monkeypatch.setattr(plugin_updates, "restart_and_verify", lambda *args, **kw: None)
     plugin_updates.run_as_owner(home, source)
     old = fingerprint(source)
     bundle(source, "new")
 
-    def interrupted(*args):
+    def interrupted(*args, **kw):
         raise KeyboardInterrupt
 
     monkeypatch.setattr(plugin_updates, "restart_and_verify", interrupted)

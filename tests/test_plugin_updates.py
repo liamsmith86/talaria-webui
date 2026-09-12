@@ -219,41 +219,44 @@ def test_systemd_only_adds_explicit_local_home(deployment, tmp_path, monkeypatch
     assert "ProtectSystem=strict" in text
 
 
-def test_worker_drops_privileges_and_does_not_inherit_secrets(tmp_path, monkeypatch):
-    from talaria import plugin_worker
+def test_worker_uses_owner_environment_without_inheriting_secrets(tmp_path, monkeypatch):
+    from talaria import hermes_owner, plugin_worker
 
     home = tmp_path / "hermes"
     home.mkdir()
+    interpreter = home / "python"
+    interpreter.touch()
     monkeypatch.setenv("SECRET_FOR_ROOT", "private")
     monkeypatch.setattr(plugin_updates.os, "geteuid", lambda: 0)
     monkeypatch.setattr(
-        plugin_updates.pwd,
+        hermes_owner.pwd,
         "getpwuid",
-        lambda _: SimpleNamespace(pw_uid=1234, pw_gid=1234, pw_dir=str(home)),
+        lambda uid: SimpleNamespace(pw_uid=uid, pw_gid=uid, pw_dir=str(home)),
     )
     calls = []
-    monkeypatch.setattr(setup, "find_hermes_python", lambda *a, **kw: Path("/local/python"))
+    monkeypatch.setattr(setup, "find_hermes_python", lambda *a, **kw: interpreter)
     monkeypatch.setattr(plugin_worker, "run", lambda *args: calls.append(args))
     plugin_updates.run_as_owner(home, tmp_path / "source", command="/local/hermes")
     python, target, _, _, identity, env, _ = calls[0]
-    assert python == Path("/local/python") and target == home
-    assert identity["user"] == 1234 and identity["extra_groups"] == []
+    assert python == interpreter and target == home
+    assert identity["user"] == home.stat().st_uid and identity["extra_groups"] == []
     assert env["HOME"] == str(home)
     assert "SECRET_FOR_ROOT" not in env
 
 
 def test_restart_waits_for_the_new_loaded_revision(tmp_path, monkeypatch):
     home = tmp_path / "hermes"
+    home.mkdir()
     source = bundle(tmp_path / "source", "new")
     (source / "release.py").write_text("# revision support\n")
     monkeypatch.setattr(setup, "find_hermes_python", lambda _, command=None: Path("/fake/python"))
     monkeypatch.setattr(
         setup,
         "hermes_request",
-        lambda *a: {"enabled": True, "key": "test-key", "host": "127.0.0.1", "port": 8642},
+        lambda *a, **kw: {"enabled": True, "key": "test-key", "host": "127.0.0.1", "port": 8642},
     )
     restarts, reads = [], []
-    monkeypatch.setattr(setup, "restart_gateway", lambda *a: restarts.append(a))
+    monkeypatch.setattr(setup, "restart_gateway", lambda *a, **kw: restarts.append(a))
     monkeypatch.setattr(plugin_updates.time, "sleep", lambda _: None)
 
     def response(request):

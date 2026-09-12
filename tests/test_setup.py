@@ -477,7 +477,7 @@ def test_native_hermes_key_reuse_plugin_and_config_preservation(tmp_path):
     original = (home / "config.yaml").read_bytes()
     info = wizard.hermes_request(python, home)
     assert not info["enabled"] and not info["key"]
-    wizard.backup_hermes(home)
+    wizard.hermes_request(python, home, action="backup")
     from talaria.plugin_install import main as export
 
     export(["--home", str(home)])
@@ -815,7 +815,7 @@ def test_resumed_setup_restarts_only_when_saved_credentials_changed(options, mon
     monkeypatch.setattr(wizard, "check_health", lambda *a: None)
     monkeypatch.setattr(wizard, "verify_hermes", lambda *a: "connected")
 
-    def credentials(args, prompts, settings, *rest):
+    def credentials(args, prompts, settings, *rest, **kw):
         settings.api_key = "new-key"
         return False
 
