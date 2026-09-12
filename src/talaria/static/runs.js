@@ -17,6 +17,7 @@ import {
 import { readStorage, writeStorage } from "./lib.js";
 import {
   pendingStorage,
+  consumePendingImages,
   cacheMessageImages,
   currentImageMessage,
   placeholderCount,
@@ -454,16 +455,22 @@ export async function retrySubmission(sid) {
   publish(sid, { ...live, retrying: true });
   try {
     const result = await api("/runs", { method: "POST", body: live.payload });
+    const id = runID(result);
+    const draftKey = `draft.${sid}`;
+    if (readStorage(draftKey) === live.userText) writeStorage(draftKey, "");
     publish(sid, {
       ...live,
-      id: runID(result),
+      id,
       status: "running",
       error: null,
       submissionFailed: false,
       uncertain: false,
       retrying: false,
       recovered: true,
+      // Keep identities after settlement releases the larger image originals.
+      recoveredImageIds: (live.userImages || []).map((image) => image.id),
     });
+    consumePendingImages(draftKey, live.userImages || []).catch(() => {});
     remember();
     subscribe(sid);
   } catch (error) {
@@ -578,31 +585,16 @@ export function responseSaved(history, live) {
   );
 }
 
-async function settle(sid, live) {
-  let savedResponse;
-  const savedState = (history) =>
-    savedResponse ??= responseSaved(history, live)
-      ? {
-          persisted: true,
-          savedMessageId: history.findLast(
-            (message) =>
-              message.role === "assistant" && message.display_kind !== "hidden",
-          )?.id,
-        }
-      : {};
-  const history = await refreshHistory(
-    sid,
-    () => state.lives[sid]?.id === live.id,
-    (history) =>
-      savedState(history).persisted
-        ? {
-            lives: {
-              ...state.lives,
-              [sid]: { ...state.lives[sid], ...savedState(history) },
-            },
-          }
-        : {},
-  );
+export async function prepareRunReconciliation(sid, history, current) {
+  const live = state.lives[sid];
+  if (!current() || !live?.id || !terminal.has(live.status) ||
+    (live.persisted && !live.imageReceipt)) return;
+  const saved = responseSaved(history, live) ? {
+    persisted: true,
+    savedMessageId: history.findLast(
+      (message) => message.role === "assistant" && message.display_kind !== "hidden",
+    )?.id,
+  } : {};
   const imageMessage = currentImageMessage(history, live);
   let imageSaved = !live.imageReceipt;
   if (imageMessage && placeholderCount(imageMessage.content)) {
@@ -631,21 +623,28 @@ async function settle(sid, live) {
     toast(
       "Hermes received the image, but its transcript could not be linked to the original in this browser.",
     );
+  // Apply synchronously with the history commit, after all asynchronous work.
+  // The view must not see the live copy retire before its saved rows appear.
+  return () => {
+    if (!current() || state.lives[sid]?.id !== live.id) return;
+    publish(sid, {
+      ...state.lives[sid],
+      ...saved,
+      imageReceipt: !imageSaved,
+      ...((saved.persisted || imageMessage) && imageSaved
+        ? { userImages: [], payload: undefined }
+        : {}),
+      ...(imageMessage && imageSaved
+        ? { userPersisted: true }
+        : {}),
+    });
+    remember();
+  };
+}
+
+async function settle(sid, live) {
+  await refreshHistory(sid, () => state.lives[sid]?.id === live.id);
   if (state.lives[sid]?.id !== live.id) return;
-  if (state.history === history) update({ history: [...history] }, true);
-  const saved = savedState(history);
-  publish(sid, {
-    ...state.lives[sid],
-    ...saved,
-    imageReceipt: !imageSaved,
-    ...((saved.persisted || imageMessage) && imageSaved
-      ? { userImages: [], payload: undefined }
-      : {}),
-    ...(imageMessage && imageSaved
-      ? { userPersisted: true }
-      : {}),
-  });
-  remember();
   await refreshSessions();
   refreshSessionDetails(sid).catch(() => {});
   refreshReadiness();

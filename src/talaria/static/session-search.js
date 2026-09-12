@@ -25,7 +25,9 @@ export function SessionSearch({ query }) {
           data: offset && previous.query === query ? [...previous.data, ...response.data] : response.data,
         }));
       } catch (error) {
-        if (!controller.signal.aborted) setResult({ query, data: [], error: error.message });
+        if (!controller.signal.aborted) setResult((previous) => ({
+          query, data: previous.query === query ? previous.data : [], error: error.message,
+        }));
       }
     }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
@@ -48,7 +50,7 @@ export function SessionSearch({ query }) {
       ${busy ? "Searching…" : result.error || (!result.data.length ? "No matching messages." : "")}
     </div>
     ${current && result.error && html`<button class="load-more" onClick=${() => {
-      setResult({ query, data: [], busy: true }); setRetry(retry + 1);
+      setResult({ ...result, error: null, busy: true }); setRetry(retry + 1);
     }}>Retry search</button>`}
     ${current && result.has_more && result.next_offset <= 10000 && html`<button class="load-more" disabled=${busy}
       onClick=${() => { setResult({ ...result, busy: true }); setOffset(result.next_offset); }}>
