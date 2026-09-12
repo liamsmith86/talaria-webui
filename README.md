@@ -47,10 +47,10 @@ Install [Docker](https://docs.docker.com/get-started/get-docker/). For registry 
 
 ```sh
 docker login ghcr.io
-docker pull ghcr.io/liamsmith86/talaria-webui:v0.3.2
+docker pull ghcr.io/liamsmith86/talaria-webui:latest
 docker run -d --name talaria --restart unless-stopped \
   -p 127.0.0.1:8766:8766 -v talaria-data:/data \
-  ghcr.io/liamsmith86/talaria-webui:v0.3.2
+  ghcr.io/liamsmith86/talaria-webui:latest
 ```
 
 Open **http://127.0.0.1:8766**, then retrieve the login password:

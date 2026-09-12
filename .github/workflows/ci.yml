@@ -19,14 +19,12 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    outputs:
-      full: ${{ steps.scope.outputs.full }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,27 +43,10 @@ jobs:
         working-directory: ${{ runner.temp }}
       - run: uv sync --locked --only-group lint
       - run: uv run --locked --only-group lint python contrib/quality.py
-      - name: Select test coverage
-        id: scope
-        env:
-          REQUEST_FULL: ${{ inputs.full }}
-          PUBLIC: ${{ !github.event.repository.private }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          python3 - <<'PY'
-          import os, subprocess
-          docs_only = False
-          if os.environ['EVENT'] == 'pull_request':
-              files = subprocess.check_output(['git', 'diff', '--no-renames', '--name-only', '-z', 'HEAD^', 'HEAD']).decode().split('\0')[:-1]
-              docs_only = bool(files) and all(path in ('README.md', 'LICENSE', 'CHANGELOG.md') or path.startswith('docs/') for path in files)
-          full = os.environ['REQUEST_FULL'] == 'true' or (os.environ['PUBLIC'] == 'true' and not docs_only)
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              print(f'full={str(full).lower()}', file=output)
-          PY
 
   platforms:
     needs: lint
-    if: needs.lint.outputs.full == 'true'
+    if: inputs.full
     name: Platform (${{ matrix.os }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -100,7 +81,7 @@ jobs:
 
   browsers:
     needs: lint
-    if: needs.lint.outputs.full == 'true'
+    if: inputs.full
     name: Browser (${{ matrix.browser }})
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -139,7 +120,7 @@ jobs:
 
   hermes:
     needs: lint
-    if: needs.lint.outputs.full == 'true'
+    if: inputs.full
     name: Native Hermes
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -153,7 +134,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: NousResearch/hermes-agent
-          ref: 564aef2946c436500a5e80ee117b66b789b3f99a
+          ref: fe04d5b36de1bc2d69d91185f4955c37aaef8c39
           path: .local/hermes
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -176,7 +157,7 @@ jobs:
 
   wsl:
     needs: lint
-    if: needs.lint.outputs.full == 'true'
+    if: inputs.full
     name: Windows WSL2
     runs-on: windows-2025
     timeout-minutes: 25
@@ -200,44 +181,17 @@ jobs:
           wsl --distribution Ubuntu-24.04 --user root --exec bash "$source/.github/scripts/wsl.sh" "$source"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  docker:
-    needs: lint
-    if: needs.lint.outputs.full == 'true'
-    name: Docker (${{ matrix.arch }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            arch: amd64
-          - os: ubuntu-24.04-arm
-            arch: arm64
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          platforms: linux/${{ matrix.arch }}
-          load: true
-          tags: talaria-ci:test
-      - run: python3 .github/scripts/docker_smoke.py talaria-ci:test
-
   required:
     name: Required checks
     if: always()
-    needs: [lint, platforms, browsers, hermes, wsl, docker]
+    needs: [lint, platforms, browsers, hermes, wsl]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require every test job to pass
         env:
           RESULTS: ${{ toJSON(needs) }}
-          FULL: ${{ needs.lint.outputs.full }}
+          FULL: ${{ inputs.full || false }}
         run: |
           python3 - <<'PY'
           import json, os

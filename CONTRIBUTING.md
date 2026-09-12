@@ -47,3 +47,22 @@ Run `uv run --locked python contrib/check.py lint`. The same gates run in the ex
 Production Python functions are limited to complexity 10, 12 branches, and 50 statements. Tests and development orchestration are exempt from those three size limits, not correctness checks. Prefer named operations over suppressions. Vulture scans all production/development Python; its one dynamic Uvicorn entry point is documented in `contrib/vulture_whitelist.py`. Tests are not used to make otherwise dead production code look used.
 
 ESLint checks our JavaScript, excluding vendored libraries. Hook exceptions must explain lifecycle or memoization intent at the exact dependency array. Hygiene checks reject malformed YAML/TOML/JSON, conflict markers, private keys, and files over 1 MiB; debugger checks come from Ruff and ESLint. Static checks supplement behavioral tests, not replace them.
+
+## Releases
+
+PRs run lint only. Publishing a GitHub Release runs backend/installation tests on Linux,
+Linux ARM64, macOS and WSL2, all three browser engines with accessibility checks,
+and pinned native Hermes contracts. Each Docker architecture is built and smoke-tested
+before publication. Run **Actions → CI → Run workflow → full** for the non-container
+suite on demand; local Docker checks use `.github/scripts/docker_smoke.py IMAGE`.
+
+Update the version in `pyproject.toml` and `src/talaria/__init__.py`, run `uv lock`,
+and merge to `main`. Publish a release with the matching tag, such as `v0.3.3`.
+For prereleases, use `v0.4.0-rc.1` with Python version `0.4.0rc1` and mark the release
+as a prerelease (alpha/beta also work). Drafts and ordinary tag pushes do not publish images.
+
+Successful releases publish `ghcr.io/liamsmith86/talaria-webui:VERSION` for AMD64
+and ARM64. The newest successful stable version also becomes `:latest`; prereleases
+and older reruns cannot replace it. Existing version tags are never overwritten.
+If publication fails, rerun the workflow. Package visibility is managed separately;
+the workflow never changes it.

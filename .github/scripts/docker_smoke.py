@@ -51,7 +51,13 @@ try:
         raise AssertionError("Container did not become healthy")
 
     base = ready()
-    for asset in ("/", "/static/app.js", "/static/styles/chat.css", "/static/vendor/manifest.json"):
+    for asset in (
+        "/",
+        "/static/boot.js",
+        "/static/app.js",
+        "/static/styles/chat.css",
+        "/static/vendor/manifest.json",
+    ):
         with opener.open(base + prefix + asset, timeout=3) as response:
             assert response.status == 200 and response.read(), asset
     installed = json.loads(
