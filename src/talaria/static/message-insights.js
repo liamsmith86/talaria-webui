@@ -97,9 +97,8 @@ export function ResponseDetails({ session, message, enabled, onClose }) {
 }
 
 export function ContextIndicator({ app }) {
-  const [open, setOpen] = useState(false);
   const stamp = app.lives[app.active]?.status || "saved";
-  const { data, busy, error } = useDetails(
+  const { data } = useDetails(
     `/sessions/${encodeURIComponent(app.active)}/context?turn=${encodeURIComponent(stamp)}&head=${app.history.at(-1)?.id || 0}`,
     !!app.caps.talaria_extensions?.context_usage,
   );
@@ -108,73 +107,11 @@ export function ContextIndicator({ app }) {
     maximum = numberValue(context?.maximum);
   const percent =
     used !== null && maximum > 0 ? Math.min(100, (used / maximum) * 100) : null;
-  return html`<button
-      class="context-button"
-      aria-label="Context usage"
-      title=${percent !== null
-        ? `${Math.round(percent)}% context used · last request`
-        : used !== null ? `${count(used)} input tokens · last request` : "Context usage"}
-      aria-haspopup="dialog"
-      onClick=${() => setOpen(true)}
-    >
-      <${Icon} name="context" size=${18} />${used !== null &&
-      html`<span>${percent !== null ? `${Math.round(percent)}%` : `${count(used)} tokens`}</span>`}
-    </button>
-    ${open &&
-    html`<${Dialog} title="Context usage" className="usage-dialog" onClose=${() => setOpen(false)}>
-      ${busy && html`<p class="field-help" role="status"><span class="spinner" /> Loading context usage…</p>`}
-      ${error && html`<p class="form-error" role="alert">${error}</p>`}
-      ${
-        context
-          ? html` <div class="context-summary">
-                <strong
-                  >${percent !== null
-                    ? `${Math.round(percent)}%`
-                    : count(used)}</strong
-                ><span
-                  >${percent !== null
-                    ? "used on the last request"
-                    : "input tokens on the last request"}</span
-                >
-              </div>
-              ${percent !== null &&
-              html`<progress
-                class="context-meter"
-                max="100"
-                value=${percent}
-                aria-label="Context used on the last request"
-              />`}
-              <dl class="usage-grid">
-                <div>
-                  <dt>Used</dt>
-                  <dd>${count(used)}</dd>
-                </div>
-                <div>
-                  <dt>Remaining at that request</dt>
-                  <dd>
-                    ${count(
-                      used !== null && maximum > 0
-                        ? Math.max(0, maximum - used)
-                        : null,
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Model context window</dt>
-                  <dd>${count(maximum)}</dd>
-                </div>
-                <div>
-                  <dt>Model</dt>
-                  <dd>${context.model || "Not reported"}</dd>
-                </div>
-              </dl>`
-          : !busy &&
-            !error &&
-            html`<p class="dialog-intro">
-              ${app.caps.talaria_extensions?.context_usage
-                ? "No context usage recorded yet."
-                : "Enable the Talaria plugin to view context usage."}
-            </p>`
-      }
-    </${Dialog}>`}`;
+  const label = percent !== null
+    ? `${Math.round(percent)}% context used · last request`
+    : used !== null ? `${count(used)} input tokens · last request` : "Context usage unavailable";
+  return html`<span class="context-indicator" role="img" aria-label=${label} title=${label}>
+    <${Icon} name="context" size=${18} />${used !== null &&
+    html`<span>${percent !== null ? `${Math.round(percent)}%` : `${count(used)} tokens`}</span>`}
+  </span>`;
 }
