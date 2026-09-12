@@ -78,13 +78,22 @@ export function Composer({
     };
   }, [key]);
   useEffect(() => {
-    if (live?.recovered && live.userText === readStorage(key)) {
-      setDraft("");
-      setImages([]);
-      writeStorage(key, "");
-      pendingStorage(key, null).catch(() => {});
+    if (live?.recovered) {
+      // Admission consumed the submitted text once. A later identical draft
+      // still belongs here when this recovered session is reopened.
+      currentDraft.current = readStorage(key);
+      setDraft(currentDraft.current);
     }
-  }, [live?.recovered, live?.userText, key]);
+  }, [live?.recovered, live?.requestId, key]);
+  useEffect(() => {
+    if (!live?.recovered || loadingImages || attaching) return;
+    // Retry acknowledges the original payload. Attachments prepared afterward
+    // belong to the next draft, including when its text still matches the retry.
+    const submitted = new Set(live.recoveredImageIds || []);
+    currentImages.current = currentImages.current.filter((image) => !submitted.has(image.id));
+    setImages(currentImages.current);
+    consumePendingImages(key, [...submitted].map((id) => ({ id }))).catch(() => {});
+  }, [live?.recovered, live?.requestId, live?.recoveredImageIds, key, loadingImages, attaching]);
   useEffect(() => {
     if (draftSuggestion && !app.active) {
       setDraft(draftSuggestion.text);

@@ -357,6 +357,12 @@ async function migrateCanonical(id, canonical, parent, current) {
     writeStorage("child-view", JSON.stringify({ id: canonical, parent }));
   return true;
 }
+async function reconcileHistoryRun(id, history, current) {
+  if (!state.lives[id] || !current()) return;
+  // Runs depend on the store; resolve this only when a local run needs recovery.
+  const { prepareRunReconciliation } = await import("./runs.js");
+  return prepareRunReconciliation(id, history, current);
+}
 export async function openSession(id, parent = null, replace = false, messageId = null) {
   try {
     const saved = JSON.parse(readStorage("child-view", "null"));
@@ -395,9 +401,11 @@ export async function openSession(id, parent = null, replace = false, messageId 
     );
     if (generation === navigation && request >= historyCommitted) {
       const canonical = result.session_id || id;
-      if (!await migrateCanonical(id, canonical, parent,
-        () => generation === navigation && request >= historyCommitted)) return;
-      if (generation !== navigation || request < historyCommitted) return;
+      const current = () => generation === navigation && request >= historyCommitted;
+      if (!await migrateCanonical(id, canonical, parent, current)) return;
+      const reconcile = !messageId ? await reconcileHistoryRun(id, history, current) : null;
+      if (!current()) return;
+      reconcile?.();
       historyCommitted = request;
       update({
         active: canonical,
@@ -417,7 +425,7 @@ export async function openSession(id, parent = null, replace = false, messageId 
     if (opening === controller) opening = null;
   }
 }
-export async function refreshHistory(id, commit = true, additionalState = null, signal) {
+export async function refreshHistory(id, commit = true, signal) {
   const generation = navigation;
   // A focus refresh must not invalidate an older page the reader just requested.
   if (id === state.active && olderPending?.generation === navigation)
@@ -436,6 +444,9 @@ export async function refreshHistory(id, commit = true, additionalState = null, 
   if (canCommit()) {
     const canonical = result.canonical || id;
     if (!await migrateCanonical(id, canonical, state.readOnlyParent, canCommit) || !canCommit()) return history;
+    const reconcile = await reconcileHistoryRun(id, history, canCommit);
+    if (!canCommit()) return history;
+    reconcile?.();
     historyCommitted = request;
     update({
       ...(canonical !== id ? { active: canonical, sessionDetails: null } : {}),
@@ -443,10 +454,13 @@ export async function refreshHistory(id, commit = true, additionalState = null, 
       loading: false,
       historyHasMore: !!result.has_more,
       historyOffset: result.next_offset ?? (result.data || []).length,
-      // Retire a saved live reply in the same snapshot as its history appears.
-      ...additionalState?.(history),
     });
     if (canonical !== id) refreshSessionDetails(canonical).catch(() => {});
+  } else if (state.active !== id || state.searchWindow) {
+    // Runs can settle while another conversation or an archived search window is open.
+    const reconcile = await reconcileHistoryRun(id, history, () => commit && !signal?.aborted &&
+      (state.active !== id || state.searchWindow) && (typeof commit !== "function" || commit()));
+    reconcile?.();
   }
   return history;
 }
@@ -467,16 +481,19 @@ export function loadOlderMessages() {
     const result = await api(
       `/sessions/${encodeURIComponent(id)}/messages?offset=${offset}`,
     );
+    const current = () => state.active === id && generation === navigation &&
+      request === historyRequest && offset === state.historyOffset;
+    if (result.session_id && result.session_id !== id) {
+      // Compaction rotated the transcript. The old offset belongs to a different
+      // history, so reopen its current tail through the guarded draft migration.
+      if (current()) await openSession(id, state.readOnlyParent, true);
+      return;
+    }
     const history = await withCachedImages(
       result.session_id || id,
       result.data || [],
     );
-    if (
-      state.active === id &&
-      generation === navigation &&
-      request === historyRequest &&
-      offset === state.historyOffset
-    ) {
+    if (current()) {
       const existing = new Set(state.history.map((message) => message.id));
       update({
         history: [

@@ -24,7 +24,7 @@ export function observePage() {
     // A local stream already owns its live-to-saved transition. Revalidation
     // catches up idle/external sessions without disturbing that transition.
     if (id && !state.searchWindow && !running(id)) {
-      tasks.push(refreshHistory(id, current, null, controller.signal));
+      tasks.push(refreshHistory(id, current, controller.signal));
       tasks.push(refreshSessionDetails(id, controller.signal));
     }
     const results = await Promise.allSettled(tasks);
