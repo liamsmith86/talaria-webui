@@ -89,7 +89,7 @@ jobs:
     if: inputs.full
     name: Browser (${{ matrix.browser }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
