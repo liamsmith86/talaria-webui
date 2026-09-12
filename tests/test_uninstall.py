@@ -31,7 +31,7 @@ def installed(tmp_path):
     write_json(root / "maintenance.json", {"status": "completed"})
     config = tmp_path / "private/config.json"
     save(config, Settings(password_hash="private", api_key="test-key"))
-    for name in ("initial-password.txt", "profiles.json", "service.log"):
+    for name in ("initial-password.txt", "profiles.json", "config.sessions.json", "service.log"):
         (config.parent / name).write_text("private")
     metadata = {
         "schema": 1,
@@ -60,6 +60,7 @@ def test_uninstall_preserves_unrelated_files_and_shared_tools(installed, tmp_pat
     assert (config.parent / "unrelated").read_text() == "keep"
     assert not config.exists()
     assert not (config.parent / "profiles.json").exists()
+    assert not (config.parent / "config.sessions.json").exists()
     assert (hermes / "sessions").read_text() == uv.read_text() == "keep"
 
 
