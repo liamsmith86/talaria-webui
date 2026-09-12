@@ -269,24 +269,29 @@ def complete_browser_update(page, info):
 def test_update_reload_recovers_stalled_mobile_bootstrap(page, update_ui):
     info, _ = update_ui
     page.set_viewport_size({"width": 390, "height": 844})
-    requests = []
+    blocked = []
+    available = False
 
     def bootstrap(route):
-        requests.append(route)
-        if len(requests) > 1:
+        if available:
             route.continue_()
+        else:
+            blocked.append(route)
 
     page.route("**/api/bootstrap", bootstrap)
     try:
         with page.expect_request("**/api/bootstrap"):
             complete_browser_update(page, info)
         expect(page.locator(".initial-loader")).to_be_visible()
+        # Browsers can deliver additional lifecycle events during navigation.
+        # Keep every attempt stalled until the failure UI has been observed.
+        page.evaluate("dispatchEvent(new Event('pageshow'))")
         expect(page.get_by_role("button", name="Retry connection")).to_be_visible(timeout=8000)
+        available = True
         expect(page.locator(".topbar-title")).to_be_visible(timeout=10000)
-        assert len(requests) == 2
         expect(page.get_by_label("Password", exact=True)).to_have_count(0)
     finally:
-        for route in requests[:1]:
+        for route in blocked:
             route.abort()
 
 
@@ -313,12 +318,14 @@ def test_update_reload_recovers_interrupted_module_download(page, update_ui):
 def test_update_startup_recovers_when_mobile_connection_returns(page, update_ui):
     info, _ = update_ui
     page.set_viewport_size({"width": 390, "height": 844})
-    requests = []
+    blocked = []
+    available = False
 
     def bootstrap(route):
-        requests.append(route)
-        if len(requests) > 1:
+        if available:
             route.continue_()
+        else:
+            blocked.append(route)
 
     page.route("**/api/bootstrap", bootstrap)
     try:
@@ -327,13 +334,13 @@ def test_update_startup_recovers_when_mobile_connection_returns(page, update_ui)
         expect(page.locator(".initial-loader")).to_be_visible()
         page.context.set_offline(True)
         expect(page.get_by_role("button", name="Retry connection")).to_be_visible()
+        available = True
         page.context.set_offline(False)
         expect(page.locator(".topbar-title")).to_be_visible()
         expect(page.get_by_label("Password", exact=True)).to_have_count(0)
-        assert len(requests) == 2
     finally:
         page.context.set_offline(False)
-        for route in requests[:1]:
+        for route in blocked:
             route.abort()
 
 

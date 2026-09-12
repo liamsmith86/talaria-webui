@@ -163,8 +163,16 @@ def test_workflow_gates_publication_and_keeps_prs_lightweight():
     assert workflow["jobs"]["publish"]["needs"] == "checks"
     assert workflow["jobs"]["manifest"]["needs"] == "publish"
     assert "repository.private" not in json.dumps(ci)
-    for name in ("platforms", "browsers", "hermes", "wsl"):
+    for name in ("platforms", "hermes", "wsl"):
         assert ci["jobs"][name]["if"] == "inputs.full"
+    assert ci["on"]["workflow_dispatch"]["inputs"]["browser"]["options"] == [
+        "none",
+        "chromium",
+        "firefox",
+        "webkit",
+    ]
+    assert ci["jobs"]["browsers"]["if"].startswith("inputs.full || ")
+    assert "inputs.full &&" in ci["jobs"]["browsers"]["strategy"]["matrix"]["browser"]
     quality = next(
         step
         for step in ci["jobs"]["lint"]["steps"]

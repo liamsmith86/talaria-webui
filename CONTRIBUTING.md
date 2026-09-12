@@ -55,7 +55,8 @@ runs backend/installation tests on Linux,
 Linux ARM64, macOS and WSL2, all three browser engines with accessibility checks,
 and pinned native Hermes contracts. Each Docker architecture is built and smoke-tested
 before publication. Run **Actions → CI → Run workflow → full** for the non-container
-suite on demand; local Docker checks use `.github/scripts/docker_smoke.py IMAGE`.
+suite on demand, or leave **full** off and select one **browser** for a focused run.
+Local Docker checks use `.github/scripts/docker_smoke.py IMAGE`.
 
 Update the version in `pyproject.toml` and `src/talaria/__init__.py`, run `uv lock`,
 and merge to `main`. Publish a release with the matching tag, such as `v0.3.3`.

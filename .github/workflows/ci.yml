@@ -13,6 +13,11 @@ on:
         description: Run every platform and browser
         type: boolean
         default: false
+      browser:
+        description: Run one browser when full is off
+        type: choice
+        default: none
+        options: [none, chromium, firefox, webkit]
 
 permissions:
   contents: read
@@ -86,14 +91,14 @@ jobs:
 
   browsers:
     needs: lint
-    if: inputs.full
+    if: inputs.full || (github.event_name == 'workflow_dispatch' && inputs.browser != 'none' && inputs.browser != '')
     name: Browser (${{ matrix.browser }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, firefox, webkit]
+        browser: ${{ fromJSON(inputs.full && '["chromium", "firefox", "webkit"]' || format('["{0}"]', inputs.browser)) }}
     env:
       TALARIA_TEST_BROWSER: ${{ matrix.browser }}
       TALARIA_AXE_PATH: ${{ github.workspace }}/.local/axe.min.js
