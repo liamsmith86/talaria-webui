@@ -14,6 +14,18 @@ Optionally you can install the Talaria Hermes Agent plugin, a lightweight extens
 
 ## Installation
 
+Talaria connects remotely to your Hermes Agent's API and does not need to be installed on the same server.
+
+### Ask your agent (Recommended)
+
+```text
+Install Talaria WebUI from https://github.com/liamsmith86/talaria-webui and
+connect it to my Hermes Agent, including the recommended plugin. Use the
+installer's --help for headless options and give me the URL and login details file path.
+```
+
+### Install manually
+
 Linux, macOS, and Windows through WSL2:
 
 ```sh
@@ -22,28 +34,13 @@ curl -fsSL https://raw.githubusercontent.com/liamsmith86/talaria-webui/main/inst
 
 Follow the prompts, then open the URL printed by the installer.
 
-### Ask your agent
+### Install via Docker
 
-```text
-Install Talaria WebUI from https://github.com/liamsmith86/talaria-webui and
-connect it to my Hermes Agent, including the recommended plugin. Use the
-installer's --help for headless options and give me the URL and login details file path.
-```
+Install [Docker](https://docs.docker.com/get-started/get-docker/), then choose either option below.
 
-## Hermes plugin
+#### GitHub Container Registry
 
-Talaria can also use an optional, but highly recommended, plugin that you install on your Hermes Agent to extend the native API capabilities and improve the amount of information we can display in the WebUI.
-
-Run on your Hermes host:
-
-```sh
-hermes plugins install liamsmith86/talaria-webui/src/talaria/hermes_plugin --enable
-hermes gateway restart
-```
-
-## Docker
-
-Install [Docker](https://docs.docker.com/get-started/get-docker/). For registry login, use your GitHub username and a [classic token](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic) with `read:packages` as the password.
+For registry login, use your GitHub username and a [classic token](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic) with `read:packages` as the password.
 
 ```sh
 docker login ghcr.io
@@ -53,13 +50,35 @@ docker run -d --name talaria --restart unless-stopped \
   ghcr.io/liamsmith86/talaria-webui:latest
 ```
 
-Open **http://127.0.0.1:8766**, then retrieve the login password:
+#### Build from Git
+
+```sh
+git clone https://github.com/liamsmith86/talaria-webui.git
+cd talaria-webui
+docker build -t talaria-webui .
+docker run -d --name talaria --restart unless-stopped \
+  -p 127.0.0.1:8766:8766 -v talaria-data:/data \
+  talaria-webui
+```
+
+After either option, open **http://127.0.0.1:8766** and retrieve the login password:
 
 ```sh
 docker exec talaria cat /data/talaria/initial-password.txt
 ```
 
 Connect to your Hermes API in Settings.
+
+## Hermes plugin
+
+Talaria can also use an optional, but highly recommended, plugin that you install on your Hermes Agent to extend the native API capabilities and improve the amount of information we can display in the WebUI. As Hermes Agent developers continue to extend the capabilities of their native API we will update Talaria to use native routes.
+
+Run on your Hermes host:
+
+```sh
+hermes plugins install liamsmith86/talaria-webui/src/talaria/hermes_plugin --enable
+hermes gateway restart
+```
 
 ## Features
 
