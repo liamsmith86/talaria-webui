@@ -43,6 +43,11 @@ jobs:
         working-directory: ${{ runner.temp }}
       - run: uv sync --locked --only-group lint
       - run: uv run --locked --only-group lint python contrib/quality.py
+      - name: Verify the quality gates
+        if: inputs.full
+        run: |
+          uv sync --locked
+          uv run --locked pytest -q -m quality --fail-on-skip
 
   platforms:
     needs: lint
@@ -71,7 +76,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: uv sync --locked
       - name: Backend, fresh wheel, startup, plugin export, update and rollback
-        run: uv run --locked pytest -q -m 'not browser and not hermes' --fail-on-skip --junitxml=test-results/platform.xml
+        run: uv run --locked pytest -q -m 'not browser and not hermes and not quality' --fail-on-skip --junitxml=test-results/platform.xml
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:

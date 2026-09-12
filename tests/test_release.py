@@ -165,6 +165,15 @@ def test_workflow_gates_publication_and_keeps_prs_lightweight():
     assert "repository.private" not in json.dumps(ci)
     for name in ("platforms", "browsers", "hermes", "wsl"):
         assert ci["jobs"][name]["if"] == "inputs.full"
+    quality = next(
+        step
+        for step in ci["jobs"]["lint"]["steps"]
+        if step.get("name") == "Verify the quality gates"
+    )
+    assert quality["if"] == "inputs.full"
+    assert "-m quality --fail-on-skip" in quality["run"]
+    assert "not quality" in json.dumps(ci["jobs"]["platforms"])
+    assert "not quality" in (ROOT / ".github/scripts/wsl.sh").read_text()
     steps = workflow["jobs"]["publish"]["steps"]
     smoke = next(i for i, step in enumerate(steps) if "docker_smoke.py" in step.get("run", ""))
     push = next(i for i, step in enumerate(steps) if step.get("id") == "publish")

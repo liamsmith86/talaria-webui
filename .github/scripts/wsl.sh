@@ -10,4 +10,4 @@ curl -fsSL https://astral.sh/uv/0.12.9/install.sh -o /tmp/install-uv.sh
 sh /tmp/install-uv.sh
 export PATH="/root/.local/bin:$PATH"
 uv sync --locked --python 3.12
-uv run --locked pytest -q -m 'not browser and not hermes' --fail-on-skip
+uv run --locked pytest -q -m 'not browser and not hermes and not quality' --fail-on-skip

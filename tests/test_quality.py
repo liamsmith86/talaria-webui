@@ -8,6 +8,8 @@ import pytest
 
 from contrib import quality
 
+pytestmark = pytest.mark.quality
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

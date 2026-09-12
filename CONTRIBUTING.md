@@ -50,7 +50,8 @@ ESLint checks our JavaScript, excluding vendored libraries. Hook exceptions must
 
 ## Releases
 
-PRs run lint only. Publishing a GitHub Release runs backend/installation tests on Linux,
+PRs run lint only. Publishing a GitHub Release also tests the quality gates, then
+runs backend/installation tests on Linux,
 Linux ARM64, macOS and WSL2, all three browser engines with accessibility checks,
 and pinned native Hermes contracts. Each Docker architecture is built and smoke-tested
 before publication. Run **Actions → CI → Run workflow → full** for the non-container

@@ -8,6 +8,8 @@ import pytest
 
 from contrib import check
 
+pytestmark = pytest.mark.quality
+
 
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
