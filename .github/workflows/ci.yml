@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.full && 'full' || inputs.browser || 'none' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
