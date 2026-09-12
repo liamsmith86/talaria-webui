@@ -1,7 +1,6 @@
 """Opt-in local plugin maintenance, outside the unprivileged HTTP process."""
 
 import os
-import pwd
 import shutil
 import time
 from pathlib import Path
@@ -9,19 +8,16 @@ from pathlib import Path
 import httpx
 
 from .deployment import Deployment, DeploymentError, locked, write_json
+from .hermes_owner import execution_identity, select_owner, validate_execution
 from .hermes_plugin.release import fingerprint
 
 
-def run_as_owner(home, source, restart=True, command=None):
+def run_as_owner(home, source, restart=True, command=None, *, owner=None):
     from .plugin_worker import run
     from .setup import find_hermes_python
 
-    owner = pwd.getpwuid(home.stat().st_uid)
-    identity = {}
-    if os.geteuid() == 0:
-        identity = {"user": owner.pw_uid, "group": owner.pw_gid, "extra_groups": []}
-    elif os.geteuid() != owner.pw_uid:
-        raise DeploymentError("Run plugin maintenance as the Hermes owner or root.")
+    owner = owner or select_owner(home)
+    identity = execution_identity(owner)
     env = {key: os.environ[key] for key in ("PATH", "LANG", "SSL_CERT_FILE") if key in os.environ}
     env.update(
         HOME=owner.pw_dir,
@@ -37,22 +33,26 @@ def run_as_owner(home, source, restart=True, command=None):
     python = find_hermes_python(home, command=command)
     if python is None:
         raise DeploymentError("Cannot locate Hermes's Python for local plugin maintenance.")
+    python = validate_execution(home, python, owner)
     verify = (
-        (lambda: restart_and_verify(home, home / "plugins/talaria", command)) if restart else None
+        (lambda: restart_and_verify(home, home / "plugins/talaria", command, owner=owner))
+        if restart
+        else None
     )
     run(python, home, source, owner, identity, env, verify)
 
 
-def restart_and_verify(home, target, command):
+def restart_and_verify(home, target, command, *, owner=None):
     from .setup import find_hermes_python, hermes_request, local_url, restart_gateway
 
+    owner = owner or select_owner(home)
     python = find_hermes_python(home, command=command)
     if not python:
         raise DeploymentError("Cannot locate Hermes's Python to verify the local plugin.")
-    info = hermes_request(python, home)
+    info = hermes_request(python, home, owner=owner)
     if not info.get("enabled") or not info.get("key"):
         raise DeploymentError("Enable this local Hermes API before managing its plugin.")
-    restart_gateway(home, command)
+    restart_gateway(home, command, owner=owner)
     expected = fingerprint(target) if (target / "release.py").is_file() else None
     url = local_url(str(info["host"]), int(info["port"])) + "/talaria/v1/capabilities"
     deadline = time.monotonic() + 30

@@ -116,8 +116,9 @@ def install(home, source, restart=None):
         return changed
 
 
-def main(argv):
+def main(argv, *, owner=None):
     from .deployment import default_directory
+    from .hermes_owner import select_owner
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--home", type=Path, default=Path.home() / ".hermes")
@@ -140,17 +141,18 @@ def main(argv):
     args = parser.parse_args(argv)
     from .plugin_updates import register, restart_and_verify, run_as_owner
 
-    home = args.home.expanduser().resolve()
+    home = args.home.expanduser().absolute()
+    owner = owner or select_owner(home)
     if args.manage_updates:
         if args.restart:
             parser.error("Link updates first; --manage-updates does not restart Hermes.")
         register(args.directory, home, args.hermes_command)
         return
-    if home.exists() and os.geteuid() == 0 and home.stat().st_uid != 0:
-        run_as_owner(home, args.source, args.restart, args.hermes_command)
+    if os.geteuid() == 0 and owner.pw_uid != 0:
+        run_as_owner(home, args.source, args.restart, args.hermes_command, owner=owner)
         return
     restart = (
-        (lambda target: restart_and_verify(home, target, args.hermes_command))
+        (lambda target: restart_and_verify(home, target, args.hermes_command, owner=owner))
         if args.restart
         else None
     )
