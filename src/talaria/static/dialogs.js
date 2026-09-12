@@ -9,6 +9,7 @@ import {
   writeStorage,
 } from "./lib.js";
 import { api } from "./api.js";
+import { t, n, rich, formatNumber, msg } from "./i18n.js";
 import { pendingStorage, forgetImages } from "./attachments.js";
 import {
   state,
@@ -72,7 +73,7 @@ export function Dialog({
       ${dismissible &&
       html`<${IconButton}
         name="close"
-        label="Close dialog"
+        label=${t("Close dialog")}
         onClick=${onClose}
       />`}
     </div>
@@ -130,7 +131,7 @@ export function Connection({
       if (save) {
         if (!creating) await connect();
         onClose();
-        toast(creating ? "Profile added" : `Connected to ${state.agent.name}`);
+        toast(creating ? t("Profile added") : t("Connected to {name}", { name: state.agent.name }));
       } else setTested(true);
     } catch (e) {
       setError(e.message);
@@ -147,15 +148,15 @@ export function Connection({
     >
       ${creating &&
       html`<label class="field"
-        >Display name<input
+        >${t("Display name")}<input
           value=${label}
           onInput=${(e) => setLabel(e.target.value)}
           maxlength="80"
           required
-          placeholder="Research"
+          placeholder=${t("Research")}
       /></label>`}
       <label class="field"
-        >Hermes address<input
+        >${t("Hermes address")}<input
           type="url"
           value=${url}
           readonly=${keySet && !creating}
@@ -168,7 +169,7 @@ export function Connection({
           placeholder="http://127.0.0.1:8642"
       /></label>
       <label class="field"
-        >Hermes profile<input
+        >${t("Hermes profile")}<input
           value=${profile}
           onInput=${(e) => {
             setProfile(e.target.value);
@@ -181,11 +182,10 @@ export function Connection({
           placeholder="default"
       /></label>
       <p class="field-help">
-        Use <code>default</code> for the main agent, or the name of an existing
-        Hermes profile. Named profiles need their own API key.
+        ${rich("Use {profile} for the main agent, or the name of an existing Hermes profile. Named profiles need their own API key.", { profile: html`<code>default</code>` })}
       </p>
       <label class="field"
-        >API key<input
+        >${t("API key")}<input
           type="password"
           value=${key}
           disabled=${keyFromEnv}
@@ -193,21 +193,20 @@ export function Connection({
             setKey(e.target.value);
             setTested(false);
           }}
-          placeholder=${keyFromEnv ? "Managed by server environment" : keySet
-            ? "Leave blank to keep saved key"
-            : "Your Hermes API server key"}
+          placeholder=${keyFromEnv ? t("Managed by server environment") : keySet
+            ? t("Leave blank to keep saved key")
+            : t("Your Hermes API server key")}
           autocomplete="new-password"
       /></label>
       <p class="field-help">
-        ${keyFromEnv ? "Using TALARIA_HERMES_API_KEY from the server environment."
-          : creating || state.profile?.id !== "default"
-            ? "Your key is saved to ~/.config/talaria/profiles.json."
-            : "Your key is saved to ~/.config/talaria/config.json."}
+        ${keyFromEnv ? t("Using {variable} from the server environment.", { variable: "TALARIA_HERMES_API_KEY" })
+          : t("Your key is saved to {path}.", { path: creating || state.profile?.id !== "default"
+            ? "~/.config/talaria/profiles.json" : "~/.config/talaria/config.json" })}
       </p>
-      ${error && html`<div class="form-error" role="alert">${error}</div>`}
+      ${error && html`<div class="form-error" role="alert">${t(error)}</div>`}
       ${tested &&
       html`<div class="form-success" role="status">
-        <${Icon} name="check" size=${16} /> Hermes connection verified.
+        <${Icon} name="check" size=${16} /> ${t("Hermes connection verified.")}
       </div>`}
       <div class="dialog-actions">
         <button
@@ -216,22 +215,23 @@ export function Connection({
           disabled=${busy}
           onClick=${() => submit(false)}
         >
-          Test connection</button
+          ${t("Test connection")}</button
         ><button class="button primary" disabled=${busy}>
-          ${busy ? "Connecting…" : creating ? "Add profile" : "Save connection"}
+          ${busy ? t("Connecting…") : creating ? t("Add profile") : t("Save connection")}
         </button>
       </div>
     </form>
   `;
   return embedded
     ? content
-    : html`<${Dialog} title=${initial ? "Connect Hermes" : "Connection"} onClose=${onClose}>${content}</${Dialog}>`;
+    : html`<${Dialog} title=${initial ? t("Connect Hermes") : t("Connection")} onClose=${onClose}>${content}</${Dialog}>`;
 }
 
 export function SessionDialog({ mode, session, onClose }) {
   const [title, setTitle] = useState(
-    mode === "fork" ? "" : session.title || "Untitled session",
+    mode === "fork" ? "" : session.title || null,
   );
+  const displayedTitle = title ?? t("Untitled session");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function submit(e) {
@@ -244,9 +244,9 @@ export function SessionDialog({ mode, session, onClose }) {
         method:
           mode === "delete" ? "DELETE" : mode === "fork" ? "POST" : "PATCH",
         body:
-          mode === "delete" || (mode === "fork" && !title.trim())
+          mode === "delete" || (mode === "fork" && !displayedTitle.trim())
             ? {}
-            : { title },
+            : { title: displayedTitle },
       });
       if (mode === "delete") {
         writeStorage(`draft.${session.id}`, "");
@@ -269,10 +269,10 @@ export function SessionDialog({ mode, session, onClose }) {
       }
       toast(
         mode === "delete"
-          ? "Session deleted"
+          ? t("Session deleted")
           : mode === "fork"
-            ? "Session branched"
-            : "Session renamed",
+            ? t("Session branched")
+            : t("Session renamed"),
       );
     } catch (e) {
       setError(e.message);
@@ -280,11 +280,11 @@ export function SessionDialog({ mode, session, onClose }) {
       setBusy(false);
     }
   }
-  return html`<${Dialog} title=${{ rename: "Rename session", delete: "Delete session?", fork: "Branch session" }[mode]} onClose=${onClose} dismissible=${!busy}>
+  return html`<${Dialog} title=${t({ rename: msg("Rename session"), delete: msg("Delete session?"), fork: msg("Branch session") }[mode])} onClose=${onClose} dismissible=${!busy}>
     <form onSubmit=${submit}>
-      ${mode === "delete" ? html`<p class="dialog-intro">“${title}” will be permanently deleted from Hermes. This cannot be undone.</p>` : html`<label class="field">Session name<input value=${title} onInput=${(e) => setTitle(e.target.value)} placeholder=${mode === "fork" ? "Automatic name from Hermes" : ""} maxlength="150" required=${mode !== "fork"} autofocus /></label>`}
-      ${error && html`<div class="form-error" role="alert">${error}</div>`}
-      <div class="dialog-actions"><button type="button" class="button secondary" disabled=${busy} onClick=${onClose}>Cancel</button><button disabled=${busy} class=${`button ${mode === "delete" ? "danger" : "primary"}`}>${busy ? "Working…" : { rename: "Save name", delete: "Delete session", fork: "Create branch" }[mode]}</button></div>
+      ${mode === "delete" ? html`<p class="dialog-intro">${t("“{title}” will be permanently deleted from Hermes. This cannot be undone.", { title: displayedTitle })}</p>` : html`<label class="field">${t("Session name")}<input value=${displayedTitle} onInput=${(e) => setTitle(e.target.value)} placeholder=${mode === "fork" ? t("Automatic name from Hermes") : ""} maxlength="150" required=${mode !== "fork"} autofocus /></label>`}
+      ${error && html`<div class="form-error" role="alert">${t(error)}</div>`}
+      <div class="dialog-actions"><button type="button" class="button secondary" disabled=${busy} onClick=${onClose}>${t("Cancel")}</button><button disabled=${busy} class=${`button ${mode === "delete" ? "danger" : "primary"}`}>${busy ? t("Working…") : t({ rename: msg("Save name"), delete: msg("Delete session"), fork: msg("Create branch") }[mode])}</button></div>
     </form>
   </${Dialog}>`;
 }
@@ -330,14 +330,14 @@ export function ModelPicker({
     ],
     [models],
   );
-  return html`<${Dialog} title="Choose a model" className="model-dialog" onClose=${onClose}>
-    <div class="model-search"><div class="search-field"><${Icon} name="search" size=${18}/><input aria-label="Search models" placeholder="Find a model…" value=${query} onInput=${(
+  return html`<${Dialog} title=${t("Choose a model")} className="model-dialog" onClose=${onClose}>
+    <div class="model-search"><div class="search-field"><${Icon} name="search" size=${18}/><input aria-label=${t("Search models")} placeholder=${t("Find a model…")} value=${query} onInput=${(
       e,
     ) => {
       setQuery(e.target.value);
       setLimit(80);
     }} autoFocus/></div>
-      <${IconButton} name="refresh" label="Refresh model catalog" disabled=${busy} onClick=${async () => {
+      <${IconButton} name="refresh" label=${t("Refresh model catalog")} disabled=${busy} onClick=${async () => {
         setBusy(true);
         setError("");
         try {
@@ -349,21 +349,20 @@ export function ModelPicker({
         }
       }} />
     </div>
-    ${busy && html`<p class="field-help" role="status">Refreshing models from Hermes…</p>`}
-    ${error && html`<div class="form-error" role="alert">${error}</div>`}
+    ${busy && html`<p class="field-help" role="status">${t("Refreshing models from Hermes…")}</p>`}
+    ${error && html`<div class="form-error" role="alert">${t(error)}</div>`}
     ${
       warnings.length > 0 &&
       html`<details class="catalog-warnings">
         <summary>
-          <${Icon} name="alert" size=${14} />Provider information ·
-          ${warnings.length}
+          <${Icon} name="alert" size=${14} />${t("Provider information · {count}", { count: formatNumber(warnings.length) })}
         </summary>
         ${warnings.map(
           (p) => html`<p><strong>${p.name}</strong> · ${p.warning}</p>`,
         )}
       </details>`
     }
-    <div class="model-list"><button class="model-option model-default" disabled=${defaultModel?.available === false} onClick=${() => select(null)} aria-pressed=${!selected}><span>${defaultModel?.id || "Configured model"}<small>${defaultModel?.providerLabel || "Hermes"}</small></span><span class="model-option-end"><span class="default-badge">Default</span>${defaultModel?.available === false ? html`<span class="quiet-badge">Unavailable</span>` : !selected && html`<${Icon} name="check" size=${18} />`}</span></button>
+    <div class="model-list"><button class="model-option model-default" disabled=${defaultModel?.available === false} onClick=${() => select(null)} aria-pressed=${!selected}><span>${defaultModel?.id || t("Configured model")}<small>${defaultModel?.providerLabel || "Hermes"}</small></span><span class="model-option-end"><span class="default-badge">${t("Default")}</span>${defaultModel?.available === false ? html`<span class="quiet-badge">${t("Unavailable")}</span>` : !selected && html`<${Icon} name="check" size=${18} />`}</span></button>
     ${filtered
       .slice(0, limit)
       .map(
@@ -381,32 +380,32 @@ export function ModelPicker({
               (m.pricing.input || m.pricing.output || m.pricing.free) &&
               html`<small class="model-price"
                 >${m.pricing.free
-                  ? "Free"
-                  : `Per 1M tokens · Input ${m.pricing.input || "—"} · Output ${m.pricing.output || "—"}`}</small
+                  ? t("Free")
+                  : t("Per 1M tokens · Input {input} · Output {output}", { input: m.pricing.input || "—", output: m.pricing.output || "—" })}</small
               >`}</span
             ><span class="model-option-end"
               >${m.available === false
-                ? html`<span class="quiet-badge">Unavailable</span>`
+                ? html`<span class="quiet-badge">${t("Unavailable")}</span>`
                 : m.featured &&
                   html`<span class="quiet-badge"
-                    >Featured</span
+                    >${t("Featured")}</span
                   >`}${selected?.id === m.id &&
               selected?.provider === m.provider &&
               html`<${Icon} name="check" size=${18} />`}</span
             >
           </button>`,
       )}
-    ${!filtered.length && html`<p class="field-help">${query ? "No models match that search." : "Your Hermes default is available. Additional models appear when Hermes provides them."}</p>`}
-    ${filtered.length > limit && html`<button class="load-more" onClick=${() => setLimit(limit + 80)}>Show more models (${filtered.length - limit} remaining)</button>`}
+    ${!filtered.length && html`<p class="field-help">${query ? t("No models match that search.") : t("Your Hermes default is available. Additional models appear when Hermes provides them.")}</p>`}
+    ${filtered.length > limit && html`<button class="load-more" onClick=${() => setLimit(limit + 80)}>${n("Show more models ({count} remaining)", "Show more models ({count} remaining)", filtered.length - limit)}</button>`}
     </div>
   </${Dialog}>`;
 }
 
 export function ReasoningPicker({ model, selected, onSelect, onClose }) {
   const options = reasoningOptions(model);
-  return html`<${Dialog} title="Choose reasoning" onClose=${onClose}>
-    ${model?.capabilities?.reasoning === false && html`<p class="field-help">This model does not support adjustable reasoning.</p>`}
-    ${model?.capabilities?.reasoning !== false && !Array.isArray(model?.capabilities?.supported_efforts) && html`<p class="field-help">Hermes may adjust the level to match the model’s supported settings.</p>`}
+  return html`<${Dialog} title=${t("Choose reasoning")} onClose=${onClose}>
+    ${model?.capabilities?.reasoning === false && html`<p class="field-help">${t("This model does not support adjustable reasoning.")}</p>`}
+    ${model?.capabilities?.reasoning !== false && !Array.isArray(model?.capabilities?.supported_efforts) && html`<p class="field-help">${t("Hermes may adjust the level to match the model’s supported settings.")}</p>`}
     <div class="model-list reasoning-list">${options.map(
       (value) =>
         html`<button
@@ -421,12 +420,12 @@ export function ReasoningPicker({ model, selected, onSelect, onClose }) {
           <span
             >${reasoningLabel(value, model)}${value === "auto" &&
             html`<small
-              >Use Hermes’s configured reasoning setting.</small
+              >${t("Use Hermes’s configured reasoning setting.")}</small
             >`}</span
           >
           <span class="model-option-end"
             >${value === "auto" &&
-            html`<span class="default-badge">Default</span>`}${selected ===
+            html`<span class="default-badge">${t("Default")}</span>`}${selected ===
               value && html`<${Icon} name="check" size=${18} />`}</span
           >
         </button>`,

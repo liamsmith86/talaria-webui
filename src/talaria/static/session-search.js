@@ -3,6 +3,7 @@ import { api } from "./api.js";
 import { openSession } from "./store.js";
 import { sessionURL } from "./session-navigation.js";
 import { sourceLabel } from "./content.js";
+import { t } from "./i18n.js";
 
 function snippet(text) {
   // Native FTS markers become text nodes and marks, never interpreted HTML.
@@ -34,8 +35,8 @@ export function SessionSearch({ query }) {
   }, [query, offset, retry]);
   const current = result.query === query;
   const busy = !current || result.busy;
-  return html`<section class="history-search" aria-label="Matching messages" aria-busy=${!!busy}>
-    <div class="session-group">Messages</div>
+  return html`<section class="history-search" aria-label=${t("Matching messages")} aria-busy=${!!busy}>
+    <div class="session-group">${t("Messages")}</div>
     ${current && result.data.map((hit) => html`<a key=${`${hit.session_id}:${hit.id}`}
       class="history-search-hit" href=${sessionURL(hit.session_id, hit.id)}
       onClick=${(event) => {
@@ -44,16 +45,16 @@ export function SessionSearch({ query }) {
         openSession(hit.session_id, null, false, String(hit.id));
       }}>
       <strong>${hit.title}</strong><span>${snippet(hit.snippet)}</span>
-      <small>${sourceLabel(hit.source)}${hit.source ? " · " : ""}${hit.role === "user" ? "You" : hit.role === "tool" ? "Tool" : "Agent"}</small>
+      <small>${sourceLabel(hit.source)}${hit.source ? " · " : ""}${hit.role === "user" ? t("You") : hit.role === "tool" ? t("Tool") : t("Agent")}</small>
     </a>`)}
     <div class="sidebar-empty" role="status">
-      ${busy ? "Searching…" : result.error || (!result.data.length ? "No matching messages." : "")}
+      ${busy ? t("Searching…") : result.error ? t(result.error) : (!result.data.length ? t("No matching messages.") : "")}
     </div>
     ${current && result.error && html`<button class="load-more" onClick=${() => {
       setResult({ ...result, error: null, busy: true }); setRetry(retry + 1);
-    }}>Retry search</button>`}
+    }}>${t("Retry search")}</button>`}
     ${current && result.has_more && result.next_offset <= 10000 && html`<button class="load-more" disabled=${busy}
       onClick=${() => { setResult({ ...result, busy: true }); setOffset(result.next_offset); }}>
-      ${busy ? "Searching…" : "More matches"}</button>`}
+      ${busy ? t("Searching…") : t("More matches")}</button>`}
   </section>`;
 }

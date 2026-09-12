@@ -48,6 +48,8 @@ import { sessionModel, sessionReasoning } from "./models.js";
 import { restoreRuns, running } from "./runs.js";
 import { observePage } from "./page-lifecycle.js";
 import { Startup } from "./startup.js";
+import { LanguageSelector } from "./language.js";
+import { t, useLanguage } from "./i18n.js";
 
 function Login({ development }) {
   const [password, setPassword] = useState("");
@@ -69,46 +71,47 @@ function Login({ development }) {
   return html`<main class="login-page">
     <div class="login-brand">
       <${Mark} size=${42} /><span>Talaria</span>
-      ${development && html`<small class="environment-badge">Dev</small>`}
+      ${development && html`<small class="environment-badge">${t("Dev")}</small>`}
     </div>
     <div class="login-card">
-      <h1>Sign in</h1>
+      <h1>${t("Sign in")}</h1>
       <form onSubmit=${submit}>
         <label class="field"
-          >Password<input
+          >${t("Password")}<input
             type="password"
             value=${password}
             onInput=${(e) => setPassword(e.target.value)}
             autocomplete="current-password"
             required
             autofocus
-            placeholder="Your Talaria password"
+            placeholder=${t("Your Talaria password")}
         /></label>
         ${error &&
-        html`<div class="form-error" role="alert">${error}</div>`}<button
+        html`<div class="form-error" role="alert">${t(error)}</div>`}<button
           class="button primary"
           disabled=${busy}
         >
-          ${busy ? "Loading…" : "Sign in"}<${Icon}
+          ${busy ? t("Loading…") : t("Sign in")}<${Icon}
             name="arrow"
             size=${17}
           />
         </button>
       </form>
     </div>
-    <p class="login-footer">Hermes Agent web user interface</p>
+    <div class="login-language"><${LanguageSelector} /></div>
+    <p class="login-footer">${t("Hermes Agent web user interface")}</p>
   </main>`;
 }
 
 function Welcome({ onSuggestion }) {
   const suggestions = [
-    ["spark", "Plan", "Help me think through "],
-    ["terminal", "Code", "I’d like to build "],
-    ["file", "Write", "Help me write "],
+    ["spark", t("Plan"), t("Help me think through ")],
+    ["terminal", t("Code"), t("I’d like to build ")],
+    ["file", t("Write"), t("Help me write ")],
   ];
   return html`<div class="welcome">
     <div class="welcome-mark"><${Mark} size=${49} /></div>
-    <h1>New session</h1>
+    <h1>${t("New session")}</h1>
     <div class="suggestions">
       ${suggestions.map(
         ([icon, label, text]) =>
@@ -124,6 +127,7 @@ function Welcome({ onSuggestion }) {
 }
 
 function App() {
+  const language = useLanguage();
   const app = useStore();
   const commandActivity = useCommandActivity(app);
   const command = commandActivity.current?.session === (app.active || "") ? commandActivity.current : null;
@@ -151,7 +155,7 @@ function App() {
         update({ findOpen: true });
         requestAnimationFrame(() =>
           document
-            .querySelector('[aria-label="Find text in session"]')
+            .querySelector(".conversation-find input")
             ?.focus(),
         );
       }
@@ -161,7 +165,7 @@ function App() {
         update({ sidebar: true });
         requestAnimationFrame(() =>
           document
-            .querySelector('[aria-label="Search sessions"]')
+            .querySelector(".sidebar .search-field input")
             ?.focus(),
         );
       }
@@ -182,12 +186,12 @@ function App() {
   }, [app.connected]);
   const current = {
     id: app.active,
-    title: "Session",
+    title: t("Session"),
     ...app.sessionDetails,
     ...app.sessions.find((s) => s.id === app.active),
   };
   const close = () => update({ modal: null });
-  if (app.auth === null) return html`<${Startup} />`;
+  if (app.auth === null || !language.ready) return html`<${Startup} />`;
   if (!app.auth)
     return html`<${Login} development=${app.environment === "development"} />`;
   return html`<div class="app-shell">
@@ -195,7 +199,7 @@ function App() {
     html`<button
       class="sidebar-overlay"
       tabindex="-1"
-      aria-label="Close sidebar"
+      aria-label=${t("Close sidebar")}
       onClick=${() => update({ sidebar: false })}
     />`}
     <main
@@ -206,38 +210,40 @@ function App() {
         <div class="topbar-left">
           ${(mobile || app.sidebarCollapsed) && html`<${IconButton}
             name="sidebar"
-            label="Open sidebar"
+            label=${t("Open sidebar")}
+            id="talaria-sidebar-toggle"
             onClick=${() => {
               if (mobile) update({ sidebar: true });
               else collapseSidebar(false);
             }}
           />`}<span class="topbar-title"
             >${app.active
-              ? current.title || "Untitled session"
-              : "New session"}</span
+              ? current.title || t("Untitled session")
+              : t("New session")}</span
           >
           ${mobile &&
           app.environment === "development" &&
-          html`<small class="environment-badge">Dev</small>`}
+          html`<small class="environment-badge">${t("Dev")}</small>`}
         </div>
         ${app.active &&
         html`<div class="topbar-actions">
           <${ContextIndicator} key=${app.active} app=${app} />
           <${IconButton}
             name="search"
-            label="Find in session"
+            id="conversation-find-toggle"
+            label=${t("Find in session")}
             aria-pressed=${app.findOpen}
             onClick=${() => update({ findOpen: !app.findOpen })}
           />
           <${IconButton}
             name="chart"
-            label="Session details"
+            label=${t("Session details")}
             onClick=${() =>
               update({ modal: { type: "details", session: current } })}
           />
           <${IconButton}
             name="more"
-            label="Session options"
+            label=${t("Session options")}
             onClick=${() =>
               update({ modal: { type: "session-menu", session: current } })}
           />
@@ -246,44 +252,43 @@ function App() {
       <${ReadinessNotice} app=${app} />
       ${app.error &&
       html`<div class="error-banner" role="alert">
-        <${Icon} name="alert" size=${17} /><span>${app.error}</span
+        <${Icon} name="alert" size=${17} /><span>${t(app.error)}</span
         ><${IconButton}
           name="close"
-          label="Dismiss error"
+          label=${t("Dismiss error")}
           onClick=${() => update({ error: "" })}
         />
       </div>`}
       ${!app.connected &&
       !app.connecting &&
       html`<div class="connection-banner">
-        <span>Connect Hermes to start a session.</span
+        <span>${t("Connect Hermes to start a session.")}</span
         ><button
           class="text-button"
           onClick=${() => update({ modal: "connection" })}
         >
-          Set up connection<${Icon} name="link" size=${15} />
+          ${t("Set up connection")}<${Icon} name="link" size=${15} />
         </button>
       </div>`}
       ${app.connected &&
       (!supports("session_resources") || !supports("run_submission")) &&
       html`<div class="connection-banner" role="status">
-        Update Hermes to a version that supports sessions and chat through
-        its API.
+        ${t("Update Hermes to a version that supports sessions and chat through its API.")}
       </div>`}
       ${app.active || command
         ? html`<${Conversation} key=${app.active} app=${app} command=${app.searchWindow ? null : command} onDismissCommand=${commandActivity.dismiss} />`
         : html`<${Welcome} onSuggestion=${setSuggestion} />`}
       ${app.searchWindow
-        ? html`<div class="child-return"><span>Search result · surrounding messages</span>
-            <button class="text-button" onClick=${() => openSession(app.active)}>View latest messages</button></div>`
+        ? html`<div class="child-return"><span>${t("Search result · surrounding messages")}</span>
+            <button class="text-button" onClick=${() => openSession(app.active)}>${t("View latest messages")}</button></div>`
         : app.readOnlyParent
         ? html`<div class="child-return">
-            <span>Viewing a child session</span
+            <span>${t("Viewing a child session")}</span
             ><button
               class="text-button"
               onClick=${() => openSession(app.readOnlyParent.id)}
             >
-              <${Icon} name="back" size=${17} />Back to parent session
+              <${Icon} name="back" size=${17} />${t("Back to parent session")}
             </button>
           </div>`
         : html`<div key="composer-area" class="composer-area">
@@ -297,14 +302,14 @@ function App() {
             />
             <p class="composer-hint">
               ${running(app.active)
-                ? "Your agent keeps working if you leave."
-                : "Shift + Enter for a new line"}
+                ? t("Your agent keeps working if you leave.")
+                : t("Shift + Enter for a new line")}
             </p>
           </div>`}
     </main>
     ${app.toast &&
     html`<div class="toast" role="status">
-      <${Icon} name="check" size=${17} />${app.toast}
+      <${Icon} name="check" size=${17} />${t(app.toast)}
     </div>`}
     ${(app.modal === "settings" || app.modal?.type === "settings") &&
     html`<${Settings}

@@ -48,6 +48,20 @@ Production Python functions are limited to complexity 10, 12 branches, and 50 st
 
 ESLint checks our JavaScript, excluding vendored libraries. Hook exceptions must explain lifecycle or memoization intent at the exact dependency array. Hygiene checks reject malformed YAML/TOML/JSON, conflict markers, private keys, and files over 1 MiB; debugger checks come from Ruff and ESLint. Static checks supplement behavioral tests, not replace them.
 
+## Translations
+
+English source strings are translation keys. Mark new UI text with `t`, `rich`, `msg`, or `n` from `static/i18n.js`, then regenerate the English catalog:
+
+```sh
+uv run --locked node contrib/i18n.mjs --extract
+```
+
+Translate values in `src/talaria/static/locales/LOCALE.json`; keep the English keys and named placeholders such as `{name}` unchanged. Plural entries use the locale's CLDR categories from native `Intl.PluralRules` (ICU), including `other`; use `n` for counts. Catalogs contain no HTML. Links and code belong in named `rich` placeholders. Do not translate Hermes messages, commands, model identifiers, or paths.
+
+Register a new locale's code, native name, and direction in `i18n.js`. The language selector offers registered locales and **System language** (`auto`); dates and numbers use native `Intl` formatting. Validate with `uv run --locked node contrib/i18n.mjs` and the usual `check --changed`. Framework/catalog edits automatically select catalog tests and language regressions in Chromium and WebKit. Check mobile layouts with expanded text and use logical CSS properties for new directions. Installer and emergency module-loading messages remain English.
+
+Locale choices follow [W3C internationalization guidance](https://www.w3.org/International/quicktips/index.en), [CLDR plural rules](https://cldr.unicode.org/index/cldr-spec/plural-rules), and the browser’s native `Intl` implementation.
+
 ## Releases
 
 PRs run lint only. Publishing a GitHub Release also tests the quality gates, then

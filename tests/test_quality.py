@@ -24,12 +24,18 @@ def prepare_gate_repo(destination):
         "eslint.config.js",
         "contrib/quality.py",
         "contrib/check.py",
+        "contrib/i18n.mjs",
+        "contrib/i18n.py",
         ".gitignore",
     ):
         target = destination / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / name, target)
     (destination / "src/talaria").mkdir(parents=True)
+    catalogs = destination / "src/talaria/static/locales"
+    catalogs.mkdir(parents=True)
+    (catalogs / "en.json").write_text("{}\n")
+    (catalogs.parent / "i18n.js").write_text('export const languages = [{ code: "en" }];\n')
     (destination / ".github/scripts").mkdir(parents=True)
     (destination / ".github/scripts/check.py").write_text("print(42)\n")
     (destination / ".git/info/exclude").write_text("node_modules\n")

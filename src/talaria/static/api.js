@@ -1,6 +1,7 @@
 import { apiURL } from "./profile-context.js";
+import { msg } from "./i18n.js";
 
-export function errorMessage(value, fallback = "Something went wrong. Please try again.") {
+export function errorMessage(value, fallback = msg("Something went wrong. Please try again.")) {
   const text = typeof value === "string" ? value : value?.message;
   return typeof text === "string" && text.trim() ? text.slice(0, 4096) : fallback;
 }
@@ -34,7 +35,7 @@ export async function api(path, options = {}) {
   } catch (error) {
     if (error.name === "AbortError") throw error;
     throw new RequestError(
-      "Connection interrupted. Your work is still with Hermes.",
+      msg("Connection interrupted. Your work is still with Hermes."),
       0,
       "offline",
     );
@@ -48,7 +49,7 @@ export async function api(path, options = {}) {
     // particular, never acknowledge a submission by substituting an empty body.
     if (response.ok)
       throw new RequestError(
-        "The server response could not be read.",
+        msg("The server response could not be read."),
         0,
         "invalid_response",
       );

@@ -65,6 +65,16 @@ CHECK_FILES = {
     "package-lock.json",
     ".npmrc",
 }
+I18N_BROWSER = "tests/test_i18n.py"
+I18N_CATALOGS = "tests/test_i18n_catalogs.py"
+I18N_FILES = {
+    "src/talaria/static/i18n.js",
+    "src/talaria/static/language.js",
+    "contrib/i18n.mjs",
+    "contrib/i18n.py",
+    I18N_BROWSER,
+    I18N_CATALOGS,
+}
 
 
 def plan(paths=None):
@@ -73,6 +83,20 @@ def plan(paths=None):
     paths = [path for path in paths if not docs_only([path])]
     if not paths:
         return {"backend": None, "browsers": False, "native": [], "extra_browser": []}
+    translated = {
+        path
+        for path in paths
+        if path in I18N_FILES or path.startswith("src/talaria/static/locales/")
+    }
+    if translated:
+        scope = plan([path for path in paths if path not in translated])
+        if scope["backend"] is None:
+            scope["backend"] = [I18N_CATALOGS]
+        elif scope["backend"]:
+            scope["backend"].append(I18N_CATALOGS)
+        scope["browsers"] = True
+        scope["extra_browser"].append(I18N_BROWSER)
+        return scope
     local = all(path in CHECK_FILES or path.startswith(".githooks/") for path in paths)
     installer = all(path in INSTALL_FILES or path in CHECK_FILES for path in paths)
     frontend = all(path.startswith("src/talaria/static/") for path in paths)
@@ -186,7 +210,11 @@ def check(full=False, native=False, paths=None):
         if full:
             pytest("-m", "browser", env=browser_env)
         else:
-            files = FOCUSED + scope["extra_browser"] if browser == "chromium" else STREAMING
+            files = (
+                FOCUSED + scope["extra_browser"]
+                if browser == "chromium"
+                else STREAMING + [file for file in scope["extra_browser"] if file == I18N_BROWSER]
+            )
             pytest(
                 *(file for file in dict.fromkeys(files) if Path(file).is_file()),
                 "-m",

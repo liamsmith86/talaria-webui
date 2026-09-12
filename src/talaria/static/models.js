@@ -1,4 +1,5 @@
 import { readStorage, writeStorage } from "./lib.js";
+import { t, msg } from "./i18n.js";
 
 // Project only supported catalog fields; incomplete discovery must not break chat.
 const text = (value) =>
@@ -85,20 +86,20 @@ export function modelInventory(data) {
 }
 
 export const reasoningNames = {
-  auto: "Auto",
-  none: "Off",
-  minimal: "Minimal",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extra high",
-  max: "Maximum",
-  ultra: "Ultra",
+  auto: msg("Auto"),
+  none: msg("Off"),
+  minimal: msg("Minimal"),
+  low: msg("Low"),
+  medium: msg("Medium"),
+  high: msg("High"),
+  xhigh: msg("Extra high"),
+  max: msg("Maximum"),
+  ultra: msg("Ultra"),
 };
 export function reasoningLabel(value, model) {
   const configured = model?.capabilities?.configured_reasoning || model?.configuredReasoning;
-  return reasoningNames[value === "auto" && Object.hasOwn(reasoningNames, configured)
-    ? configured : value] || "Auto";
+  return t(reasoningNames[value === "auto" && Object.hasOwn(reasoningNames, configured)
+    ? configured : value] || reasoningNames.auto);
 }
 export function reasoningOptions(model) {
   if (model?.capabilities?.reasoning === false) return ["auto"];

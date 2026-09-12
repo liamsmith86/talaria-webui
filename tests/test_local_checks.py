@@ -149,6 +149,57 @@ def test_check_selection_is_focused_with_a_conservative_fallback(paths, backend,
     assert (scope["backend"], scope["browsers"], scope["native"]) == (backend, browsers, native)
 
 
+@pytest.mark.parametrize(
+    "path",
+    [*sorted(check.I18N_FILES), "src/talaria/static/locales/fr.json"],
+)
+def test_translation_changes_run_catalog_and_both_browser_checks(path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(check, "lint", lambda **kwargs: None)
+    monkeypatch.setattr(check, "pytest", lambda *args, env: calls.append((args, env)))
+    check.check(paths=[path])
+    backend = [(args, env) for args, env in calls if "not browser and not hermes" in args]
+    assert len(backend) == 1 and check.I18N_CATALOGS in backend[0][0]
+    browser_calls = [(args, env) for args, env in calls if "browser" in args]
+    assert {env["TALARIA_TEST_BROWSER"] for _, env in browser_calls} == {"chromium", "webkit"}
+    assert all(check.I18N_BROWSER in args for args, _ in browser_calls)
+    assert all(any(arg.startswith("tests/") for arg in args) for args, _ in browser_calls)
+
+
+@pytest.mark.parametrize(
+    "paths, expected_backend, expected_native",
+    [
+        (["README.md"], [check.I18N_CATALOGS], []),
+        (
+            ["contrib/check.py"],
+            ["tests/test_local_checks.py", "tests/test_quality.py", check.I18N_CATALOGS],
+            [],
+        ),
+        (["src/talaria/static/markdown.js"], [check.I18N_CATALOGS], []),
+        (["src/talaria/routes.py"], [], []),
+        (
+            ["src/talaria/setup.py"],
+            [*check.INSTALL_TESTS, check.I18N_CATALOGS],
+            ["tests/test_setup.py"],
+        ),
+    ],
+)
+def test_translation_checks_preserve_other_changed_scopes(paths, expected_backend, expected_native):
+    scope = check.plan([*paths, "contrib/i18n.py"])
+    assert scope["backend"] == expected_backend
+    assert scope["native"] == expected_native
+    assert scope["browsers"] and check.I18N_BROWSER in scope["extra_browser"]
+
+
+def test_ordinary_frontend_changes_do_not_add_translation_browser_checks(monkeypatch):
+    calls = []
+    monkeypatch.setattr(check, "lint", lambda **kwargs: None)
+    monkeypatch.setattr(check, "pytest", lambda *args, **kwargs: calls.append(args))
+    check.check(paths=["src/talaria/static/markdown.js"])
+    assert len(calls) == 2
+    assert all(check.I18N_BROWSER not in args for args in calls)
+
+
 def test_changed_checks_include_new_untracked_tests(repo):
     (repo / "app.py").write_text("answer = 42\n")
     base = commit()

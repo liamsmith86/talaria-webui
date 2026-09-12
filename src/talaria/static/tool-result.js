@@ -1,5 +1,6 @@
 import { html, useMemo } from "./lib.js";
 import { ToolCode } from "./tool-code.js";
+import { t } from "./i18n.js";
 
 const PREVIEW_LIMIT = 20000;
 
@@ -38,10 +39,10 @@ export function ToolResult({ text, enabled }) {
   // Do not split an astral character at the preview boundary.
   const end = shortened && /[\uD800-\uDBFF]/.test(output[PREVIEW_LIMIT - 1])
     ? PREVIEW_LIMIT - 1 : PREVIEW_LIMIT;
-  return html`<${ToolCode} text=${output.slice(0, end) || "No output"}
-    label="Tool result" enabled=${enabled} />
+  return html`<${ToolCode} text=${output.slice(0, end) || t("No output")}
+    label=${t("Tool result")} enabled=${enabled} />
     ${shortened && html`<div class="tool-result-more">
-      <small>Preview shortened</small>
-      <button class="text-button" onClick=${() => download(text)}>Download full result</button>
+      <small>${t("Preview shortened")}</small>
+      <button class="text-button" onClick=${() => download(text)}>${t("Download full result")}</button>
     </div>`}`;
 }
