@@ -16,6 +16,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import auth, extensions, installation, metadata, routes, session_views, transcripts, updates
+from .auth_sessions import Revocations
 from .config import Settings
 from .hermes import APIError, Hermes, valid_api_key
 from .profiles import ProfileRouter, Profiles
@@ -183,6 +184,7 @@ def create_app(
         ],
     )
     app.state.settings, app.state.config_path = settings, config_path
+    app.state.revocations = profiles.app.state.revocations if profiles else Revocations(config_path)
     app.state.development = development
     app.state.cookie_name = "talaria_dev_session" if development else auth.COOKIE
     if settings.base_path:

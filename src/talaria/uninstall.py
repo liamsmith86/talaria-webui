@@ -13,6 +13,7 @@ from contextlib import contextmanager, suppress
 from pathlib import Path
 from urllib.request import ProxyHandler, build_opener
 
+from .auth_sessions import revocation_path
 from .deployment import Deployment, DeploymentError, default_directory, locked, run
 from .setup import terminal
 from .setup_services import service_plan
@@ -70,6 +71,7 @@ def uninstall(root, *, yes=False, prompts=None):
     config = validate_uninstall(root, metadata)
     files = [
         config,
+        revocation_path(config),
         *(
             config.parent / name
             for name in (

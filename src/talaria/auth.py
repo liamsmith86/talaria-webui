@@ -47,8 +47,12 @@ def authenticated(request: Request) -> bool:
     try:
         timestamp, nonce, sig = value.split(".")
         age = time.time() - int(timestamp)
-        return 0 <= age < TTL and hmac.compare_digest(
-            signature(request.app.state.settings, f"{timestamp}.{nonce}"), sig
+        return (
+            0 <= age < TTL
+            and hmac.compare_digest(
+                signature(request.app.state.settings, f"{timestamp}.{nonce}"), sig
+            )
+            and not request.app.state.revocations.contains(value)
         )
     except (ValueError, TypeError):
         return False

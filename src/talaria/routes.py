@@ -86,6 +86,10 @@ async def login(request: Request):
 
 
 async def logout(request: Request):
+    state = request.app.state
+    await state.profiles.finish_mutation(
+        state.revocations.revoke(request.cookies[state.cookie_name], auth.TTL)
+    )
     response = JSONResponse({"ok": True})
     response.delete_cookie(
         request.app.state.cookie_name, path=request.app.state.settings.base_path + "/"
