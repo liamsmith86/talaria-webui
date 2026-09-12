@@ -105,13 +105,13 @@ export function ContextIndicator({ app }) {
   const context = data?.context;
   const used = numberValue(context?.used),
     maximum = numberValue(context?.maximum);
+  if (used === null) return null;
   const percent =
-    used !== null && maximum > 0 ? Math.min(100, (used / maximum) * 100) : null;
+    maximum > 0 ? Math.min(100, (used / maximum) * 100) : null;
   const label = percent !== null
     ? `${Math.round(percent)}% context used · last request`
-    : used !== null ? `${count(used)} input tokens · last request` : "Context usage unavailable";
+    : `${count(used)} input tokens · last request`;
   return html`<span class="context-indicator" role="img" aria-label=${label} title=${label}>
-    <${Icon} name="context" size=${18} />${used !== null &&
-    html`<span>${percent !== null ? `${Math.round(percent)}%` : `${count(used)} tokens`}</span>`}
+    <${Icon} name="context" size=${18} /><span>${percent !== null ? `${Math.round(percent)}%` : `${count(used)} tokens`}</span>
   </span>`;
 }
