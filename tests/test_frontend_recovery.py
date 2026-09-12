@@ -17,6 +17,65 @@ def attach(page, name):
     expect(page.get_by_role("button", name=f"Remove {name}", exact=True)).to_be_visible()
 
 
+@pytest.mark.parametrize("banner", ["error", "connection"])
+def test_banners_preserve_the_composer_and_attachment_state(page, banner):
+    attach(page, "keep.png")
+    page.get_by_label("File attachment").set_input_files(
+        {"name": "unsupported.bin", "mimeType": "application/octet-stream", "buffer": b"fixture"}
+    )
+    attachment_error = "Attach an image, or a text/code file up to 200 KB."
+    expect(page.locator(".attachment-error")).to_contain_text(attachment_error)
+    composer = page.get_by_label("Message Hermes", exact=True)
+    composer.fill("Keep the draft I am still writing")
+    page.evaluate("""() => {
+      window.bannerReader = {
+        composer:document.querySelector('.composer-input textarea'),
+        image:document.querySelector('.attachment-chip'),
+        error:document.querySelector('.attachment-error'),
+      };
+    }""")
+
+    def retained():
+        assert page.evaluate("""() =>
+          bannerReader.composer === document.querySelector('.composer-input textarea') &&
+          bannerReader.image === document.querySelector('.attachment-chip') &&
+          bannerReader.error === document.querySelector('.attachment-error')""")
+        expect(composer).to_be_focused()
+        expect(composer).to_have_value("Keep the draft I am still writing")
+        expect(page.locator(".attachment-chip")).to_have_count(1)
+        expect(page.get_by_role("button", name="Remove keep.png", exact=True)).to_be_visible()
+        expect(page.locator(".attachment-error")).to_contain_text(attachment_error)
+
+    if banner == "error":
+        page.evaluate("""async () => {
+          const {fail} = await import('/static/store.js');
+          fail({message:'Synthetic connection error'});
+        }""")
+        notice = page.locator(".error-banner")
+        expect(notice).to_contain_text("Synthetic connection error")
+    else:
+        page.evaluate("""async () => {
+          const {state, update} = await import('/static/store.js');
+          window.bannerCapabilities = state.caps;
+          update({caps:{...state.caps, features:{...state.caps.features, run_submission:false}}});
+        }""")
+        notice = page.locator(".connection-banner")
+        expect(notice).to_contain_text("Update Hermes")
+    retained()
+    if banner == "error":
+        # Exercise the dismissal handler without deliberately moving pointer
+        # focus from the textarea onto the button being removed.
+        page.get_by_role("button", name="Dismiss error", exact=True).dispatch_event("click")
+    else:
+        # This connection banner leaves the textarea enabled. Disconnecting
+        # outright disables it and would intentionally release browser focus.
+        page.evaluate("""async () => {
+          (await import('/static/store.js')).update({caps:window.bannerCapabilities});
+        }""")
+    expect(notice).to_have_count(0)
+    retained()
+
+
 @pytest.mark.parametrize("original_image", [False, True])
 @pytest.mark.parametrize("navigate", [False, True])
 def test_ambiguous_retry_consumes_only_its_original_attachments(
