@@ -198,6 +198,7 @@ def test_failed_check_does_not_repeat_on_every_tab_open(page, update_ui):
     assert len(calls) == 1
 
 
+@pytest.mark.clock
 def test_lost_update_ack_is_not_resent_and_reload_waits_for_new_build(page, update_ui):
     info, _ = update_ui
     sent = []
@@ -226,7 +227,7 @@ def test_lost_update_ack_is_not_resent_and_reload_waits_for_new_build(page, upda
     expect(page.get_by_role("status").filter(has_text="Preparing update")).to_be_visible()
     assert len(sent) == 1
     info["operation"]["status"] = "completed"
-    page.wait_for_timeout(1200)
+    page.clock.fast_forward(1200)
     expect(page.get_by_role("status").filter(has_text="Preparing update")).to_be_visible()
     assert page.evaluate("sessionStorage.getItem('reloads')") == "0"
     info["commit"] = B
@@ -344,6 +345,7 @@ def test_update_startup_recovers_when_mobile_connection_returns(page, update_ui)
             route.abort()
 
 
+@pytest.mark.clock
 def test_failed_module_retry_is_bounded_and_manual_reload_works(page, update_ui):
     info, _ = update_ui
     requests = []
@@ -361,7 +363,11 @@ def test_failed_module_retry_is_bounded_and_manual_reload_works(page, update_ui)
     expect(page.get_by_role("link", name="Reload Talaria")).to_be_visible()
     # A failed import is cached in the document: one full reload retries it,
     # repeated failures leave a working manual control instead of looping.
-    page.wait_for_timeout(2500)
+    if len(requests) < 2:
+        with page.expect_request("**/static/conversation.js"):
+            page.clock.fast_forward(1100)
+    expect(page.get_by_role("link", name="Reload Talaria")).to_be_visible()
+    page.clock.fast_forward(2500)
     assert len(requests) == 2
     unavailable = False
     page.get_by_role("link", name="Reload Talaria").click()

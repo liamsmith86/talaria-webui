@@ -189,8 +189,8 @@ def test_tool_rounds_settle_to_one_ordered_response(page, live_app, monkeypatch,
     assert peer.rewinds == 1
 
 
-def test_settlement_does_not_adopt_an_older_identical_prompt(page):
-    assert page.evaluate("""async () => {
+def test_settlement_does_not_adopt_an_older_identical_prompt(module_page):
+    assert module_page.evaluate("""async () => {
       const {responseSaved}=await import('/static/runs.js');
       const history=[{id:1,role:'user',content:'Again'},
         {id:2,role:'assistant',content:'Earlier answer'}];
@@ -202,8 +202,8 @@ def test_settlement_does_not_adopt_an_older_identical_prompt(page):
     }""")
 
 
-def test_terminal_text_preserves_earlier_rounds_and_closes_working_tools(page):
-    result = page.evaluate("""async () => {
+def test_terminal_text_preserves_earlier_rounds_and_closes_working_tools(module_page):
+    result = module_page.evaluate("""async () => {
       const {applyEvent,responseSaved}=await import('/static/runs.js');
       let live={text:'',tools:[],status:'running'};
       for(const event of [
@@ -227,8 +227,8 @@ def test_terminal_text_preserves_earlier_rounds_and_closes_working_tools(page):
     }
 
 
-def test_late_reasoning_does_not_split_or_duplicate_the_current_markdown(page):
-    result = page.evaluate("""async () => {
+def test_late_reasoning_does_not_split_or_duplicate_the_current_markdown(module_page):
+    result = module_page.evaluate("""async () => {
       const {applyEvent}=await import('/static/runs.js');
       let live={text:'',tools:[],status:'running'};
       for(const event of [
@@ -284,8 +284,8 @@ def test_expired_live_updates_use_the_same_saved_turn_reconciliation(page, live_
     )
 
 
-def test_saved_turn_can_be_recognized_when_its_user_row_is_on_an_older_page(page):
-    assert page.evaluate("""async () => {
+def test_saved_turn_can_be_recognized_when_its_user_row_is_on_an_older_page(module_page):
+    assert module_page.evaluate("""async () => {
       const {responseSaved}=await import('/static/runs.js');
       const history=[{id:150,role:'assistant',tool_calls:[{id:'tool'}]},
         {id:151,role:'tool',content:'result'},

@@ -49,6 +49,7 @@ markers = [
     "browser: requires Playwright",
     "hermes: requires a native Hermes checkout",
     "quality: requires the developer JavaScript and lint toolchain",
+    "clock: install Playwright's clock before application startup",
 ]
 
 [tool.ruff]

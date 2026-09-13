@@ -167,8 +167,8 @@ def test_delayed_focus_response_cannot_replace_new_navigation(page, live_app):
     assert "session=fast-new" in page.url
 
 
-def test_refresh_retries_shifted_offsets_without_duplicates(page):
-    result = page.evaluate("""async () => {
+def test_refresh_retries_shifted_offsets_without_duplicates(module_page):
+    result = module_page.evaluate("""async () => {
         const {historyWindow} = await import('/static/history-page.js');
         const original = window.fetch;
         const rows = Array.from({length:610}, (_, i) =>
@@ -196,10 +196,10 @@ def test_refresh_retries_shifted_offsets_without_duplicates(page):
     assert result["calls"] == 6
 
 
+@pytest.mark.clock
 def test_return_during_cooldown_gets_one_delayed_refresh(page, live_app):
     sid = seed(live_app[1], "cooldown", count=2)
     open_session(page, sid)
-    page.clock.install()
     calls = []
     page.on("request", lambda req: calls.append(req.url))
     page.evaluate("window.dispatchEvent(new Event('focus'))")

@@ -14,11 +14,12 @@ import pytest
     ],
 )
 def test_catalog_refresh_orders_responses_and_keeps_last_usable_data(
-    page, old_failure, new_failure, old_first
+    module_page, old_failure, new_failure, old_first
 ):
-    result = page.evaluate(
+    result = module_page.evaluate(
         """async ([oldFailure, newFailure, oldFirst]) => {
       const s = await import('/static/store.js');
+      s.update({models:[{id:'existing'}], defaultModel:{id:'existing'}});
       const fetch = window.fetch, replies = new Map();
       window.fetch = (url, opts) => String(url).includes('/models')
         ? new Promise(resolve => replies.set(String(url), resolve)) : fetch(url, opts);

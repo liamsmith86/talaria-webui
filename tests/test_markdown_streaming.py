@@ -3,8 +3,8 @@
 from playwright.sync_api import expect
 
 
-def test_streamed_markdown_matches_full_parse_at_every_prefix(page):
-    result = page.evaluate(r"""async () => {
+def test_streamed_markdown_matches_full_parse_at_every_prefix(module_page):
+    result = module_page.evaluate(r"""async () => {
       const {html, render} = await import('/static/lib.js');
       const {Markdown, renderMarkdown} = await import('/static/markdown.js');
       const root = document.createElement('div');
@@ -53,8 +53,8 @@ def test_streamed_markdown_matches_full_parse_at_every_prefix(page):
     assert result.get("checked", 0) > 400, result
 
 
-def test_incremental_scanning_bounds_work_for_long_replies(page):
-    result = page.evaluate(r"""async () => {
+def test_incremental_scanning_bounds_work_for_long_replies(module_page):
+    result = module_page.evaluate(r"""async () => {
       const {MarkdownStream}=await import('/static/markdown-stream.js');
       const {marked}=await import('/static/vendor/marked.js');
       const original=marked.Lexer.prototype.lex;
@@ -82,8 +82,8 @@ def test_incremental_scanning_bounds_work_for_long_replies(page):
         assert case["scanned"] < case["characters"] * 6, case
 
 
-def test_rows_and_items_keep_nodes_through_appends_and_final_reconciliation(page):
-    result = page.evaluate(r"""async () => {
+def test_rows_and_items_keep_nodes_through_appends_and_final_reconciliation(module_page):
+    result = module_page.evaluate(r"""async () => {
       const {html,render}=await import('/static/lib.js');
       const {Markdown}=await import('/static/markdown.js');
       const root=document.createElement('div');document.body.append(root);
@@ -111,8 +111,8 @@ def test_rows_and_items_keep_nodes_through_appends_and_final_reconciliation(page
     assert result == [True, True]
 
 
-def test_completed_blocks_keep_nodes_selection_and_code_scroll_during_stream(page):
-    result = page.evaluate(r"""async () => {
+def test_completed_blocks_keep_nodes_selection_and_code_scroll_during_stream(module_page):
+    result = module_page.evaluate(r"""async () => {
       const {html, render} = await import('/static/lib.js');
       const {Markdown} = await import('/static/markdown.js');
       const root = document.createElement('div'); document.body.append(root);
@@ -137,8 +137,8 @@ def test_completed_blocks_keep_nodes_selection_and_code_scroll_during_stream(pag
     assert result["scroll"] == result["previousScroll"]
 
 
-def test_stream_tail_defers_highlighting_and_finalizes_without_losing_literal_text(page):
-    result = page.evaluate(r"""async () => {
+def test_stream_tail_defers_highlighting_and_finalizes_without_losing_literal_text(module_page):
+    result = module_page.evaluate(r"""async () => {
       const {html, render} = await import('/static/lib.js');
       const {Markdown} = await import('/static/markdown.js');
       const root = document.createElement('div'); document.body.append(root);
@@ -168,8 +168,8 @@ def test_composer_grows_shrinks_and_keeps_a_bounded_height(page):
     assert abs(field.bounding_box()["height"] - initial) <= 1
 
 
-def test_long_inline_groups_preserve_markdown_references_and_existing_nodes(page):
-    result = page.evaluate(r"""async () => {
+def test_long_inline_groups_preserve_markdown_references_and_existing_nodes(module_page):
+    result = module_page.evaluate(r"""async () => {
       const {html, render} = await import('/static/lib.js');
       const {Markdown,renderMarkdown} = await import('/static/markdown.js');
       const root=document.createElement('div'); document.body.append(root);
@@ -195,8 +195,8 @@ def test_long_inline_groups_preserve_markdown_references_and_existing_nodes(page
     assert result == {"stable": True, "matches": True, "links": 150}
 
 
-def test_large_code_stays_complete_without_expensive_highlighting(page):
-    result = page.evaluate(r"""async () => {
+def test_large_code_stays_complete_without_expensive_highlighting(module_page):
+    result = module_page.evaluate(r"""async () => {
       const {renderMarkdown} = await import('/static/markdown.js');
       const source='const greeting = "hello";\n'.repeat(1600);
       const root=document.createElement('div');
@@ -208,8 +208,8 @@ def test_large_code_stays_complete_without_expensive_highlighting(page):
     assert result == {"same": True, "tokens": 0, "copy": True}
 
 
-def test_deferred_highlighting_preserves_code_focus_and_scroll(page):
-    page.evaluate(r"""async () => {
+def test_deferred_highlighting_preserves_code_focus_and_scroll(module_page):
+    module_page.evaluate(r"""async () => {
       const {html, render} = await import('/static/lib.js');
       const {Markdown} = await import('/static/markdown.js');
       const original = window.IntersectionObserver;
@@ -230,11 +230,11 @@ def test_deferred_highlighting_preserves_code_focus_and_scroll(page):
       originalCodeRegion.focus(); originalCodeRegion.scrollLeft = 100;
     }""")
     try:
-        page.wait_for_function("() => !!window.highlightVisibleCode")
-        page.evaluate("window.highlightVisibleCode()")
-        page.wait_for_function("() => document.querySelector('pre .token')")
-        assert page.evaluate("""() => originalCodeRegion.isConnected &&
+        module_page.wait_for_function("() => !!window.highlightVisibleCode")
+        module_page.evaluate("window.highlightVisibleCode()")
+        module_page.wait_for_function("() => document.querySelector('pre .token')")
+        assert module_page.evaluate("""() => originalCodeRegion.isConnected &&
             document.activeElement === originalCodeRegion &&
             originalCodeRegion.scrollLeft === 100""")
     finally:
-        page.evaluate("window.cleanupCodeTest()")
+        module_page.evaluate("window.cleanupCodeTest()")

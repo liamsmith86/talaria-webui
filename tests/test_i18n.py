@@ -75,7 +75,7 @@ def test_shipped_languages_cover_login_and_mobile_settings(browser, live_app, lo
 
 
 @pytest.fixture
-def language_page(browser, live_app):
+def language_page(browser, module_server):
     """Import the real module without app startup choosing a language first."""
     contexts = []
 
@@ -94,7 +94,7 @@ def language_page(browser, live_app):
                 get() { throw new DOMException('Storage blocked', 'SecurityError'); },
             });""")
         page = context.new_page()
-        address = live_app[0] + "/__i18n_test__"
+        address = module_server + "/__i18n_test__"
         page.route(
             address,
             lambda route: route.fulfill(

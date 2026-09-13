@@ -245,9 +245,88 @@ def test_only_successful_matching_revision_checks_are_reused(repo, monkeypatch):
     check.verify_revision(revision, ["app.py"])
     assert len(calls) == 3
     # Native dependencies are external to the Talaria revision and never cached.
+    monkeypatch.setenv("HERMES_SOURCE", "/test/hermes")
     check.verify_revision(revision, ["src/talaria/setup.py"])
     check.verify_revision(revision, ["src/talaria/setup.py"])
-    assert len(calls) == 5
+    assert len(calls) == 6  # One ordinary check and two fresh native checks.
+    assert calls[-2][-2:] == calls[-1][-2:] == ("-m", "hermes")
+
+
+def test_failed_native_check_does_not_discard_successful_local_evidence(repo, monkeypatch):
+    (repo / "app.py").write_text("answer = 42\n")
+    revision = commit()
+    monkeypatch.setenv("HERMES_SOURCE", "/test/hermes")
+    calls = []
+    failing = True
+
+    def run(*args, **kwargs):
+        calls.append(args)
+        if args[-2:] == ("-m", "hermes") and failing:
+            raise subprocess.CalledProcessError(1, args)
+
+    monkeypatch.setattr(check, "run", run)
+    for _ in range(2):
+        with pytest.raises(subprocess.CalledProcessError):
+            check.verify_revision(revision, ["app.py"], native=True)
+    failing = False
+    check.verify_revision(revision, ["app.py"], native=True)
+    assert len(calls) == 4
+    assert "--skip-native" in calls[0]
+    assert all(args[-2:] == ("-m", "hermes") for args in calls[1:])
+    (repo / "app.py").write_text("answer = 43\n")
+    newer = commit()
+    check.verify_revision(newer, ["app.py"], native=True)
+    assert len(calls) == 6 and "--skip-native" in calls[-2]
+
+
+@pytest.mark.parametrize("full", [False, True])
+def test_platform_checks_keep_portable_contracts_and_run_general_logic_once(full, monkeypatch):
+    calls = []
+    monkeypatch.setattr(check, "pytest", lambda *args, **kwargs: calls.append(args))
+    check.platform_check(full=full)
+    paths = [arg for arg in calls[0] if arg.startswith("tests/")]
+    assert paths == ([] if full else check.PLATFORM_TESTS)
+    assert "not browser and not hermes and not quality" in calls[0]
+    assert {
+        "tests/test_setup.py",
+        "tests/test_deployment.py",
+        "tests/test_supervisor.py",
+        "tests/test_operations_qa.py",
+        "tests/test_uninstall.py",
+        "tests/test_cli_shutdown.py",
+    } <= set(check.PLATFORM_TESTS)
+
+
+def test_browser_shards_cover_each_case_once_and_ignore_collection_order():
+    from types import SimpleNamespace
+
+    from tests.conftest import browser_shard
+
+    items = [
+        SimpleNamespace(nodeid=f"tests/test_{i // 4}.py::test_case[{i % 4}]") for i in range(19)
+    ]
+    parts = [browser_shard(items, f"{index}/2") for index in (1, 2)]
+    assert sorted(item.nodeid for part in parts for item in part) == sorted(i.nodeid for i in items)
+    assert abs(len(parts[0]) - len(parts[1])) <= 1
+    assert browser_shard(list(reversed(items)), "1/2") == parts[0]
+    assert browser_shard(items, "1/1") == sorted(items, key=lambda item: item.nodeid)
+
+
+@pytest.mark.parametrize("shard", ["", "0/2", "3/2", "1/0", "1/17", "1", "-1/2", "1/x"])
+def test_invalid_browser_shards_fail_instead_of_omitting_tests(shard):
+    from tests.conftest import browser_shard
+
+    with pytest.raises(pytest.UsageError):
+        browser_shard([], shard)
+
+
+def test_missing_accessibility_engine_fails_before_running_other_checks(monkeypatch):
+    monkeypatch.delenv("TALARIA_AXE_PATH", raising=False)
+    monkeypatch.setattr(
+        check, "lint", lambda **kwargs: pytest.fail("Prerequisites were not checked")
+    )
+    with pytest.raises(SystemExit, match="TALARIA_AXE_PATH"):
+        check.check(paths=["tests/test_accessibility.py"])
 
 
 @pytest.mark.parametrize("mode", ["fixed", "unfixed", "unchanged", "setup-error"])

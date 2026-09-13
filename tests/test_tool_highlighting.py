@@ -78,8 +78,8 @@ def test_tool_commands_highlight_only_when_open_and_keep_their_nodes(page, live_
     assert page.evaluate("window.toolTokenizations") == calls
 
 
-def test_tool_results_wait_until_complete_and_preserve_literal_text(page):
-    result = page.evaluate("""async () => {
+def test_tool_results_wait_until_complete_and_preserve_literal_text(module_page):
+    result = module_page.evaluate("""async () => {
       const {html, render} = await import('/static/lib.js');
       const {ToolCode} = await import('/static/tool-code.js');
       const root = document.createElement('div'); document.body.append(root);
@@ -133,8 +133,8 @@ def test_live_result_coloring_waits_for_tool_completion(page, live_app):
     assert json.loads(result.text_content()) == {"ok": True, "items": [1, 2]}
 
 
-def test_large_unknown_and_unavailable_tool_highlighting_remain_plain(page):
-    result = page.evaluate("""async () => {
+def test_large_unknown_and_unavailable_tool_highlighting_remain_plain(module_page):
+    result = module_page.evaluate("""async () => {
       const {html, render} = await import('/static/lib.js');
       const {ToolCode} = await import('/static/tool-code.js');
       const root = document.createElement('div'); document.body.append(root);

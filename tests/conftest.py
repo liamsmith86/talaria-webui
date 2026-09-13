@@ -3,12 +3,17 @@ import re
 import socket
 import threading
 import time
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from functools import wraps
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 import uvicorn
+from starlette.applications import Starlette
+from starlette.responses import HTMLResponse
+from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
 
 from talaria.app import create_app
 from talaria.auth import hash_password
@@ -19,12 +24,31 @@ from .fake_hermes import KEY, FakeHermes
 
 def pytest_addoption(parser):
     parser.addoption("--fail-on-skip", action="store_true", help="Fail CI on missing test setup")
+    parser.addoption("--browser-shard", help="Run browser partition INDEX/TOTAL (one-based)")
 
 
-def pytest_collection_modifyitems(items):
+def browser_shard(items, shard):
+    if not re.fullmatch(r"[1-9][0-9]*/[1-9][0-9]*", shard):
+        raise pytest.UsageError("--browser-shard must be INDEX/TOTAL, with 1 <= INDEX <= TOTAL")
+    index, total = map(int, shard.split("/"))
+    if not 1 <= index <= total <= 16:
+        raise pytest.UsageError("--browser-shard requires 1 <= INDEX <= TOTAL <= 16")
+    # Round-robin cases, including parameters, spreads expensive files across jobs.
+    return sorted(items, key=lambda item: item.nodeid)[index - 1 :: total]
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(config, items):
     for item in items:
         if "playwright_runtime" in item.fixturenames:
             item.add_marker(pytest.mark.browser)
+    if shard := config.getoption("--browser-shard"):
+        if config.option.markexpr != "browser":
+            raise pytest.UsageError("--browser-shard requires '-m browser'")
+        selected = browser_shard([item for item in items if "browser" in item.keywords], shard)
+        selected_set = set(selected)
+        config.hook.pytest_deselected(items=[item for item in items if item not in selected_set])
+        items[:] = selected
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -105,29 +129,64 @@ def browser(playwright_runtime):
     browser.close()
 
 
-@pytest.fixture
-def page(browser, live_app):
+@contextmanager
+def browser_context(browser):
     # Reuse the process, but isolate cookies, storage, permissions, and routes per test.
     context = browser.new_context(viewport={"width": 1440, "height": 960})
     errors = capture_browser_errors(context)
     try:
-        page = context.new_page()
-        page.goto(live_app[0])
-        page.get_by_label("Password", exact=True).fill("test-password")
-        page.get_by_role("button", name="Sign in").click()
-        page.locator(".topbar-title").wait_for()
-        # Let the simulator's initial discovery finish before starting a scenario.
-        wait_for_store(page, "state => !!state.defaultModel && state.readiness.status === 'ok'")
-        # Startup listing is independent of discovery; finish/supersede it
-        # before tests install artificial session state.
-        page.evaluate("async () => (await import('/static/store.js')).refreshSessions()")
-        yield page
+        yield context
         assert not errors, f"Unhandled browser errors: {errors}"
     finally:
         # Let intercepted requests finish before closing their response context.
         for tab in context.pages:
             tab.unroute_all(behavior="wait")
         context.close()
+
+
+@pytest.fixture
+def page(browser, live_app, request):
+    with browser_context(browser) as context:
+        page = context.new_page()
+        if request.node.get_closest_marker("clock"):
+            page.clock.install()
+        page.goto(live_app[0])
+        page.get_by_label("Password", exact=True).fill("test-password")
+        page.get_by_role("button", name="Sign in").click()
+        page.locator(".topbar-title").wait_for()
+        # Discovery and listing finish before tests install artificial session state.
+        wait_for_store(page, "state => !!state.defaultModel && state.readiness.status === 'ok'")
+        page.evaluate("async () => (await import('/static/store.js')).refreshSessions()")
+        yield page
+
+
+@pytest.fixture(scope="session")
+def module_server():
+    """Real styles/vendor scripts, without application startup or an API server."""
+    static = Path(__file__).resolve().parents[1] / "src/talaria/static"
+    document = (static / "index.html").read_text().split("<body>", 1)[0] + "<body></body></html>"
+    document = re.sub(
+        r'<script type="module"[^>]*></script>|<link rel="modulepreload"[^>]*>', "", document
+    )
+    document = document.replace("__TALARIA_BASE__", "/")
+
+    async def index(request):
+        return HTMLResponse(document)
+
+    app = Starlette(routes=[Route("/", index), Mount("/static", StaticFiles(directory=static))])
+    server, thread, address = serve(app)
+    yield address
+    server.should_exit = True
+    thread.join(6)
+    assert not thread.is_alive(), "Module test server did not shut down cleanly"
+
+
+@pytest.fixture
+def module_page(browser, module_server):
+    with browser_context(browser) as context:
+        page = context.new_page()
+        page.goto(module_server)
+        yield page
 
 
 def capture_browser_errors(context):

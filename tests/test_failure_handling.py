@@ -77,8 +77,8 @@ def test_failed_run_always_displays_a_useful_error(page, error):
     expect(page.get_by_role("button", name="Stop response")).to_have_count(0)
 
 
-def test_structured_api_errors_remain_readable(page):
-    result = page.evaluate("""async () => {
+def test_structured_api_errors_remain_readable(module_page):
+    result = module_page.evaluate("""async () => {
       const {api} = await import('/static/api.js');
       const fetch = window.fetch;
       try {
