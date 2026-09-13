@@ -326,7 +326,6 @@
     "other": "¿Reemplazar este turno y {count} turnos posteriores? Los mensajes eliminados se conservan en el historial archivado de Hermes. Esto no deshace las acciones ya realizadas por las herramientas."
   },
   "Replace this turn? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.": "¿Reemplazar este turno? Los mensajes eliminados se conservan en el historial archivado de Hermes. Esto no deshace las acciones ya realizadas por las herramientas.",
-  "Reply start": "Inicio de la respuesta",
   "Reported cost": "Costo indicado",
   "Research": "Investigación",
   "Resized · {size} KB": "Redimensionada · {size} KB",

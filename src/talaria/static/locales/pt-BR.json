@@ -326,7 +326,6 @@
     "other": "Substituir esta interação e as próximas {count} interações? As mensagens removidas ficam no histórico arquivado do Hermes. Isso não desfaz ações já executadas pelas ferramentas."
   },
   "Replace this turn? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.": "Substituir esta interação? As mensagens removidas ficam no histórico arquivado do Hermes. Isso não desfaz ações já executadas pelas ferramentas.",
-  "Reply start": "Início da resposta",
   "Reported cost": "Custo informado",
   "Research": "Pesquisa",
   "Resized · {size} KB": "Redimensionada · {size} KB",

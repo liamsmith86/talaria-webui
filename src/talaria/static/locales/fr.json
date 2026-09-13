@@ -326,7 +326,6 @@
     "other": "Remplacer cet échange et les {count} échanges suivants ? Les messages retirés restent dans l’historique archivé de Hermes. Cela n’annule pas les actions déjà effectuées par les outils."
   },
   "Replace this turn? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.": "Remplacer cet échange ? Les messages retirés restent dans l’historique archivé de Hermes. Cela n’annule pas les actions déjà effectuées par les outils.",
-  "Reply start": "Début de la réponse",
   "Reported cost": "Coût indiqué",
   "Research": "Recherche",
   "Resized · {size} KB": "Redimensionnée · {size} Ko",

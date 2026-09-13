@@ -322,7 +322,6 @@
     "other": "このやり取りと後続の{count}件を置き換えますか？削除したメッセージはHermesのアーカイブ履歴に残ります。ツールがすでに実行した操作は元に戻りません。"
   },
   "Replace this turn? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.": "このやり取りを置き換えますか？削除したメッセージはHermesのアーカイブ履歴に残ります。ツールがすでに実行した操作は元に戻りません。",
-  "Reply start": "応答の先頭",
   "Reported cost": "報告された料金",
   "Research": "リサーチ",
   "Resized · {size} KB": "サイズ調整済み · {size} KB",

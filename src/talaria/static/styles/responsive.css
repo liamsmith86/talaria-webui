@@ -73,7 +73,7 @@
   }
   .conversation-viewport {
     padding-left: 25px;
-    padding-right: 25px;
+    padding-right: 52px;
   }
   .composer-hint {
     display: none;
@@ -219,7 +219,7 @@
     margin-right: 4px;
   }
   .conversation-viewport {
-    padding: 8px 20px 0;
+    padding: 8px 52px 0 20px;
   }
   .conversation-content {
     padding-top: 12px;

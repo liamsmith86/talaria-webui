@@ -1,4 +1,20 @@
-import { useEffect, useState } from "./lib.js";
+import { useCallback, useEffect, useRef, useState } from "./lib.js";
+
+export function useScrollControls(session, available) {
+  const [visible, setVisible] = useState(false);
+  const timer = useRef();
+  const reveal = useCallback(() => {
+    setVisible(true);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setVisible(false), 2000);
+  }, []);
+  useEffect(() => {
+    if (available) reveal();
+    else setVisible(false);
+    return () => clearTimeout(timer.current);
+  }, [session, available, reveal]);
+  return { visible, reveal };
+}
 
 // Only measure replies intersecting the viewport, once per frame. Streaming
 // text does not rescan the transcript or create an observer for every token.

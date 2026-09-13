@@ -324,7 +324,6 @@
     "other": "Diesen Gesprächsschritt und {count} spätere Gesprächsschritte ersetzen? Entfernte Nachrichten bleiben im archivierten Verlauf von Hermes erhalten. Bereits ausgeführte Werkzeugaktionen werden dadurch nicht rückgängig gemacht."
   },
   "Replace this turn? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.": "Diesen Gesprächsschritt ersetzen? Entfernte Nachrichten bleiben im archivierten Verlauf von Hermes erhalten. Bereits ausgeführte Werkzeugaktionen werden dadurch nicht rückgängig gemacht.",
-  "Reply start": "Antwortanfang",
   "Reported cost": "Gemeldete Kosten",
   "Research": "Recherche",
   "Resized · {size} KB": "Verkleinert · {size} KB",

@@ -150,7 +150,7 @@
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
-  padding: 10px 36px 0;
+  padding: 10px 52px 0 36px;
 }
 .conversation-content {
   max-width: 726px;
@@ -566,31 +566,39 @@
 }
 .conversation-jumps {
   position: absolute;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 12px;
+  right: 8px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  transition: opacity 180ms ease;
+}
+.conversation-jumps.is-idle {
+  opacity: 0;
+  pointer-events: none;
+}
+.conversation-jumps:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: hover) {
+  .conversation-jumps:hover {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 .jump-bottom,
 .jump-reply {
   border: 1px solid var(--line);
   box-shadow: 0 3px 12px #0001;
   background: var(--surface);
-  border-radius: 24px;
-  min-width: 44px;
-  height: 44px;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-.jump-reply {
-  gap: 7px;
-  padding: 0 14px;
-  font-size: 12px;
-  font-weight: 550;
-  white-space: nowrap;
 }
 .jump-bottom:hover,
 .jump-reply:hover {

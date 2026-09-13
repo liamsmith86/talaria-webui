@@ -322,7 +322,6 @@
     "other": "替换此轮及之后的 {count} 轮对话？移除的消息会保留在 Hermes 的归档历史中。此操作不会撤销工具已执行的操作。"
   },
   "Replace this turn? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.": "替换此轮对话？移除的消息会保留在 Hermes 的归档历史中。此操作不会撤销工具已执行的操作。",
-  "Reply start": "回复开头",
   "Reported cost": "报告的费用",
   "Research": "研究",
   "Resized · {size} KB": "已调整尺寸 · {size} KB",
