@@ -1,4 +1,5 @@
 import { formatNumber, msg, t } from "./i18n.js";
+import { randomId } from "./lib.js";
 // Drafts, submission receipts, and a bounded cache of originals Hermes may omit.
 import { databaseName } from "./profile-context.js";
 const MAX_IMAGE = 2 * 1024 * 1024;
@@ -440,7 +441,7 @@ export async function prepareImage(file) {
     if (!blob || blob.size > MAX_IMAGE)
       throw new Error(msg("This image is still too large. Try a smaller version."));
     return {
-      id: crypto.randomUUID(),
+      id: randomId(),
       name: file.name || msg("Pasted image"),
       ...(!file.name ? { pastedName: true } : {}),
       url: await dataURL(blob),

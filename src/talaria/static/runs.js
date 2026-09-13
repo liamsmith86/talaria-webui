@@ -14,7 +14,7 @@ import {
   refreshSessionDetails,
   refreshReadiness,
 } from "./store.js";
-import { readStorage, writeStorage } from "./lib.js";
+import { randomId, readStorage, writeStorage } from "./lib.js";
 import {
   pendingStorage,
   consumePendingImages,
@@ -377,7 +377,7 @@ export async function sendMessage(
     }
     refreshSessions().catch(fail);
   }
-  const requestId = crypto.randomUUID();
+  const requestId = randomId();
   const requestedModel = model?.inherited ? null : model;
   const payload = {
     input: text,

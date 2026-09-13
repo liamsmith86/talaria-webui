@@ -19,19 +19,24 @@ name = "talaria-ci-" + uuid.uuid4().hex[:12]
 volume = name + "-data"
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 public_url = sys.argv[2] if len(sys.argv) > 2 else ""
+port = int(sys.argv[3]) if len(sys.argv) > 3 else 8766
 prefix = urlsplit(public_url).path.rstrip("/")
 start = (
     "run",
     "--detach",
     "--name",
     name,
+    "--health-interval",
+    "1s",
     "--publish",
-    "127.0.0.1::8766",
+    f"127.0.0.1::{port}",
     "--mount",
     f"type=volume,source={volume},target=/data",
     sys.argv[1],
     "--host",
     "0.0.0.0",
+    "--port",
+    str(port),
     *(["--public-url", public_url] if public_url else []),
 )
 try:
@@ -40,14 +45,17 @@ try:
     def ready():
         # Docker may assign a different ephemeral host port after a restart.
         ports = json.loads(docker("inspect", name))[0]["NetworkSettings"]["Ports"]
-        base = f"http://127.0.0.1:{ports['8766/tcp'][0]['HostPort']}"
+        base = f"http://127.0.0.1:{ports[f'{port}/tcp'][0]['HostPort']}"
         for _ in range(60):
             try:
                 with opener.open(base + "/health", timeout=2) as response:
                     assert json.load(response)["status"] == "ok"
-                return base
+                health = json.loads(docker("inspect", name))[0]["State"]["Health"]["Status"]
+                if health == "healthy":
+                    return base
             except OSError:
-                time.sleep(0.5)
+                pass
+            time.sleep(0.5)
         raise AssertionError("Container did not become healthy")
 
     base = ready()

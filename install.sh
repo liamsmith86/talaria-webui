@@ -9,7 +9,7 @@ fail() { printf 'Talaria: %s\n' "$*" >&2; exit 1; }
 install_deps=false
 interactive=true
 repository=https://github.com/liamsmith86/talaria-webui.git
-branch=main
+branch=stable
 forward=()
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -27,7 +27,7 @@ Existing installations update Talaria without repeating setup or Hermes changes.
 
   --non-interactive             Use defaults without prompts
   --install-deps                Allow installing missing Git, uv, and Python
-  --repository URL --branch REF Trusted source (default: Talaria main)
+  --repository URL --branch REF Trusted source (default: validated stable release)
   --directory PATH --config PATH
   --bind local|lan|all          Default: local; --host IP overrides
   --port PORT --public-url URL  Public URL may include /talaria

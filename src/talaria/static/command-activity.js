@@ -1,4 +1,4 @@
-import { html, useEffect, useRef, useState, Icon, IconButton, readStorage, writeStorage } from "./lib.js";
+import { html, useEffect, useRef, useState, Icon, IconButton, randomId, readStorage, writeStorage } from "./lib.js";
 import { api } from "./api.js";
 import { state, openSession, refreshHistory, refreshSessionDetails, refreshSessions, navigationVersion } from "./store.js";
 import { duration } from "./content.js";
@@ -85,7 +85,7 @@ export function useCommandActivity(app) {
 
   async function start(command, args, session, text) {
     if (starting.current || pendingRef.current) throw new Error(msg("Wait for the current command to finish."));
-    const job = { id: crypto.randomUUID(), session, command, args, started: Date.now(), afterId: state.history.at(-1)?.id || 0 };
+    const job = { id: randomId(), session, command, args, started: Date.now(), afterId: state.history.at(-1)?.id || 0 };
     starting.current = true;
     setWaiting(false);
     setFeedback({ ...job, status: "starting" });

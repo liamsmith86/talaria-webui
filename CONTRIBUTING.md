@@ -38,7 +38,7 @@ This runs the selected tests against current code and a temporary copy of the ba
 
 Use synchronous Playwright polling predicates; the browser fixtures reject async predicates because they can return before the condition becomes true. Exercise event sequences and user intent (navigate during a request, reconnect, interrupt, scroll upward), not only isolated state snapshots. Distinguish reproduced bugs, preventive changes, and cleanup in PR descriptions, including the evidence and its limits.
 
-The small [native stream fixture](tests/fixtures/README.md) comes from the actual Hermes adapter with synthetic model output. Native tests check for contract drift; browser tests replay its event ordering with fragmented and batched delivery. It covers completed responses; interrupted and tool-heavy turns still rely on separate constructed scenarios.
+The small [native stream fixtures](tests/fixtures/README.md) come from the actual Hermes adapter with synthetic model output. Native tests check for contract drift; browser tests replay completed replies, tools, interruption, and provider failure with fragmented and batched delivery.
 
 ## Static quality gates
 
@@ -64,10 +64,13 @@ Locale choices follow [W3C internationalization guidance](https://www.w3.org/Int
 
 ## Releases
 
-PRs run lint only. Publishing a GitHub Release also tests the quality gates, then
+Private PRs run lint only. Public PRs also run affected backend tests and focused
+Chromium regressions. Publishing a GitHub Release tests the quality gates, then
 runs backend/installation tests on Linux,
 Linux ARM64, macOS and WSL2, all three browser engines with accessibility checks,
 and pinned native Hermes contracts. Browser tests have a two-minute per-test limit with thread dumps for hangs.
+The pinned Hermes baseline is `205645ee424163c7b6cfc032c331c3557797497b`.
+A weekly canary tests Hermes `main`; select **hermes_latest** to run it on demand.
 Each Docker architecture is built and smoke-tested
 before publication. Run **Actions → CI → Run workflow → full** for the non-container
 suite on demand, or leave **full** off and select one **browser** for a focused run.
@@ -80,6 +83,11 @@ as a prerelease (alpha/beta also work). Drafts and ordinary tag pushes do not pu
 
 Successful releases publish `ghcr.io/liamsmith86/talaria-webui:VERSION` for AMD64
 and ARM64. The newest successful stable version also becomes `:latest`; prereleases
-and older reruns cannot replace it. Existing version tags are never overwritten.
+and older reruns cannot replace it. The `stable` source branch advances only after
+the full suite and both Docker architectures pass. New installs and managed updates
+follow that branch; `--branch main` explicitly opts into development builds.
+Existing installations retain their configured repository and branch.
+Protect `stable` with the **Release validation** status check and disable force pushes/deletion.
+Existing version tags are never overwritten.
 If publication fails, rerun the workflow. Package visibility is managed separately;
 the workflow never changes it.

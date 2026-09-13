@@ -4,7 +4,6 @@ import { state, update, useStore } from "./store.js";
 import { Installation } from "./installation.js";
 import { msg, t } from "./i18n.js";
 
-const installURL = "hermes://plugin/install?repo=liamsmith86%2Ftalaria-webui%2Fsrc%2Ftalaria%2Fhermes_plugin&enable=1";
 const releaseLabels = {
   current: msg("Matches this Talaria release"),
   outdated: msg("Plugin update available"),
@@ -62,16 +61,13 @@ export function ExtendedAccess({ onSaved }) {
     ${error && html`<p class="form-error" role="alert">${t(error)}</p>`}
     <div class="dialog-actions">
       ${needsInstall && html`<a class="button secondary"
-        href=${installURL + (available ? "&force=1" : "")}>
-        ${available ? t("Update in Hermes Desktop") : t("Install in Hermes Desktop")}
+        href="https://github.com/liamsmith86/talaria-webui#hermes-plugin" target="_blank" rel="noopener noreferrer">
+        ${t("Server installation instructions")}
       </a>`}
       <button class="button secondary" disabled=${busy} onClick=${refresh}>
         ${busy ? t("Checking…") : t("Check again")}
       </button>
     </div>
-    ${needsInstall && html`<p class="field-help">
-      <a href="https://github.com/liamsmith86/talaria-webui#hermes-plugin" target="_blank" rel="noopener noreferrer">${t("Server installation instructions")}</a>
-    </p>`}
     ${needsInstall && html`<${Installation} pluginOnly=${true} />`}
   </section>`;
 }

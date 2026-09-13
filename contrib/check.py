@@ -254,10 +254,48 @@ def pre_commit():
 
 def docs_only(paths):
     return bool(paths) and all(
-        path in {"README.md", "CONTRIBUTING.md", "LICENSE", "CHANGELOG.md"}
+        path in {"README.md", "CONTRIBUTING.md", "LICENSE", "CHANGELOG.md", ".github/SECURITY.md"}
         or path.startswith("docs/")
         for path in paths
     )
+
+
+def ci_scope(paths):
+    scope = plan(paths)
+    # Quality-gate self-tests need the full developer toolchain at release time.
+    backend = scope["backend"]
+    if backend and all(
+        path in {"tests/test_local_checks.py", "tests/test_quality.py"} for path in backend
+    ):
+        backend = None
+    return {**scope, "backend": backend}
+
+
+def ci_check(base, describe=False):
+    scope = ci_scope(changed_paths(base, "HEAD"))
+    if describe:
+        print(f"runtime={str(scope['backend'] is not None or scope['browsers']).lower()}")
+        print(f"browser={str(scope['browsers']).lower()}")
+        return
+    env = environment()
+    if scope["backend"] is not None:
+        pytest(*scope["backend"], "-m", "not browser and not hermes and not quality", env=env)
+    if scope["browsers"]:
+        files = [
+            "tests/test_browser.py",
+            "tests/test_http_lan.py",
+            *FOCUSED,
+            *scope["extra_browser"],
+        ]
+        pytest(
+            *(path for path in dict.fromkeys(files) if Path(path).is_file()),
+            "-m",
+            "browser",
+            "--timeout=120",
+            "--timeout-method=thread",
+            "--max-worker-restart=0",
+            env={**env, "TALARIA_TEST_BROWSER": "chromium"},
+        )
 
 
 def changed_paths(base, revision=None):
@@ -435,6 +473,9 @@ def main():
     command = commands.add_parser("prove")
     command.add_argument("--base", required=True)
     command.add_argument("tests", nargs="+")
+    command = commands.add_parser("ci", help="Selected backend and Chromium checks for public PRs")
+    command.add_argument("--base", default="HEAD^", help="Base commit of the PR merge checkout")
+    command.add_argument("--plan", action="store_true", help="Print required CI setup")
     args = parser.parse_args()
     if args.command == "pre-commit":
         pre_commit()
@@ -444,6 +485,8 @@ def main():
         lint()
     elif args.command == "prove":
         prove(args.base, args.tests)
+    elif args.command == "ci":
+        ci_check(args.base, args.plan)
     elif args.command == "check" and args.revision:
         revision = git("rev-parse", f"{args.revision}^{{commit}}")
         base = git("merge-base", args.base, revision)

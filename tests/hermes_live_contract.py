@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import re
+from pathlib import Path
 from unittest.mock import patch
 
 from tools import clarify_gateway
@@ -16,12 +18,88 @@ async def wait_for(check):
     raise AssertionError("Native run did not reach the expected state")
 
 
-async def verify_live(client, adapter, db, planned, seen):
+async def verify_live(client, adapter, db, planned, seen, home):
     for mode in ("answer", "batch", "skip", "stop", "timeout"):
         with patch.object(
             clarify_gateway, "get_clarify_timeout", return_value=1 if mode == "timeout" else 30
         ):
-            await verify_mode(client, adapter, db, planned, seen, mode)
+            events, sid = await verify_mode(client, adapter, db, planned, seen, mode)
+            if mode in {"answer", "stop"}:
+                capture(
+                    home,
+                    "tools" if mode == "answer" else "interrupted",
+                    events,
+                    db.get_messages(sid),
+                )
+    await verify_failure(client, adapter, db, planned, home)
+
+
+def capture(home, name, events, messages):
+    """Keep synthetic contract fields; normalize only volatile IDs and elapsed time."""
+    fields = {
+        "event",
+        "delta",
+        "text",
+        "output",
+        "tool",
+        "preview",
+        "tool_call_id",
+        "question",
+        "choices",
+        "multi_select",
+        "request_id",
+        "error",
+    }
+    trace = {
+        "events": [
+            {k: v for k, v in event.items() if k in fields}
+            for event in events
+            if event.get("event") != "talaria.status"
+        ],
+        "messages": [
+            {k: v for k, v in row.items() if k in {"role", "content", "tool_calls", "tool_call_id"}}
+            for row in messages
+        ],
+    }
+    text = json.dumps(trace, indent=2)
+    text = re.sub(r'("request_id": ")[0-9a-f]{32}(\")', r"\1fixture-request\2", text)
+    text = re.sub(r"\(\d+(?:\.\d+)?s elapsed\)", "(elapsed)", text)
+    Path(home, f"stream-{name}.json").write_text(text + "\n")
+
+
+async def verify_failure(client, adapter, db, planned, home):
+    sid = "provider-failure"
+    db.create_session(sid, "api_server")
+    planned.append({"http_error": True})
+    headers = {"Authorization": "Bearer fixture-key", "Idempotency-Key": sid}
+    try:
+        response = await client.post(
+            "/talaria/v1/runs",
+            headers=headers,
+            json={
+                "session_id": sid,
+                "input": "Exercise a provider error",
+                "live_interactions": True,
+            },
+        )
+        assert response.status == 202, await response.text()
+        rid = (await response.json())["run_id"]
+        task = adapter._active_run_tasks[rid]
+        stream = await client.get(f"/v1/runs/{rid}/events", headers=headers)
+        events = [
+            json.loads(line[6:])
+            for line in (await asyncio.wait_for(stream.text(), 30)).splitlines()
+            if line.startswith("data: ")
+        ]
+        await asyncio.wait_for(task, 30)
+        capture(home, "failure", events, db.get_messages(sid))
+        assert adapter._run_statuses[rid]["status"] == "failed"
+        assert any(
+            e.get("event") == "run.failed" and "Synthetic model unavailable" in e.get("error", "")
+            for e in events
+        )
+    finally:
+        planned.clear()
 
 
 async def verify_mode(client, adapter, db, planned, seen, mode):
@@ -138,6 +216,7 @@ async def verify_mode(client, adapter, db, planned, seen, mode):
         else:
             assert result["timed_out"] is True
     planned.clear()
+    return events, sid
 
 
 async def verify_answer(client, adapter, rid, headers, prompt):

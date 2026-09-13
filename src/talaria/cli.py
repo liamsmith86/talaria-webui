@@ -21,6 +21,10 @@ def development_app():
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "healthcheck":
+        from .container_health import main as healthcheck
+
+        return healthcheck()
     if (
         os.name == "nt"
         and len(sys.argv) > 1
@@ -105,13 +109,18 @@ def serve():
         print(f"Initial sign-in password saved to {private_path}", flush=True)
     if args.dev:
         os.environ["TALARIA_DEV_CONFIG"] = str(args.config.resolve())
+    host, port = args.host or settings.host, args.port or settings.port
+    if os.environ.get("TALARIA_CONTAINER") == "1":
+        from .container_health import record
+
+        record(host, port)
     run(
         "talaria.cli:development_app" if args.dev else create_app(settings, args.config),
         factory=args.dev,
         reload=args.dev,
         reload_dirs=[str(Path(__file__).parent)] if args.dev else None,
-        host=args.host or settings.host,
-        port=args.port or settings.port,
+        host=host,
+        port=port,
         proxy_headers=False,
         access_log=False,
         timeout_graceful_shutdown=8,

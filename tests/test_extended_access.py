@@ -292,9 +292,11 @@ def test_native_hermes_contract(tmp_path, contract, provider):
     )
     assert result.returncode == 0, result.stdout + result.stderr
     if contract == "hermes_context_contract.py":
-        expected = Path(__file__).with_name("fixtures") / "hermes-completed.json"
-        captured = json.loads((tmp_path / "stream.json").read_text())
-        assert captured == json.loads(expected.read_text())
+        for name in ("completed", "tools", "interrupted", "failure"):
+            expected = Path(__file__).with_name("fixtures") / f"hermes-{name}.json"
+            filename = "stream.json" if name == "completed" else f"stream-{name}.json"
+            captured = json.loads((tmp_path / filename).read_text())
+            assert captured == json.loads(expected.read_text()), name
 
 
 @pytest.mark.parametrize("used,label", [(43565, "43,565 tokens"), (0, "0 tokens")])

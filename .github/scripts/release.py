@@ -137,5 +137,55 @@ def publish():
     verify_index(inspect(image + ":latest") or {}, tag, revision)
 
 
+def github(path, data=None, *, missing=False):
+    command = ["gh", "api", path]
+    if data is not None:
+        command += [
+            "--method",
+            "PATCH" if path.endswith("refs/heads/stable") else "POST",
+            "--input",
+            "-",
+        ]
+    result = subprocess.run(
+        command,
+        input=json.dumps(data) if data is not None else None,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode:
+        if missing and "HTTP 404" in result.stderr:
+            return None
+        raise RuntimeError(
+            "GitHub release promotion failed; no forced branch update was attempted."
+        )
+    return json.loads(result.stdout)
+
+
+def promote():
+    """Advance the install source only after this stable release's images are verified."""
+    tag, core, prerelease, _ = release_version()
+    if prerelease:
+        return
+    repository = os.environ["GITHUB_REPOSITORY"]
+    revision = os.environ["GITHUB_SHA"]
+    latest = inspect("ghcr.io/" + repository.lower() + ":latest") or {}
+    latest_tag = latest.get("annotations", {}).get(VERSION, "")
+    if version(latest_tag)[0] > core:
+        return  # An older rerun must not move the source behind the newest release.
+    verify_index(latest, tag, revision)
+    reference = github(f"repos/{repository}/git/ref/heads/stable", missing=True)
+    if reference and reference["object"]["sha"] == revision:
+        return
+    if reference:
+        # GitHub rejects a rewind or divergent history, including concurrent updates.
+        github(f"repos/{repository}/git/refs/heads/stable", {"sha": revision, "force": False})
+    else:
+        github(f"repos/{repository}/git/refs", {"ref": "refs/heads/stable", "sha": revision})
+    confirmed = github(f"repos/{repository}/git/ref/heads/stable")
+    if confirmed["object"]["sha"] != revision:
+        raise RuntimeError("Stable source promotion could not be verified.")
+
+
 if __name__ == "__main__":
-    {"validate": validate, "publish": publish}[sys.argv[1]]()
+    {"validate": validate, "publish": publish, "promote": promote}[sys.argv[1]]()

@@ -7,6 +7,7 @@ import {
   Icon,
   IconButton,
   writeStorage,
+  randomId,
 } from "./lib.js";
 import { api } from "./api.js";
 import { t, n, rich, formatNumber, msg } from "./i18n.js";
@@ -37,7 +38,7 @@ export function Dialog({
   dismissible = true,
 }) {
   const ref = useRef();
-  const titleId = useRef(`dialog-${crypto.randomUUID()}`).current;
+  const [titleId] = useState(() => `dialog-${randomId()}`);
   useEffect(() => {
     const el = ref.current,
       previous = document.activeElement;

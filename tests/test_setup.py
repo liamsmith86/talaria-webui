@@ -302,10 +302,10 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
     project = Path(__file__).resolve().parents[1]
     remote = tmp_path / "remote"
     remote.mkdir()
-    for name in ("pyproject.toml", "uv.lock", ".gitignore", "install.sh"):
+    for name in ("pyproject.toml", "uv.lock", ".gitignore", "install.sh", "README.md", "LICENSE"):
         shutil.copyfile(project / name, remote / name)
     shutil.copytree(project / "src", remote / "src", ignore=shutil.ignore_patterns("__pycache__"))
-    run(["git", "init", "-b", "main", remote])
+    run(["git", "init", "-b", "stable", remote])
     run(
         [
             "git",
@@ -408,7 +408,27 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
         else:
             assert config.read_bytes() == saved
             assert json.loads((root / "current/release.json").read_text())["commit"] == run(
-                ["git", "-C", remote, "rev-parse", "HEAD"]
+                ["git", "-C", remote, "rev-parse", "stable"]
+            )
+        if attempt == 1:
+            # An unvalidated development commit must not be installed, even if
+            # it is the source repository's default branch.
+            run(["git", "-C", remote, "checkout", "-b", "main"])
+            (remote / "src/talaria/__init__.py").write_text("raise RuntimeError('unreleased')\n")
+            run(["git", "-C", remote, "add", "."])
+            run(
+                [
+                    "git",
+                    "-C",
+                    remote,
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.invalid",
+                    "commit",
+                    "-m",
+                    "Unvalidated development commit",
+                ]
             )
     installed = run(
         [root / "current/venv/bin/python", "-c", "import talaria; print(talaria.__file__)"]
