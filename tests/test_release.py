@@ -118,6 +118,8 @@ def registry(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("GITHUB_REPOSITORY", "owner/app")
     monkeypatch.setenv("GITHUB_SHA", "test-commit")
+    monkeypatch.setenv("GITHUB_SERVER_URL", "https://github.com")
+    monkeypatch.setenv("GITHUB_RUN_ID", "123")
     monkeypatch.setenv("RELEASE_TAG", "v1.2.3")
     monkeypatch.setenv("RELEASE_PRERELEASE", "false")
     (tmp_path / "digests").mkdir()
@@ -239,6 +241,12 @@ def test_workflow_gates_publication_and_keeps_prs_lightweight():
     assert workflow["jobs"]["checks"]["with"]["full"] is True
     assert workflow["jobs"]["publish"]["needs"] == "checks"
     assert workflow["jobs"]["manifest"]["needs"] == "publish"
+    assert workflow["jobs"]["manifest"]["permissions"]["statuses"] == "write"
+    assert all(
+        job.get("permissions", {}).get("statuses") != "write"
+        for name, job in workflow["jobs"].items()
+        if name != "manifest"
+    )
     assert ci["jobs"]["behavior"]["if"] == (
         "github.event_name == 'pull_request' && !github.event.repository.private"
     )
@@ -301,7 +309,8 @@ def test_stable_source_promotes_only_verified_images(registry, monkeypatch, exis
         nonlocal revision
         if data:
             writes.append((path, data))
-            revision = data["sha"]
+            if "sha" in data:
+                revision = data["sha"]
         return {"object": {"sha": revision}} if revision else None
 
     monkeypatch.setattr(release, "github", github)
@@ -309,14 +318,43 @@ def test_stable_source_promotes_only_verified_images(registry, monkeypatch, exis
     assert revision == "test-commit"
     if existing == "test-commit":
         assert writes == []
-    elif existing:
-        assert writes == [
+        return
+    assert writes[0] == (
+        "repos/owner/app/statuses/test-commit",
+        {
+            "state": "success",
+            "context": "Talaria stable release",
+            "description": "v1.2.3: tests and Docker images verified",
+            "target_url": "https://github.com/owner/app/actions/runs/123",
+        },
+    )
+    if existing:
+        assert writes[1:] == [
             ("repos/owner/app/git/refs/heads/stable", {"sha": "test-commit", "force": False})
         ]
     else:
-        assert writes == [
+        assert writes[1:] == [
             ("repos/owner/app/git/refs", {"ref": "refs/heads/stable", "sha": "test-commit"})
         ]
+
+
+def test_failed_release_status_cannot_advance_stable(registry, monkeypatch):
+    registry[0]["ghcr.io/owner/app:latest"] = index("v1.2.3")
+    calls = []
+
+    def github(path, data=None, **kwargs):
+        calls.append((path, data))
+        if data:
+            raise RuntimeError("Status publication failed")
+        return {"object": {"sha": "previous-commit"}}
+
+    monkeypatch.setattr(release, "github", github)
+    with pytest.raises(RuntimeError, match="Status publication failed"):
+        release.promote()
+    assert [path for path, _ in calls] == [
+        "repos/owner/app/git/ref/heads/stable",
+        "repos/owner/app/statuses/test-commit",
+    ]
 
 
 @pytest.mark.parametrize("tag,prerelease", [("v1.2.3-rc.1", "true"), ("v1.2.2", "false")])

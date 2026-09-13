@@ -177,6 +177,20 @@ def promote():
     reference = github(f"repos/{repository}/git/ref/heads/stable", missing=True)
     if reference and reference["object"]["sha"] == revision:
         return
+    # Tag-triggered check runs are not recognized by protected branch updates.
+    # Report the verified release on the commit before its guarded fast-forward.
+    github(
+        f"repos/{repository}/statuses/{revision}",
+        {
+            "state": "success",
+            "context": "Talaria stable release",
+            "description": f"{tag}: tests and Docker images verified",
+            "target_url": (
+                f"{os.environ['GITHUB_SERVER_URL']}/{repository}"
+                f"/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+            ),
+        },
+    )
     if reference:
         # GitHub rejects a rewind or divergent history, including concurrent updates.
         github(f"repos/{repository}/git/refs/heads/stable", {"sha": revision, "force": False})
