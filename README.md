@@ -9,9 +9,20 @@ A lightweight web-based interface for using Hermes Agent.
 
 Talaria WebUI is a lightweight, performant, and secure application for chatting with your Hermes Agent. The core development principle is that Talaria should remain a thin interface layer over your existing Hermes Agent, and as such all agentic system management including settings, prefills, and sessions are handled by your Hermes Agent software and are not subject to a third party reinterpretation.
 
-Talaria WebUI uses Hermes Agent's [API server](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server) feature to interface wtih your agent and upon installation you will be prompted to enter an API key for connectivity.
+Talaria WebUI uses Hermes Agent's [API server](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server) feature to interface with your agent and upon installation you will be prompted to enter an API key for connectivity.
 
 Optionally you can install the Talaria Hermes Agent plugin, a lightweight extension for your Hermes Agent app which extends the information returned by the API. This allows Talaria WebUI to deliver a more polished experience; for example, the Hermes Agent API does not yet return context information with session data. This plugin allows us to continue offloading as much functionality to Hermes Agent's existing code without reinventing the wheel ourselves.
+
+**[Try the demo](https://talaria.everla.st)** — sample sessions and placeholder replies.
+
+![Talaria on desktop: a streamed reply, code and tool details](.github/assets/demo-desktop.gif)
+
+<details>
+<summary>Mobile preview</summary>
+
+![Talaria on mobile: session navigation and a streamed checklist](.github/assets/demo-mobile.gif)
+
+</details>
 
 ## Installation
 
@@ -48,9 +59,7 @@ Omit `tls` to let Caddy manage the certificate. Keep the private key readable on
 
 ### Install via Docker
 
-Install [Docker](https://docs.docker.com/get-started/get-docker/), then choose either option below.
-
-#### GitHub Container Registry
+With [Docker](https://docs.docker.com/get-started/get-docker/) installed:
 
 For registry login, use your GitHub username and a [classic token](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic) with `read:packages` as the password.
 
@@ -62,7 +71,8 @@ docker run -d --name talaria --restart unless-stopped \
   ghcr.io/liamsmith86/talaria-webui:latest
 ```
 
-#### Build from Git
+<details>
+<summary>Build from source instead</summary>
 
 ```sh
 git clone --branch stable https://github.com/liamsmith86/talaria-webui.git
@@ -73,7 +83,9 @@ docker run -d --name talaria --restart unless-stopped \
   talaria-webui
 ```
 
-After either option, open **http://127.0.0.1:8766** and retrieve the login password:
+</details>
+
+Open **http://127.0.0.1:8766** and retrieve the login password:
 
 ```sh
 docker exec talaria cat /data/talaria/initial-password.txt
@@ -113,6 +125,7 @@ hermes gateway restart
 ### Interface
 
 - Mobile and desktop layouts with a collapsible sidebar.
+- Add Talaria to your home screen from your browser’s menu.
 - Light and dark themes with accent colors.
 - Seven interface languages with automatic language selection.
 - Switch between Hermes profiles and connections.

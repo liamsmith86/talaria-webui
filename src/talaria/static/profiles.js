@@ -62,7 +62,7 @@ export function ProfilePicker({ app, onClose }) {
   </${Dialog}>`;
 }
 
-export function ProfileConnections({ app, onRefresh }) {
+export function ProfileConnections({ app, onRefresh, readOnly = false }) {
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -107,7 +107,7 @@ export function ProfileConnections({ app, onRefresh }) {
         <h3>${t("Profiles")}</h3>
         <button
           class="text-button"
-          disabled=${app.profiles.length >= 8}
+          disabled=${readOnly || app.profiles.length >= 8}
           onClick=${() => setAdding(true)}
         >
           <${Icon} name="plus" size=${14} /> ${t("Add profile")}
@@ -130,6 +130,7 @@ export function ProfileConnections({ app, onRefresh }) {
               profile.id !== activeProfile &&
               html`<button
                 class="icon-button"
+                disabled=${readOnly}
                 aria-label=${t("Remove {name}", { name: profile.label })}
                 title=${t("Remove profile")}
                 onClick=${() => setRemoving(profile)}
@@ -165,7 +166,7 @@ export function ProfileConnections({ app, onRefresh }) {
     ${!app.profileMissing &&
     html`<section class="settings-section profile-connection">
         <h3>${app.profile?.label || t("Hermes API")}</h3>
-        <${Connection} embedded onClose=${onRefresh} />
+        <${Connection} embedded readOnly=${readOnly} onClose=${onRefresh} />
       </section>
-      <${ExtendedAccess} onSaved=${onRefresh} />`}`;
+      <${ExtendedAccess} readOnly=${readOnly} onSaved=${onRefresh} />`}`;
 }

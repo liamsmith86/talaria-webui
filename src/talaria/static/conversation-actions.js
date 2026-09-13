@@ -1,7 +1,6 @@
 import { html, useEffect, useRef, useState, Icon } from "./lib.js";
 import { Dialog } from "./dialogs.js";
-import { api } from "./api.js";
-import { apiURL } from "./profile-context.js";
+import { api, request } from "./api.js";
 import { update, pinSession, supports } from "./store.js";
 import { running } from "./runs.js";
 import { count, money, numberValue, sourceLabel } from "./content.js";
@@ -122,10 +121,8 @@ export function TranscriptDownload({ session, onClose }) {
     setBusy(format);
     controller.current = new AbortController();
     try {
-      const response = await fetch(
-        apiURL(
-          `/sessions/${encodeURIComponent(session.id)}/export?format=${format}`,
-        ),
+      const response = await request(
+        `/sessions/${encodeURIComponent(session.id)}/export?format=${format}`,
         { signal: controller.current.signal },
       );
       if (!response.ok) {

@@ -150,6 +150,7 @@ function Appearance() {
 }
 
 export function Settings({ app, onClose, initialSection = "agent" }) {
+  const demo = app.environment === "demo";
   const [section, setSection] = useState(initialSection);
   const [installationRefresh, setInstallationRefresh] = useState(0);
   const mobile = useMediaQuery("(max-width: 700px)");
@@ -215,19 +216,16 @@ export function Settings({ app, onClose, initialSection = "agent" }) {
       ${refreshFailed && html`<p class="form-error" role="alert">${t("Some agent information could not be refreshed. Your other settings are still available.")}</p>`}
       ${section === "agent" && html`<${Overview} app=${app} />`}
       ${section === "appearance" && html`<${Appearance} />`}
-      ${section === "installation" && html`<${Installation} key=${installationRefresh} />`}
-      ${
-        section === "connection" &&
-        html`<${ProfileConnections} app=${app} onRefresh=${refresh} />`
-      }
+      ${section === "installation" && html`<${Installation} key=${installationRefresh} readOnly=${demo} />`}
+      ${section === "connection" && html`<${ProfileConnections} app=${app} onRefresh=${refresh} readOnly=${demo} />`}
     </div></div>
-    <footer class="settings-footer"><span>Talaria ${app.version}</span><div>${section !== "installation" && html`<button disabled=${busy} onClick=${refresh}>${busy ? t("Refreshing…") : t("Refresh information")}</button>`}<button onClick=${async () => {
+    <footer class="settings-footer"><span>Talaria ${app.version}</span><div>${section !== "installation" && html`<button disabled=${busy} onClick=${refresh}>${busy ? t("Refreshing…") : t("Refresh information")}</button>`}${!demo && html`<button onClick=${async () => {
       try {
         await api("/logout", { method: "POST", body: {} });
         location.reload();
       } catch (e) {
         fail(e);
       }
-    }}>${t("Sign out")}</button></div></footer>
+    }}>${t("Sign out")}</button>`}</div></footer>
   </${Dialog}>`;
 }

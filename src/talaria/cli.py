@@ -21,6 +21,10 @@ def development_app():
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "demo":
+        from .demo import main as demo
+
+        return demo(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "healthcheck":
         from .container_health import main as healthcheck
 

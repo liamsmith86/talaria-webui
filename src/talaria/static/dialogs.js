@@ -87,6 +87,7 @@ export function Connection({
   onClose,
   embedded = false,
   creating = false,
+  readOnly = false,
 }) {
   const [url, setUrl] = useState("http://127.0.0.1:8642");
   const [profile, setProfile] = useState("default");
@@ -112,6 +113,7 @@ export function Connection({
       .catch((e) => setError(e.message));
   }, [creating]);
   async function submit(save) {
+    if (readOnly) return;
     setBusy(true);
     setError("");
     setTested(false);
@@ -160,7 +162,7 @@ export function Connection({
         >${t("Hermes address")}<input
           type="url"
           value=${url}
-          readonly=${keySet && !creating}
+          readonly=${readOnly || (keySet && !creating)}
           onInput=${(e) => {
             setUrl(e.target.value);
             setTested(false);
@@ -176,7 +178,7 @@ export function Connection({
             setProfile(e.target.value);
             setTested(false);
           }}
-          readonly=${keySet && !creating}
+          readonly=${readOnly || (keySet && !creating)}
           required
           spellcheck="false"
           maxlength="64"
@@ -189,6 +191,7 @@ export function Connection({
         >${t("API key")}<input
           type="password"
           value=${key}
+          readonly=${readOnly}
           disabled=${keyFromEnv}
           onInput=${(e) => {
             setKey(e.target.value);
@@ -213,11 +216,11 @@ export function Connection({
         <button
           type="button"
           class="button secondary"
-          disabled=${busy}
+          disabled=${readOnly || busy}
           onClick=${() => submit(false)}
         >
           ${t("Test connection")}</button
-        ><button class="button primary" disabled=${busy}>
+        ><button class="button primary" disabled=${readOnly || busy}>
           ${busy ? t("Connecting…") : creating ? t("Add profile") : t("Save connection")}
         </button>
       </div>
