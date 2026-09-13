@@ -25,7 +25,7 @@ def test_browser_log_pipeline_preserves_failure_and_deadline_status(tmp_path, ex
     commands = {
         "vmstat": "exec sleep 60",
         "timeout": 'shift 2\nexec "$@"',
-        "uv": f"echo synthetic-browser-result\nexit {exit_code}",
+        "uv": f"echo synthetic-browser-result\nprintf '%0800000d\\n' 0\nexit {exit_code}",
     }
     for name, body in commands.items():
         path = tmp_path / name
@@ -40,7 +40,11 @@ def test_browser_log_pipeline_preserves_failure_and_deadline_status(tmp_path, ex
         timeout=10,
     )
     assert result.returncode == exit_code, result.stdout + result.stderr
-    assert "synthetic-browser-result" in (tmp_path / "test-results/browser.log").read_text()
+    assert max(map(len, result.stdout.splitlines())) < 2100
+    assert "line shortened; see browser.log" in result.stdout
+    saved = (tmp_path / "test-results/browser.log").read_text()
+    assert "synthetic-browser-result" in saved
+    assert max(map(len, saved.splitlines())) == 800000
 
 
 @pytest.mark.parametrize(
