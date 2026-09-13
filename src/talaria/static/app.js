@@ -129,6 +129,7 @@ function Welcome({ onSuggestion }) {
 function App() {
   const language = useLanguage();
   const app = useStore();
+  const demo = app.environment === "demo";
   const commandActivity = useCommandActivity(app);
   const command = commandActivity.current?.session === (app.active || "") ? commandActivity.current : null;
   const mobile = useMediaQuery("(max-width: 700px)");
@@ -179,11 +180,11 @@ function App() {
     return () => window.removeEventListener("keydown", keydown);
   }, []);
   useEffect(() => {
-    if (app.connected && !restored.current) {
+    if (app.connected && !demo && !restored.current) {
       restored.current = true;
       restoreRuns();
     }
-  }, [app.connected]);
+  }, [app.connected, demo]);
   const current = {
     id: app.active,
     title: t("Session"),
@@ -249,6 +250,7 @@ function App() {
           />
         </div>`}
       </header>
+      ${demo && html`<div class="demo-banner"><span>${t("Demo")}</span><a href="https://github.com/liamsmith86/talaria-webui" target="_blank" rel="noopener noreferrer">GitHub</a></div>`}
       <${ReadinessNotice} app=${app} />
       ${app.error &&
       html`<div class="error-banner" role="alert">

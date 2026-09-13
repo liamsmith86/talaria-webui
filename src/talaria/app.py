@@ -28,14 +28,13 @@ from .relay import Relay
 STATIC = Path(__file__).parent / "static"
 
 
-class BrowserBoundary:
+class SecurityHeaders:
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
-        request = Request(scope, receive)
         path = get_route_path(scope)
 
         async def secure_send(message):
@@ -61,6 +60,18 @@ class BrowserBoundary:
                 message["headers"] = headers
             await send(message)
 
+        return await self.app(scope, receive, secure_send)
+
+
+class BrowserBoundary:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        request = Request(scope, receive)
+        path = get_route_path(scope)
         error = None
         if path.startswith("/api/"):
             public = path in {"/api/bootstrap", "/api/login"}
@@ -77,9 +88,9 @@ class BrowserBoundary:
         if error:
             status, message, code = error
             return await JSONResponse({"error": message, "code": code}, status_code=status)(
-                scope, receive, secure_send
+                scope, receive, send
             )
-        return await self.app(scope, receive, secure_send)
+        return await self.app(scope, receive, send)
 
 
 class Assets(StaticFiles):
@@ -209,5 +220,6 @@ def create_app(
     if profiles is None:
         app.add_middleware(ProfileRouter, profiles=app.state.profiles)
         app.add_middleware(BrowserBoundary)
+        app.add_middleware(SecurityHeaders)
         app.add_middleware(PublicPath, prefix=settings.base_path)
     return app

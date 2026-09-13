@@ -34,7 +34,7 @@ function delay(signal) {
   });
 }
 
-export function Installation({ pluginOnly = false }) {
+export function Installation({ pluginOnly = false, readOnly = false }) {
   const [info, setInfo] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
@@ -134,7 +134,7 @@ export function Installation({ pluginOnly = false }) {
       try {
         const data = await fetchInfo(signal);
         if (["running", "finishing"].includes(data.operation?.status)) await follow(data.operation, signal);
-        else if (data.can_update && (!pluginOnly || data.updates_local_plugin) &&
+        else if (!readOnly && data.can_update && (!pluginOnly || data.updates_local_plugin) &&
           !recentlyChecked(lastCheckAttempt) &&
           !recentlyChecked(Date.parse(data.update?.checked_at)))
           await submit("check", data, signal);
@@ -149,7 +149,7 @@ export function Installation({ pluginOnly = false }) {
     return () => controller.abort();
     // These functions use only arguments, stable setters, and the lifetime's signal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pluginOnly]);
+  }, [pluginOnly, readOnly]);
 
   const development = info?.environment === "development";
   const available = info?.update?.available;
@@ -170,10 +170,10 @@ export function Installation({ pluginOnly = false }) {
       ${problem && !busy && html`<p class="form-error" role="alert">${t(problem)}</p>`}
       ${info?.updates_local_plugin && html`<p class="field-help">${t("Linked local Hermes restarts if its plugin changes.")}</p>`}
       ${info?.can_update ? html`<div class="installation-actions">
-        <button class="button secondary" disabled=${busy} onClick=${() => act("check")}>
+        <button class="button secondary" disabled=${busy || readOnly} onClick=${() => act("check")}>
           <${Icon} name="refresh" size=${16} />${t("Check for updates")}
         </button>
-        ${(available || info.updates_local_plugin) && html`<button class="button primary" disabled=${busy || !!problem || !info.update?.latest_commit}
+        ${(available || info.updates_local_plugin) && html`<button class="button primary" disabled=${busy || readOnly || !!problem || !info.update?.latest_commit}
           onClick=${() => act("update")}><${Icon} name="download" size=${16} />${available ? pluginOnly ? t("Update Talaria & plugin") : t("Update") : t("Sync linked plugin")}</button>`}
       </div>` : info && html`<p class="field-help">${info.managed
         ? t("Start Talaria with its managed launcher to enable updates.")

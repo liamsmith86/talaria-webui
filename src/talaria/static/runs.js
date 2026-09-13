@@ -1,5 +1,4 @@
-import { api, RequestError, errorMessage } from "./api.js";
-import { apiURL } from "./profile-context.js";
+import { api, RequestError, errorMessage, eventSource } from "./api.js";
 import { rememberSession } from "./session-navigation.js";
 import {
   state,
@@ -496,9 +495,7 @@ export function subscribe(sid) {
   sources.delete(sid);
   const live = state.lives[sid];
   if (!live?.id || terminal.has(live.status)) return;
-  const source = new EventSource(
-    apiURL(`/runs/${encodeURIComponent(live.id)}/events`),
-  );
+  const source = eventSource(`/runs/${encodeURIComponent(live.id)}/events`);
   sources.set(sid, source);
   const current = () =>
     sources.get(sid) === source && state.lives[sid]?.id === live.id;

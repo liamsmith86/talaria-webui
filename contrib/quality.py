@@ -96,7 +96,7 @@ def hygiene(paths):
     checks = (
         (check_yaml, [str(p) for p in paths if p.suffix in {".yaml", ".yml"}]),
         (check_toml, [str(p) for p in paths if p.suffix == ".toml"]),
-        (check_json, [str(p) for p in paths if p.suffix == ".json"]),
+        (check_json, [str(p) for p in paths if p.suffix in {".json", ".webmanifest"}]),
         (check_keys, names),
     )
     for check, arguments in checks:

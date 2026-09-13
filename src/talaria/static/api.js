@@ -6,6 +6,13 @@ export function errorMessage(value, fallback = msg("Something went wrong. Please
   return typeof text === "string" && text.trim() ? text.slice(0, 4096) : fallback;
 }
 
+let transport;
+export const setTransport = (value) => { transport = value; };
+export const request = (path, options) => transport
+  ? transport.request(path, options) : fetch(apiURL(path), options);
+export const eventSource = (path) => transport
+  ? transport.events(path) : new EventSource(apiURL(path));
+
 let csrf = "";
 export const setCSRF = (value) => {
   csrf = value;
@@ -20,7 +27,7 @@ export class RequestError extends Error {
 export async function api(path, options = {}) {
   let response;
   try {
-    response = await fetch(apiURL(path), {
+    response = await request(path, {
       credentials: "same-origin",
       ...options,
       headers: {

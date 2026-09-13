@@ -114,6 +114,8 @@ export async function initialize(signal = new AbortController().signal) {
   try {
     const data = await api("/bootstrap", options());
     signal.throwIfAborted();
+    if (data.environment === "demo")
+      await (await import("./demo.js")).enableDemo(signal, data.version);
     document.title =
       data.environment === "development" ? "Talaria · Dev" : "Talaria";
     setCSRF(data.csrf || "");

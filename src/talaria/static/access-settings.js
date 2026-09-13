@@ -12,7 +12,7 @@ const releaseLabels = {
   unknown: msg("Plugin version not reported"),
 };
 
-export function ExtendedAccess({ onSaved }) {
+export function ExtendedAccess({ onSaved, readOnly = false }) {
   const app = useStore();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -64,10 +64,10 @@ export function ExtendedAccess({ onSaved }) {
         href="https://github.com/liamsmith86/talaria-webui#hermes-plugin" target="_blank" rel="noopener noreferrer">
         ${t("Server installation instructions")}
       </a>`}
-      <button class="button secondary" disabled=${busy} onClick=${refresh}>
+      <button class="button secondary" disabled=${busy || readOnly} onClick=${refresh}>
         ${busy ? t("Checking…") : t("Check again")}
       </button>
     </div>
-    ${needsInstall && html`<${Installation} pluginOnly=${true} />`}
+    ${needsInstall && html`<${Installation} pluginOnly=${true} readOnly=${readOnly} />`}
   </section>`;
 }
