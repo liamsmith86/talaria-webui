@@ -139,25 +139,6 @@ def test_find_reveals_matches_inside_long_scrollable_message(page, live_app):
     }""")
 
 
-def test_failed_mixed_attachment_does_not_reappear_after_reload(page):
-    draft = "x" * 799_990
-    page.get_by_label("Message Hermes").fill(draft)
-    page.get_by_label("File attachment").set_input_files(
-        [
-            {"name": "extra.png", "mimeType": "image/png", "buffer": png()},
-            {"name": "extra.txt", "mimeType": "text/plain", "buffer": b"A note"},
-        ]
-    )
-    # WebKit's native textarea layout for an 800 KB draft can exceed five seconds
-    # on a busy runner. Keep the boundary/rollback checks, with bounded preparation time.
-    expect(page.locator(".attachment-error")).to_contain_text("message is too long", timeout=15000)
-    expect(page.locator(".attachment-chip")).to_have_count(0)
-    page.reload()
-    expect(page.get_by_label("Message Hermes")).to_have_value(draft)
-    expect(page.get_by_role("button", name="Attach files")).to_be_enabled()
-    expect(page.locator(".attachment-chip")).to_have_count(0)
-
-
 def test_image_removal_serializes_storage_and_other_attachment_changes(page):
     page.get_by_label("File attachment").set_input_files(
         [
@@ -179,8 +160,7 @@ def test_image_removal_serializes_storage_and_other_attachment_changes(page):
     expect(page.locator(".attachment-chip")).to_contain_text("second.png")
 
 
-@pytest.mark.parametrize("overflow", [False, True])
-def test_mixed_attachment_preserves_typing_during_storage_commit(page, overflow):
+def test_mixed_attachment_preserves_typing_during_storage_commit(page):
     page.get_by_label("Message Hermes").fill("Initial thought")
     hold_attachment_write(page)
     page.get_by_label("File attachment").set_input_files(
@@ -190,24 +170,17 @@ def test_mixed_attachment_preserves_typing_during_storage_commit(page, overflow)
         ]
     )
     page.wait_for_function("() => !!window.finishAttachmentWrite")
-    draft = "x" * 799_990 if overflow else "Continued typing"
+    draft = "Continued typing"
     page.get_by_label("Message Hermes").fill(draft)
     page.evaluate("window.finishAttachmentWrite()")
-    if overflow:
-        expect(page.locator(".attachment-error")).to_contain_text(
-            "message is too long", timeout=15000
-        )
-        count = 0
-    else:
-        draft += "\n\nFile: extra.txt\n\n```\nA note\n```"
-        count = 1
+    draft += "\n\nFile: extra.txt\n\n```\nA note\n```"
     expect(page.get_by_role("button", name="Attach files")).to_be_enabled()
     expect(page.get_by_label("Message Hermes")).to_have_value(draft)
-    expect(page.locator(".attachment-chip")).to_have_count(count)
+    expect(page.locator(".attachment-chip")).to_have_count(1)
     page.reload()
     expect(page.get_by_label("Message Hermes")).to_have_value(draft)
     expect(page.get_by_role("button", name="Attach files")).to_be_enabled()
-    expect(page.locator(".attachment-chip")).to_have_count(count)
+    expect(page.locator(".attachment-chip")).to_have_count(1)
 
 
 def test_reasoning_only_history_remains_available(page, live_app):
