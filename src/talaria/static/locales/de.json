@@ -101,7 +101,6 @@
   "Delete session": "Sitzung löschen",
   "Delete session?": "Sitzung löschen?",
   "Delete turn": "Gesprächsschritt löschen",
-  "Demo": "Demo",
   "Deny": "Ablehnen",
   "Desktop": "Desktop",
   "Dev": "Dev",
@@ -325,7 +324,6 @@
     "other": "Diesen Gesprächsschritt und {count} spätere Gesprächsschritte ersetzen? Entfernte Nachrichten bleiben im archivierten Verlauf von Hermes erhalten. Bereits ausgeführte Werkzeugaktionen werden dadurch nicht rückgängig gemacht."
   },
   "Replace this turn? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.": "Diesen Gesprächsschritt ersetzen? Entfernte Nachrichten bleiben im archivierten Verlauf von Hermes erhalten. Bereits ausgeführte Werkzeugaktionen werden dadurch nicht rückgängig gemacht.",
-  "Reply start": "Antwortanfang",
   "Reported cost": "Gemeldete Kosten",
   "Research": "Recherche",
   "Resized · {size} KB": "Verkleinert · {size} KB",
@@ -447,6 +445,7 @@
   "This image could not be read. Attach it again.": "Dieses Bild konnte nicht gelesen werden. Füge es erneut an.",
   "This image is still too large. Try a smaller version.": "Dieses Bild ist noch zu groß. Versuche eine kleinere Version.",
   "This image is too large. Choose one with fewer than 40 million pixels.": "Dieses Bild ist zu groß. Wähle eines mit weniger als 40 Millionen Pixeln.",
+  "This is a demo version of Talaria WebUI for Hermes Agent.": "Dies ist eine Demoversion von Talaria WebUI für Hermes Agent.",
   "This item is no longer available in Hermes.": "Dieses Element ist in Hermes nicht mehr verfügbar.",
   "This model does not support adjustable reasoning.": "Dieses Modell unterstützt keinen einstellbaren Denkaufwand.",
   "This profile has already been removed.": "Dieses Profil wurde bereits entfernt.",

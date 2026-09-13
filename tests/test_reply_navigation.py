@@ -14,6 +14,48 @@ from .test_conversation_features import seed
 
 @pytest.mark.parametrize("width", [390, 1440])
 @pytest.mark.parametrize("motion", ["reduce", "no-preference"])
+def test_scroll_shortcuts_stay_clear_of_text_and_fade_while_reading(page, width, motion):
+    page.set_viewport_size({"width": width, "height": 844})
+    page.emulate_media(reduced_motion=motion)
+    page.evaluate("""async () => (await import('/static/store.js')).update({
+      active:'reading',history:[],loading:false,lives:{reading:{id:'reading-run',status:'running',
+        text:'## A long reply\\n\\n'+('A paragraph to read. '.repeat(20)+'\\n\\n').repeat(12),
+        tools:[],userText:'Tell me more',baseHistoryLength:0}}})""")
+    controls = page.locator(".conversation-jumps")
+    start = page.get_by_role("button", name="Jump to start of reply", exact=True)
+    expect(start).to_be_visible()
+    expect(controls).to_have_css("opacity", "1")
+    button_box = start.bounding_box()
+    content_box = page.locator(".conversation-content").bounding_box()
+    assert button_box["x"] >= content_box["x"] + content_box["width"]
+    assert button_box["width"] == button_box["height"] == 36
+    expect(controls).to_have_css("opacity", "0", timeout=4000)
+    expect(controls).to_have_css("pointer-events", "none")
+    # Automatic follow must not reveal the controls on every arriving token.
+    page.evaluate("""async () => {
+      const {state,update}=await import('/static/store.js');
+      update({lives:{reading:{...state.lives.reading,
+        text:state.lives.reading.text+'\\n\\nThe next part arrives.'}}});
+    }""")
+    expect(page.get_by_text("The next part arrives.", exact=True)).to_be_visible()
+    expect(controls).to_have_css("opacity", "0")
+    viewport = page.locator(".conversation-viewport")
+    viewport.hover()
+    page.mouse.wheel(0, -160)
+    expect(controls).to_have_css("opacity", "1")
+    expect(page.get_by_role("button", name="Jump to latest message")).to_be_visible()
+    expect(controls).to_have_css("opacity", "0", timeout=4000)
+    viewport.dispatch_event("pointerdown", {"pointerType": "touch"})
+    expect(controls).to_have_css("opacity", "1")
+    start.focus()
+    expect(controls).to_have_class("conversation-jumps is-idle", timeout=4000)
+    expect(controls).to_have_css("opacity", "1")
+    page.keyboard.press("Enter")
+    wait_at_reply_start(page, "A long reply")
+
+
+@pytest.mark.parametrize("width", [390, 1440])
+@pytest.mark.parametrize("motion", ["reduce", "no-preference"])
 def test_reply_start_tracks_the_visible_reply_and_releases_stream_follow(page, width, motion):
     page.set_viewport_size({"width": width, "height": 844})
     page.emulate_media(reduced_motion=motion)

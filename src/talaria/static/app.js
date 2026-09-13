@@ -250,7 +250,7 @@ function App() {
           />
         </div>`}
       </header>
-      ${demo && html`<div class="demo-banner"><span>${t("Demo")}</span><a href="https://github.com/liamsmith86/talaria-webui" target="_blank" rel="noopener noreferrer">GitHub</a></div>`}
+      ${demo && html`<div class="demo-banner"><span>${t("This is a demo version of Talaria WebUI for Hermes Agent.")}</span><a href="https://github.com/liamsmith86/talaria-webui" target="_blank" rel="noopener noreferrer">GitHub</a></div>`}
       <${ReadinessNotice} app=${app} />
       ${app.error &&
       html`<div class="error-banner" role="alert">

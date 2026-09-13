@@ -100,8 +100,8 @@ Talaria can also use an optional, but highly recommended, plugin that you instal
 Run on your Hermes host:
 
 ```sh
-hermes plugins install liamsmith86/talaria-webui/src/talaria/hermes_plugin --enable \
-  --ref "$(git ls-remote https://github.com/liamsmith86/talaria-webui.git refs/heads/stable | cut -f1)"
+ref=$(git ls-remote --exit-code https://github.com/liamsmith86/talaria-webui.git refs/heads/stable) &&
+hermes plugins install liamsmith86/talaria-webui/src/talaria/hermes_plugin --enable --ref "${ref%%[[:space:]]*}" &&
 hermes gateway restart
 ```
 

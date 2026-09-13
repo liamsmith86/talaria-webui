@@ -101,7 +101,6 @@
   "Delete session": "Supprimer la session",
   "Delete session?": "Supprimer la session ?",
   "Delete turn": "Supprimer l’échange",
-  "Demo": "Démo",
   "Deny": "Refuser",
   "Desktop": "Bureau",
   "Dev": "Dév",
@@ -327,7 +326,6 @@
     "other": "Remplacer cet échange et les {count} échanges suivants ? Les messages retirés restent dans l’historique archivé de Hermes. Cela n’annule pas les actions déjà effectuées par les outils."
   },
   "Replace this turn? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.": "Remplacer cet échange ? Les messages retirés restent dans l’historique archivé de Hermes. Cela n’annule pas les actions déjà effectuées par les outils.",
-  "Reply start": "Début de la réponse",
   "Reported cost": "Coût indiqué",
   "Research": "Recherche",
   "Resized · {size} KB": "Redimensionnée · {size} Ko",
@@ -450,6 +448,7 @@
   "This image could not be read. Attach it again.": "Cette image n’a pas pu être lue. Joignez-la à nouveau.",
   "This image is still too large. Try a smaller version.": "Cette image est encore trop volumineuse. Essayez une version plus petite.",
   "This image is too large. Choose one with fewer than 40 million pixels.": "Cette image est trop grande. Choisissez-en une de moins de 40 millions de pixels.",
+  "This is a demo version of Talaria WebUI for Hermes Agent.": "Ceci est une version de démonstration de Talaria WebUI pour Hermes Agent.",
   "This item is no longer available in Hermes.": "Cet élément n’est plus disponible dans Hermes.",
   "This model does not support adjustable reasoning.": "Ce modèle ne permet pas de régler le raisonnement.",
   "This profile has already been removed.": "Ce profil a déjà été retiré.",

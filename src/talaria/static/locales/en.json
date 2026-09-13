@@ -101,7 +101,6 @@
   "Delete session": "Delete session",
   "Delete session?": "Delete session?",
   "Delete turn": "Delete turn",
-  "Demo": "Demo",
   "Deny": "Deny",
   "Desktop": "Desktop",
   "Dev": "Dev",
@@ -325,7 +324,6 @@
     "other": "Replace this turn and {count} later turns? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools."
   },
   "Replace this turn? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.": "Replace this turn? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.",
-  "Reply start": "Reply start",
   "Reported cost": "Reported cost",
   "Research": "Research",
   "Resized · {size} KB": "Resized · {size} KB",
@@ -447,6 +445,7 @@
   "This image could not be read. Attach it again.": "This image could not be read. Attach it again.",
   "This image is still too large. Try a smaller version.": "This image is still too large. Try a smaller version.",
   "This image is too large. Choose one with fewer than 40 million pixels.": "This image is too large. Choose one with fewer than 40 million pixels.",
+  "This is a demo version of Talaria WebUI for Hermes Agent.": "This is a demo version of Talaria WebUI for Hermes Agent.",
   "This item is no longer available in Hermes.": "This item is no longer available in Hermes.",
   "This model does not support adjustable reasoning.": "This model does not support adjustable reasoning.",
   "This profile has already been removed.": "This profile has already been removed.",

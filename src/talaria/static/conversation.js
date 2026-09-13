@@ -34,7 +34,7 @@ import {
 import { Images } from "./images.js";
 import { ConversationFind } from "./conversation-find.js";
 import { responseParts } from "./response-parts.js";
-import { useReplyJump, scrollBehavior } from "./reply-jump.js";
+import { useReplyJump, useScrollControls, scrollBehavior } from "./reply-jump.js";
 import { useHistoryAnchor } from "./history-anchor.js";
 import { t, msg, useLanguage } from "./i18n.js";
 
@@ -561,6 +561,7 @@ export function Conversation({ app, command, onDismissCommand }) {
     scrollTop.current = scroll.current?.scrollTop || 0;
   }, []);
   const [away, setAway] = useState(false);
+  const controls = useScrollControls(app.active, away || !!replyStart);
   const [olderBusy, setOlderBusy] = useState(false);
   const live = app.searchWindow ? null : app.lives[app.active];
   const agentName = app.agent?.name?.trim() || "Hermes";
@@ -713,14 +714,23 @@ export function Conversation({ app, command, onDismissCommand }) {
       class="conversation-viewport"
       ref=${scroll}
       onWheel=${(e) => {
+        controls.reveal();
         if (e.deltaY < 0) {
           sticky.current = false;
           setAway(true);
         }
       }}
+      onPointerDown=${controls.reveal}
+      onKeyDown=${(e) => {
+        if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key))
+          controls.reveal();
+      }}
       onScroll=${(e) => {
         const el = e.currentTarget;
         const top = Math.max(0, el.scrollTop);
+        // follow() records its own position: automatic streaming scrolls must
+        // not keep the shortcuts visible after the reader stops interacting.
+        if (top !== scrollTop.current) controls.reveal();
         // Small upward movements must release follow even near the bottom.
         // Delayed events after content growth alone must keep following.
         const distance = el.scrollHeight - top - el.clientHeight;
@@ -793,10 +803,11 @@ export function Conversation({ app, command, onDismissCommand }) {
         <div ref=${bottom} class="scroll-anchor" />
       </div>
     </div>
-      ${(away || replyStart) && html`<div class="conversation-jumps">
+      ${(away || replyStart) && html`<div class=${`conversation-jumps${controls.visible ? "" : " is-idle"}`}>
       ${replyStart && html`<button
         class="jump-reply"
         aria-label=${t("Jump to start of reply")}
+        title=${t("Jump to start of reply")}
         onClick=${() => {
           if (!replyStart.isConnected) return;
           sticky.current = false;
@@ -809,11 +820,12 @@ export function Conversation({ app, command, onDismissCommand }) {
             behavior: scrollBehavior(),
           });
         }}
-      ><${Icon} name="arrow" size=${16} />${t("Reply start")}</button>`}
+      ><${Icon} name="arrow" size=${16} /></button>`}
       ${away &&
       html`<button
         class="jump-bottom"
         aria-label=${t("Jump to latest message")}
+        title=${t("Jump to latest message")}
         onClick=${() => {
           sticky.current = true;
           bottom.current?.scrollIntoView({ behavior: scrollBehavior() });

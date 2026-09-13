@@ -1,5 +1,7 @@
 """The public demo serves immutable samples and has no privileged application routes."""
 
+import re
+
 import httpx
 import pytest
 
@@ -29,7 +31,14 @@ async def test_demo_is_readonly_and_never_opens_private_configuration(
     ) as client:
         page = await client.get("")
         assert page.status_code == 200
-        assert f'href="{prefix}/static/styles/demo.css"' in page.text
+        assert re.search(rf'href="{prefix}/static/build-[a-f0-9]{{16}}/styles/demo.css"', page.text)
+        entry = re.search(r'src="([^"]+/boot\.js)"', page.text)[1]
+        assets = entry.removesuffix("boot.js")
+        for path in ("boot.js", "store.js", "demo.js", "paths.js", "styles/demo.css"):
+            asset = await client.get("https://demo.example" + assets + path)
+            assert asset.status_code == 200
+            assert asset.headers["cache-control"] == "no-cache"
+        assert f'href="{prefix}/static/app.webmanifest"' in page.text
         assert "frame-ancestors 'none'" in page.headers["content-security-policy"]
         assert (await client.get("robots.txt")).text == "User-agent: *\nDisallow: /\n"
         bootstrap = await client.get("api/bootstrap")
@@ -77,6 +86,31 @@ async def test_demo_is_readonly_and_never_opens_private_configuration(
             assert "private-test-value" not in (await client.get(path)).text
     assert private.read_bytes() == before
     assert list(tmp_path.iterdir()) == [private]
+
+
+async def test_demo_asset_urls_change_when_a_dependency_changes(tmp_path, monkeypatch):
+    import shutil
+
+    from talaria import demo
+
+    assets = tmp_path / "static"
+    shutil.copytree(demo.STATIC, assets)
+    monkeypatch.setattr(demo, "STATIC", assets)
+    before = create_demo()
+    assert create_demo().state.index_html == before.state.index_html
+    dependency = assets / "demo.js"
+    dependency.write_text(dependency.read_text() + "\n// A new release.\n")
+    after = create_demo()
+    pattern = r'src="__TALARIA_BASE__([^\"]+/boot\.js)"'
+    old_url = re.search(pattern, before.state.index_html)[1]
+    new_url = re.search(pattern, after.state.index_html)[1]
+    assert old_url != new_url
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(after), base_url="http://demo.test"
+    ) as client:
+        assert (await client.get("/" + old_url)).status_code == 404
+        script = await client.get("/" + new_url.replace("boot.js", "demo.js"))
+        assert script.text == dependency.read_text()
 
 
 @pytest.mark.parametrize("container", [False, True])
