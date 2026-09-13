@@ -1,11 +1,80 @@
 """The demo uses normal chat controls; visitor text stays in its browser tab."""
 
+import re
+
 import pytest
 from playwright.sync_api import expect
+from starlette.responses import Response
 
 from talaria.demo import create_demo
 
 from .conftest import capture_browser_errors, serve
+
+
+@pytest.mark.parametrize("prefix", ["", "/apps/talaria"])
+def test_demo_new_deployment_bypasses_cached_legacy_modules(browser, prefix):
+    from talaria.app import STATIC
+
+    application = create_demo(public_url="http://127.0.0.1" + prefix)
+    legacy_store = (
+        (STATIC / "store.js")
+        .read_text()
+        .replace(
+            '    if (data.environment === "demo")\n'
+            '      await (await import("./demo.js")).enableDemo(signal, data.version);\n',
+            "",
+        )
+    )
+    deployed = False
+    store_requests = []
+
+    async def proxy(scope, receive, send):
+        path = scope.get("path", "").removeprefix(prefix)
+        if path == "/static/store.js":
+            store_requests.append(deployed)
+            if not deployed:
+                return await Response(
+                    legacy_store,
+                    media_type="text/javascript",
+                    headers={"Cache-Control": "public, max-age=14400"},
+                )(scope, receive, send)
+
+        async def cache_static(message):
+            if message["type"] == "http.response.start" and path.startswith("/static/"):
+                headers = [(k, v) for k, v in message["headers"] if k != b"cache-control"]
+                message = dict(message, headers=[*headers, (b"cache-control", b"max-age=14400")])
+            await send(message)
+
+        await application(scope, receive, cache_static)
+
+    # Warm the real HTTP cache with the pre-migration module URLs. Routing in
+    # Playwright disables its cache, so simulate the proxy at the ASGI boundary.
+    current_html = application.state.index_html
+    application.state.index_html = re.sub(r"static/build-[a-f0-9]{16}/", "static/", current_html)
+    server, thread, url = serve(proxy)
+    context = browser.new_context(viewport={"width": 390, "height": 844})
+    errors = capture_browser_errors(context)
+    page = context.new_page()
+    try:
+        page.goto(url + prefix + "/")
+        expect(page.locator(".error-banner")).to_contain_text("Not found")
+        assert store_requests == [False]
+        page.evaluate("localStorage.setItem('talaria.last-session', 'old-demo-session')")
+        deployed = True
+        application.state.index_html = current_html
+        page.goto("about:blank")
+        page.goto(url + prefix + "/")
+        page.get_by_role("button", name="Open sidebar", exact=True).click()
+        expect(page.get_by_role("link", name="A weekend outside")).to_be_visible()
+        page.get_by_role("link", name="A weekend outside").click()
+        expect(page.locator(".conversation-content")).to_contain_text("Backup plan")
+        expect(page.locator(".error-banner")).to_have_count(0)
+        assert not errors
+    finally:
+        context.close()
+        server.should_exit = True
+        thread.join(6)
+        assert not thread.is_alive()
 
 
 @pytest.fixture

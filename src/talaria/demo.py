@@ -1,6 +1,7 @@
 """Public demo shell: only synthetic fixtures, never private config or Hermes."""
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 
@@ -17,6 +18,15 @@ from .proxy import PublicPath
 
 def create_demo(*, public_url=""):
     sample_data = Path(__file__).with_name("demo_data.json").read_bytes()
+    # A proxy can override revalidation headers. Give each demo build its own
+    # asset directory so relative imports also bypass older browser/CDN caches.
+    digest = hashlib.sha256(sample_data)
+    for path in sorted(STATIC.rglob("*")):
+        if path.is_file():
+            digest.update(path.relative_to(STATIC).as_posix().encode() + b"\0")
+            digest.update(path.read_bytes())
+    asset_path = f"static/build-{digest.hexdigest()[:16]}/"
+    assets = GZipMiddleware(Assets(directory=STATIC), minimum_size=1024)
 
     async def bootstrap(request):
         return JSONResponse(
@@ -57,7 +67,8 @@ def create_demo(*, public_url=""):
             Route("/api/bootstrap", bootstrap),
             Route("/api/samples", samples),
             Route("/api/{path:path}", missing),
-            Mount("/static", GZipMiddleware(Assets(directory=STATIC), minimum_size=1024)),
+            Mount("/" + asset_path.rstrip("/"), assets),
+            Mount("/static", assets),
         ],
     )
     app.state.settings = Settings(public_url=validate_public_url(public_url) if public_url else "")
@@ -68,6 +79,9 @@ def create_demo(*, public_url=""):
             "</head>",
             '<link rel="stylesheet" href="__TALARIA_BASE__static/styles/demo.css" /></head>',
         )
+        .replace("__TALARIA_BASE__static/", "__TALARIA_BASE__" + asset_path)
+        # The manifest keeps its stable installation identity and launch scope.
+        .replace(asset_path + "app.webmanifest", "static/app.webmanifest")
     )
     app.add_middleware(SecurityHeaders)
     app.add_middleware(PublicPath, prefix=app.state.settings.base_path)
