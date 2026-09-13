@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -12,6 +13,34 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("release", ROOT / ".github/scripts/release.py")
 release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release)
+
+
+@pytest.mark.parametrize("exit_code", [0, 7, 124, 137])
+def test_browser_log_pipeline_preserves_failure_and_deadline_status(tmp_path, exit_code):
+    workflow = yaml.load((ROOT / ".github/workflows/ci.yml").read_text())
+    step = next(
+        s for s in workflow["jobs"]["browsers"]["steps"] if s.get("name") == "Browser regressions"
+    )
+    assert step["shell"] == "bash"  # Actions enables pipefail for an explicit bash shell.
+    commands = {
+        "vmstat": "exec sleep 60",
+        "timeout": 'shift 2\nexec "$@"',
+        "uv": f"echo synthetic-browser-result\nexit {exit_code}",
+    }
+    for name, body in commands.items():
+        path = tmp_path / name
+        path.write_text("#!/bin/sh\n" + body + "\n")
+        path.chmod(0o755)
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", step["run"]],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == exit_code, result.stdout + result.stderr
+    assert "synthetic-browser-result" in (tmp_path / "test-results/browser.log").read_text()
 
 
 @pytest.mark.parametrize(

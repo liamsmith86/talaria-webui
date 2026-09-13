@@ -162,6 +162,7 @@ jobs:
           curl --fail --show-error --silent --location --retry 3 https://cdn.jsdelivr.net/npm/axe-core@4.13.0/axe.min.js -o "$TALARIA_AXE_PATH"
           echo 'c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1  .local/axe.min.js' | sha256sum --check
       - name: Browser regressions
+        shell: bash
         run: |
           mkdir -p test-results
           vmstat -w 30 > test-results/resources.log &
