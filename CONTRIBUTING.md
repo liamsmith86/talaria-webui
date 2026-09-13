@@ -68,7 +68,10 @@ Private PRs run lint only. Public PRs also run affected backend tests and focuse
 Chromium regressions. Publishing a GitHub Release tests the quality gates, then
 runs backend/installation tests on Linux,
 Linux ARM64, macOS and WSL2, all three browser engines with accessibility checks,
-and pinned native Hermes contracts. Browser tests have a two-minute per-test limit with thread dumps for hangs.
+and pinned native Hermes contracts. Browser tests have a two-minute per-test limit
+with thread dumps. A separate process deadline leaves time to upload test logs
+and resource samples before the job expires. Oversized console lines are shortened;
+the artifact keeps the complete report.
 The pinned Hermes baseline is `205645ee424163c7b6cfc032c331c3557797497b`.
 A weekly canary tests Hermes `main`; select **hermes_latest** to run it on demand.
 Each Docker architecture is built and smoke-tested

@@ -161,7 +161,19 @@ jobs:
           mkdir -p .local
           curl --fail --show-error --silent --location --retry 3 https://cdn.jsdelivr.net/npm/axe-core@4.13.0/axe.min.js -o "$TALARIA_AXE_PATH"
           echo 'c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1  .local/axe.min.js' | sha256sum --check
-      - run: uv run --locked pytest -v -n 2 -m browser --fail-on-skip --timeout=120 --timeout-method=thread --max-worker-restart=0 --durations=10 --junitxml=test-results/browser.xml
+      - name: Browser regressions
+        shell: bash
+        run: |
+          mkdir -p test-results
+          vmstat -w 30 > test-results/resources.log &
+          monitor=$!
+          trap 'kill "$monitor" 2>/dev/null || true' EXIT
+          # Leave time for artifact upload even if pytest or browser teardown stalls.
+          timeout --kill-after=15s 17m bash -o pipefail <<'BROWSER'
+          uv run --locked pytest -v -n 2 -m browser --fail-on-skip --timeout=120 --timeout-method=thread --max-worker-restart=0 --maxfail=1 -o faulthandler_timeout=90 --durations=10 --junitxml=test-results/browser.xml 2>&1 | tee test-results/browser.log | awk '
+            length($0) > 2000 { print substr($0, 1, 2000) "... [line shortened; see browser.log]"; fflush(); next }
+            { print; fflush() }'
+          BROWSER
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:

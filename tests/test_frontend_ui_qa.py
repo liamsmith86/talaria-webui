@@ -148,7 +148,9 @@ def test_failed_mixed_attachment_does_not_reappear_after_reload(page):
             {"name": "extra.txt", "mimeType": "text/plain", "buffer": b"A note"},
         ]
     )
-    expect(page.locator(".attachment-error")).to_contain_text("message is too long")
+    # WebKit's native textarea layout for an 800 KB draft can exceed five seconds
+    # on a busy runner. Keep the boundary/rollback checks, with bounded preparation time.
+    expect(page.locator(".attachment-error")).to_contain_text("message is too long", timeout=15000)
     expect(page.locator(".attachment-chip")).to_have_count(0)
     page.reload()
     expect(page.get_by_label("Message Hermes")).to_have_value(draft)
@@ -192,7 +194,9 @@ def test_mixed_attachment_preserves_typing_during_storage_commit(page, overflow)
     page.get_by_label("Message Hermes").fill(draft)
     page.evaluate("window.finishAttachmentWrite()")
     if overflow:
-        expect(page.locator(".attachment-error")).to_contain_text("message is too long")
+        expect(page.locator(".attachment-error")).to_contain_text(
+            "message is too long", timeout=15000
+        )
         count = 0
     else:
         draft += "\n\nFile: extra.txt\n\n```\nA note\n```"
