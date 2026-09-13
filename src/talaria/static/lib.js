@@ -8,6 +8,12 @@ export { useRef, useMemo, useCallback, useLayoutEffect } from "./vendor/hooks.js
 export const html = htm.bind(h);
 export { render };
 
+// getRandomValues also works on HTTP LAN origins; randomUUID requires HTTPS.
+export function randomId() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)),
+    (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 // Some IMEs dispatch their final keydown after compositionend (MDN keydown).
 // Do not add a timer: the next ordinary Enter must remain immediately usable.
 export const isIMEKey = (event) => event.isComposing || event.keyCode === 229;

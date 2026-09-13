@@ -1,4 +1,4 @@
-import { html, Icon, useEffect, useRef, useState } from "./lib.js";
+import { html, Icon, randomId, useEffect, useRef, useState } from "./lib.js";
 import { api } from "./api.js";
 import { msg, t } from "./i18n.js";
 
@@ -89,8 +89,7 @@ export function Installation({ pluginOnly = false }) {
   }
 
   async function submit(action, current, signal) {
-    const id = Array.from(crypto.getRandomValues(new Uint8Array(16)),
-      (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const id = randomId();
     const operation = { id, action };
     const body = { id: operation.id };
     if (action === "update") body.expect = operation.expect = current.update.latest_commit;

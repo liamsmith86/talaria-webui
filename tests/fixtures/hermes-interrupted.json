@@ -1,0 +1,76 @@
+{
+  "events": [
+    {
+      "event": "talaria.reasoning.delta",
+      "delta": "ACTUAL_PROVIDER_REASONING_ONE"
+    },
+    {
+      "event": "message.delta",
+      "delta": "Before the question."
+    },
+    {
+      "event": "tool.started",
+      "tool": "clarify",
+      "preview": null
+    },
+    {
+      "event": "talaria.clarification.request",
+      "request_id": "fixture-request",
+      "question": "Which environment?",
+      "choices": [
+        "Development (Recommended)",
+        "Production"
+      ],
+      "multi_select": false
+    },
+    {
+      "event": "talaria.clarification.resolved",
+      "request_id": "fixture-request"
+    },
+    {
+      "event": "tool.completed",
+      "tool": "clarify",
+      "error": false
+    },
+    {
+      "event": "run.cancelled"
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Ask me a question",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "Before the question.",
+      "tool_call_id": null,
+      "tool_calls": [
+        {
+          "id": "clarify-fixture",
+          "call_id": "clarify-fixture",
+          "response_item_id": "fc_clarify-fixture",
+          "type": "function",
+          "function": {
+            "name": "clarify",
+            "arguments": "{\"questions\": [{\"question\": \"Which environment?\", \"choices\": [\"Development\", \"Production\"]}]}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "{\"responses\": [{\"question\": \"Which environment?\", \"choices_offered\": [\"Development\", \"Production\"], \"user_response\": \"\"}]}",
+      "tool_call_id": "clarify-fixture",
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "Operation interrupted.",
+      "tool_call_id": null,
+      "tool_calls": null
+    }
+  ]
+}

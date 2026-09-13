@@ -22,6 +22,7 @@ from .config import default_path, load, validate_public_url, validate_url
 from .credentials import initialize_password
 from .deployment import (
     COMMIT,
+    DEFAULT_BRANCH,
     REPOSITORY,
     Deployment,
     DeploymentError,
@@ -337,7 +338,7 @@ def parser():
     result.add_argument("--directory", type=Path)
     result.add_argument("--config", type=Path)
     result.add_argument("--repository", default=REPOSITORY)
-    result.add_argument("--branch", default="main")
+    result.add_argument("--branch", default=DEFAULT_BRANCH)
     result.add_argument("--expect", help="Require this full Git commit")
     binding = result.add_mutually_exclusive_group()
     binding.add_argument("--bind", choices=("local", "lan", "all"))

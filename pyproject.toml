@@ -5,7 +5,10 @@ build-backend = "hatchling.build"
 [project]
 name = "talaria-webui"
 version = "0.3.3"
-description = "A considered web client for Hermes Agent"
+description = "A lightweight web interface for Hermes Agent"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
   "starlette>=1.6,<2",

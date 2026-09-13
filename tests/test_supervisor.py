@@ -43,7 +43,7 @@ def installed_launcher():
         remote.mkdir()
         root.mkdir()
         project = Path(__file__).resolve().parents[1]
-        for name in ("pyproject.toml", "uv.lock", ".gitignore"):
+        for name in ("pyproject.toml", "uv.lock", ".gitignore", "README.md", "LICENSE"):
             shutil.copyfile(project / name, remote / name)
         shutil.copytree(
             project / "src", remote / "src", ignore=shutil.ignore_patterns("__pycache__")

@@ -11,6 +11,22 @@ from contrib import check
 pytestmark = pytest.mark.quality
 
 
+@pytest.mark.parametrize(
+    "paths,backend,browser",
+    [
+        (["README.md", ".github/SECURITY.md"], False, False),
+        (["contrib/check.py"], False, False),
+        (["src/talaria/static/runs.js"], False, True),
+        (["src/talaria/setup.py"], True, False),
+        (["src/talaria/routes.py"], True, True),
+    ],
+)
+def test_public_ci_selects_runtime_changes_without_full_matrix(paths, backend, browser):
+    scope = check.ci_scope(paths)
+    assert (scope["backend"] is not None) == backend
+    assert scope["browsers"] == browser
+
+
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)

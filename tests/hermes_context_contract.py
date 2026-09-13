@@ -144,6 +144,17 @@ async def main():
     async def complete(request):
         payload = await request.json()
         seen.append(payload)
+        if planned_replies and planned_replies[0].get("http_error"):
+            return web.json_response(
+                {
+                    "error": {
+                        "message": "Synthetic model unavailable",
+                        "type": "invalid_request_error",
+                        "code": "model_not_found",
+                    }
+                },
+                status=400,
+            )
         response = {
             "id": "chatcmpl-fixture",
             "object": "chat.completion",
@@ -438,7 +449,7 @@ async def main():
                 await verify_memory(run, db, seen, configure, home)
                 from hermes_live_contract import verify_live
 
-                await verify_live(client, adapter, db, planned_replies, seen)
+                await verify_live(client, adapter, db, planned_replies, seen, home)
                 from hermes_commands_contract import verify_commands
 
                 # Session-persisted models resolve provider credentials separately from

@@ -1,6 +1,7 @@
 # Talaria WebUI
 
 [![CI](https://github.com/liamsmith86/talaria-webui/actions/workflows/ci.yml/badge.svg?event=pull_request)](https://github.com/liamsmith86/talaria-webui/actions/workflows/ci.yml)
+[![MIT license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Linux · macOS · WSL2](https://img.shields.io/badge/platform-Linux%20%C2%B7%20macOS%20%C2%B7%20WSL2-555)](#installation)
 
@@ -29,10 +30,21 @@ installer's --help for headless options and give me the URL and login details fi
 Linux, macOS, and Windows through WSL2:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/liamsmith86/talaria-webui/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/liamsmith86/talaria-webui/stable/install.sh | bash
 ```
 
-Follow the prompts, then open the URL printed by the installer.
+Follow the prompts, then open the URL printed by the installer. Installs and updates follow tested stable releases.
+
+For HTTPS, set `--bind local --public-url https://hermes.example.com` during setup and use your reverse proxy. For example, with Caddy and your own certificate:
+
+```caddyfile
+hermes.example.com {
+    tls /path/to/fullchain.pem /path/to/privkey.pem
+    reverse_proxy 127.0.0.1:8766
+}
+```
+
+Omit `tls` to let Caddy manage the certificate. Keep the private key readable only by the proxy account, and reload the proxy after replacing it.
 
 ### Install via Docker
 
@@ -53,7 +65,7 @@ docker run -d --name talaria --restart unless-stopped \
 #### Build from Git
 
 ```sh
-git clone https://github.com/liamsmith86/talaria-webui.git
+git clone --branch stable https://github.com/liamsmith86/talaria-webui.git
 cd talaria-webui
 docker build -t talaria-webui .
 docker run -d --name talaria --restart unless-stopped \
@@ -76,7 +88,8 @@ Talaria can also use an optional, but highly recommended, plugin that you instal
 Run on your Hermes host:
 
 ```sh
-hermes plugins install liamsmith86/talaria-webui/src/talaria/hermes_plugin --enable
+hermes plugins install liamsmith86/talaria-webui/src/talaria/hermes_plugin --enable \
+  --ref "$(git ls-remote https://github.com/liamsmith86/talaria-webui.git refs/heads/stable | cut -f1)"
 hermes gateway restart
 ```
 

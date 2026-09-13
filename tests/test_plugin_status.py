@@ -56,22 +56,17 @@ def test_connection_detects_releases_and_offers_native_installation(page, live_a
     peer = live_app[1]
     page.get_by_role("button", name="Settings").click()
     page.get_by_role("tab", name="Connection", exact=True).click()
-    link = page.get_by_role("link", name="Install in Hermes Desktop")
-    install_url = (
-        "hermes://plugin/install?repo=liamsmith86%2Ftalaria-webui"
-        "%2Fsrc%2Ftalaria%2Fhermes_plugin&enable=1"
-    )
+    link = page.get_by_role("link", name="Server installation instructions")
+    install_url = "https://github.com/liamsmith86/talaria-webui#hermes-plugin"
     expect(link).to_have_attribute("href", install_url)
     peer.extension = {"plugin_version": "1.0.0", "revision": "b" * 64}
     page.get_by_role("button", name="Check again", exact=True).click()
     expect(page.get_by_role("tabpanel")).to_contain_text("Plugin update available")
-    expect(page.get_by_role("link", name="Update in Hermes Desktop")).to_have_attribute(
-        "href", install_url + "&force=1"
-    )
+    expect(link).to_have_attribute("href", install_url)
     peer.extension = {"plugin_version": "999.0.0"}
     page.get_by_role("button", name="Check again", exact=True).click()
     expect(page.get_by_role("tabpanel")).to_contain_text("Plugin is newer")
-    expect(page.get_by_role("link", name="Update in Hermes Desktop")).to_have_count(0)
+    expect(link).to_have_count(0)
     peer.extension = {"plugin_version": PLUGIN_VERSION, "revision": LOADED_REVISION}
     page.get_by_role("button", name="Check again", exact=True).click()
     expect(page.get_by_role("tabpanel")).to_contain_text("Matches this Talaria release")

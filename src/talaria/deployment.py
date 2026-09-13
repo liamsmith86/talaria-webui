@@ -29,6 +29,7 @@ from .installation import managed_root, read_json, release_info
 from .maintenance import DeploymentError, locked
 
 REPOSITORY = "https://github.com/liamsmith86/talaria-webui.git"
+DEFAULT_BRANCH = "stable"
 COMMIT = re.compile(r"[0-9a-f]{40,64}")
 PROBE = """
 import socket, sys
@@ -681,7 +682,7 @@ def management_parser():
         )
         if name == "install":
             command.add_argument("--repository", default=REPOSITORY, help="Trusted Git repository")
-            command.add_argument("--branch", default="main")
+            command.add_argument("--branch", default=DEFAULT_BRANCH)
             command.add_argument("--expect", help="Only install this full remote commit SHA")
             command.add_argument("--config", type=Path, default=default_path())
             command.add_argument(

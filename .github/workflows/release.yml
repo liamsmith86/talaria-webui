@@ -1,4 +1,4 @@
-name: Container release
+name: Release
 
 on:
   release:
@@ -64,7 +64,9 @@ jobs:
           cache-from: type=gha,scope=release-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=release-${{ matrix.arch }}
       - name: Test startup, persistence, packaged assets and plugin export
-        run: python3 .github/scripts/docker_smoke.py talaria-release:test
+        run: |
+          python3 .github/scripts/docker_smoke.py talaria-release:test
+          python3 .github/scripts/docker_smoke.py talaria-release:test https://talaria.example/apps/talaria 9876
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
@@ -110,7 +112,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -144,3 +146,9 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
         run: python3 .github/scripts/release.py publish
+      - name: Promote the validated stable installation source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: python3 .github/scripts/release.py promote

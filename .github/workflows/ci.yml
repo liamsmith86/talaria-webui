@@ -2,6 +2,8 @@ name: CI
 
 on:
   pull_request:
+  schedule:
+    - cron: '43 8 * * 1'
   workflow_call:
     inputs:
       full:
@@ -18,6 +20,10 @@ on:
         type: choice
         default: none
         options: [none, chromium, firefox, webkit]
+      hermes_latest:
+        description: Test the latest Hermes main commit
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -53,6 +59,41 @@ jobs:
         run: |
           uv sync --locked
           uv run --locked pytest -q -m quality --fail-on-skip
+
+  behavior:
+    name: Public PR behavior
+    needs: lint
+    if: github.event_name == 'pull_request' && !github.event.repository.private
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      TALARIA_TEST_WORKERS: '2'
+      TALARIA_AXE_PATH: ${{ github.workspace }}/.local/axe.min.js
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Select checks from the PR merge changes
+        id: scope
+        run: python3 contrib/check.py ci --plan >> "$GITHUB_OUTPUT"
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        if: steps.scope.outputs.runtime == 'true'
+        with:
+          version: '0.12.9'
+          checksum: *uv-checksum
+          python-version: '3.14'
+      - if: steps.scope.outputs.runtime == 'true'
+        run: uv sync --locked
+      - if: steps.scope.outputs.browser == 'true'
+        run: |
+          uv run --locked playwright install --with-deps chromium
+          mkdir -p .local
+          curl --fail --show-error --silent --location --retry 3 https://cdn.jsdelivr.net/npm/axe-core@4.13.0/axe.min.js -o "$TALARIA_AXE_PATH"
+          echo 'c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1  .local/axe.min.js' | sha256sum --check
+      - name: Run selected backend and Chromium regressions
+        if: steps.scope.outputs.runtime == 'true'
+        run: uv run --locked python contrib/check.py ci
 
   platforms:
     needs: lint
@@ -130,7 +171,7 @@ jobs:
 
   hermes:
     needs: lint
-    if: inputs.full
+    if: inputs.full || inputs.hermes_latest || github.event_name == 'schedule'
     name: Native Hermes
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -144,7 +185,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: NousResearch/hermes-agent
-          ref: fe04d5b36de1bc2d69d91185f4955c37aaef8c39
+          ref: ${{ (inputs.hermes_latest || github.event_name == 'schedule') && 'main' || '205645ee424163c7b6cfc032c331c3557797497b' }}
           path: .local/hermes
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -192,9 +233,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   required:
-    name: Required checks
+    name: ${{ inputs.full && 'Release validation' || 'Required checks' }}
     if: always()
-    needs: [lint, platforms, browsers, hermes, wsl]
+    needs: [lint, behavior, platforms, browsers, hermes, wsl]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -202,11 +243,19 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
           FULL: ${{ inputs.full || false }}
+          PUBLIC_PR: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
+          NATIVE: ${{ inputs.hermes_latest || github.event_name == 'schedule' }}
         run: |
           python3 - <<'PY'
           import json, os
           results = json.loads(os.environ['RESULTS'])
-          assert all(job['result'] == 'success' or
-                     (name != 'lint' and os.environ['FULL'] == 'false' and job['result'] == 'skipped')
-                     for name, job in results.items()), results
+          required = {'lint'}
+          if os.environ['FULL'] == 'true':
+              required.update({'platforms', 'browsers', 'hermes', 'wsl'})
+          if os.environ['PUBLIC_PR'] == 'true':
+              required.add('behavior')
+          if os.environ['NATIVE'] == 'true':
+              required.add('hermes')
+          assert all(results[name]['result'] == 'success' for name in required), results
+          assert all(job['result'] in {'success', 'skipped'} for job in results.values()), results
           PY

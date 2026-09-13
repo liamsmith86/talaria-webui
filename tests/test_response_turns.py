@@ -13,20 +13,25 @@ from .conftest import wait_for_store
 
 
 @pytest.mark.parametrize("chunk_size", [31, 4096])
-def test_native_completed_trace_reconciles_with_fragmented_or_batched_delivery(
+@pytest.mark.parametrize("name", ["completed", "tools", "interrupted", "failure"])
+def test_native_trace_reconciles_with_fragmented_or_batched_delivery(
     page,
     live_app,
     monkeypatch,
     chunk_size,
+    name,
 ):
-    trace = json.loads((Path(__file__).with_name("fixtures") / "hermes-completed.json").read_text())
+    trace = json.loads((Path(__file__).with_name("fixtures") / f"hermes-{name}.json").read_text())
     peer = live_app[1]
+    original_events = peer.events
+    terminal = trace["events"][-1]
+    status = terminal["event"].removeprefix("run.")
 
     async def events(run):
         peer.messages[run["session_id"]] = [
             {"id": index + 1, **row} for index, row in enumerate(trace["messages"])
         ]
-        run.update(status="completed", output=trace["messages"][-1]["content"])
+        run.update(status=status, output=terminal.get("output", ""), error=terminal.get("error"))
         wire = "".join("data: " + json.dumps(event) + "\n\n" for event in trace["events"])
         for offset in range(0, len(wire), chunk_size):
             yield wire[offset : offset + chunk_size]
@@ -35,12 +40,34 @@ def test_native_completed_trace_reconciles_with_fragmented_or_batched_delivery(
     monkeypatch.setattr(peer, "events", events)
     page.get_by_label("Message Hermes").fill(trace["messages"][0]["content"])
     page.get_by_role("button", name="Send message", exact=True).click()
-    wait_for_store(page, "state => state.lives[state.active]?.persisted")
-    expect(page.locator(".message.assistant")).to_have_count(1)
-    expect(page.locator(".message.assistant .message-text")).to_have_text("Fixture reply.")
+    wait_for_store(page, f"state => state.lives[state.active]?.status === {json.dumps(status)}")
+    if name != "failure":
+        wait_for_store(page, "state => state.lives[state.active]?.persisted")
+    expect(page.locator(".message.assistant")).to_have_count(0 if name == "failure" else 1)
+    text = {
+        "completed": "Fixture reply.",
+        "tools": "After the answer.",
+        "interrupted": "Before the question.",
+        "failure": "Synthetic model unavailable",
+    }[name]
+    target = page.get_by_role("alert") if name == "failure" else page.locator(".message.assistant")
+    expect(target).to_contain_text(text)
+    if name in {"tools", "interrupted"}:
+        expect(page.locator(".message.assistant .tool-card")).to_have_count(1)
     page.reload()
-    expect(page.locator(".message.assistant")).to_have_count(1)
-    expect(page.locator(".message.assistant .message-text")).to_have_text("Fixture reply.")
+    expect(page.locator(".message.assistant")).to_have_count(0 if name == "failure" else 1)
+    if name != "failure":
+        expect(target).to_contain_text(text)
+    else:
+        # Hermes saves the user message, but no assistant row for this failure.
+        expect(page.locator(".message.user")).to_contain_text(trace["messages"][0]["content"])
+    # A provider failure or interruption must leave the session usable.
+    monkeypatch.setattr(peer, "events", original_events)
+    page.get_by_label("Message Hermes").fill("Continue after the native fixture")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.locator(".message.assistant").last).to_contain_text(
+        "What would you like to explore next?"
+    )
 
 
 @pytest.mark.parametrize("cancelled", [False, True])

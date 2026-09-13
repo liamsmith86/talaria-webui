@@ -162,8 +162,10 @@ def test_workflow_gates_publication_and_keeps_prs_lightweight():
     assert workflow["jobs"]["checks"]["with"]["full"] is True
     assert workflow["jobs"]["publish"]["needs"] == "checks"
     assert workflow["jobs"]["manifest"]["needs"] == "publish"
-    assert "repository.private" not in json.dumps(ci)
-    for name in ("platforms", "hermes", "wsl"):
+    assert ci["jobs"]["behavior"]["if"] == (
+        "github.event_name == 'pull_request' && !github.event.repository.private"
+    )
+    for name in ("platforms", "wsl"):
         assert ci["jobs"][name]["if"] == "inputs.full"
     assert ci["on"]["workflow_dispatch"]["inputs"]["browser"]["options"] == [
         "none",
@@ -209,3 +211,105 @@ def test_invalid_digest_cannot_be_published(registry):
     with pytest.raises(ValueError, match="digest"):
         release.publish()
     assert registry[1] == []
+
+
+@pytest.mark.parametrize("existing", [None, "older-commit", "test-commit"])
+def test_stable_source_promotes_only_verified_images(registry, monkeypatch, existing):
+    images, _ = registry
+    images["ghcr.io/owner/app:latest"] = index("v1.2.3")
+    writes = []
+    revision = existing
+
+    def github(path, data=None, **kwargs):
+        nonlocal revision
+        if data:
+            writes.append((path, data))
+            revision = data["sha"]
+        return {"object": {"sha": revision}} if revision else None
+
+    monkeypatch.setattr(release, "github", github)
+    release.promote()
+    assert revision == "test-commit"
+    if existing == "test-commit":
+        assert writes == []
+    elif existing:
+        assert writes == [
+            ("repos/owner/app/git/refs/heads/stable", {"sha": "test-commit", "force": False})
+        ]
+    else:
+        assert writes == [
+            ("repos/owner/app/git/refs", {"ref": "refs/heads/stable", "sha": "test-commit"})
+        ]
+
+
+@pytest.mark.parametrize("tag,prerelease", [("v1.2.3-rc.1", "true"), ("v1.2.2", "false")])
+def test_prerelease_or_older_rerun_cannot_promote_source(registry, monkeypatch, tag, prerelease):
+    registry[0]["ghcr.io/owner/app:latest"] = index("v1.2.3")
+    monkeypatch.setenv("RELEASE_TAG", tag)
+    monkeypatch.setenv("RELEASE_PRERELEASE", prerelease)
+    monkeypatch.setattr(release, "github", lambda *a, **k: pytest.fail("Unexpected promotion"))
+    release.promote()
+
+
+@pytest.mark.parametrize("invalid", [None, "wrong-commit", "missing-architecture"])
+def test_unverified_images_cannot_promote_source(registry, monkeypatch, invalid):
+    if invalid:
+        manifest = index("v1.2.3", invalid if invalid == "wrong-commit" else "test-commit")
+        if invalid == "missing-architecture":
+            manifest["manifests"].pop()
+        registry[0]["ghcr.io/owner/app:latest"] = manifest
+    monkeypatch.setattr(release, "github", lambda *a, **k: pytest.fail("Unexpected promotion"))
+    with pytest.raises(ValueError):
+        release.promote()
+
+
+@pytest.mark.parametrize("error", ["HTTP 403", "HTTP 422", "connection timed out"])
+def test_source_promotion_fails_closed_on_github_errors(monkeypatch, error):
+    monkeypatch.setattr(
+        release.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a, 1, stdout="", stderr=error),
+    )
+    with pytest.raises(RuntimeError, match="promotion failed"):
+        release.github("repos/owner/app/git/ref/heads/stable", missing=True)
+
+
+@pytest.mark.parametrize(
+    "full,public,failed,expected",
+    [
+        (False, False, None, 0),
+        (False, True, "behavior", 1),
+        (False, True, None, 0),
+        (True, False, "hermes", 1),
+        (True, False, None, 0),
+    ],
+)
+def test_required_barrier_cannot_hide_missing_behavior_or_release_jobs(
+    full, public, failed, expected
+):
+    import os
+    import sys
+
+    ci = yaml.load((ROOT / ".github/workflows/ci.yml").read_text())
+    jobs = {name: {"result": "skipped"} for name in ci["jobs"]["required"]["needs"]}
+    required = {"lint"}
+    if full:
+        required.update({"platforms", "browsers", "hermes", "wsl"})
+    if public:
+        required.add("behavior")
+    for name in required - {failed}:
+        jobs[name]["result"] = "success"
+    script = ci["jobs"]["required"]["steps"][0]["run"].split("\n", 1)[1].rsplit("\nPY", 1)[0]
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "FULL": str(full).lower(),
+            "PUBLIC_PR": str(public).lower(),
+            "NATIVE": "false",
+            "RESULTS": json.dumps(jobs),
+        },
+    )
+    assert result.returncode == expected, result.stderr

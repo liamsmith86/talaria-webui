@@ -1,4 +1,4 @@
-import { html, useEffect, useState } from "./lib.js";
+import { html, randomId, useEffect, useState } from "./lib.js";
 import { commandRunning } from "./command-activity.js";
 import { api } from "./api.js";
 import { update, newConversation } from "./store.js";
@@ -49,7 +49,7 @@ export function useCommands(app, draft, choose, controls, activity) {
     if (controls.active && !["help", "commands", "version", "profile", "egress", "bundles", "status"].includes(command.name))
       throw new Error(msg("Wait for this response to finish before running the command."));
     if (["help", "commands"].includes(command.name)) {
-      activity.show({ id: crypto.randomUUID(), command: command.name, status: "completed", afterId: app.history.at(-1)?.id || 0, session: app.active || "", commands: catalog });
+      activity.show({ id: randomId(), command: command.name, status: "completed", afterId: app.history.at(-1)?.id || 0, session: app.active || "", commands: catalog });
     } else if (command.mode === "web") {
       webCommand(command.name, args, app, controls);
     } else {
