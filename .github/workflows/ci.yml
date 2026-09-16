@@ -101,6 +101,8 @@ jobs:
     name: Platform (${{ matrix.os }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    env:
+      TALARIA_TEST_WORKERS: '2'
     strategy:
       fail-fast: false
       matrix:
@@ -122,7 +124,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: uv sync --locked
       - name: Backend, fresh wheel, startup, plugin export, update and rollback
-        run: uv run --locked pytest -q -m 'not browser and not hermes and not quality' --fail-on-skip --junitxml=test-results/platform.xml
+        # General backend logic runs once; every OS retains the portability suite.
+        run: uv run --locked python contrib/check.py platform ${{ matrix.os == 'ubuntu-24.04' && '--full' || '' }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
@@ -133,15 +136,17 @@ jobs:
   browsers:
     needs: lint
     if: inputs.full || (github.event_name == 'workflow_dispatch' && inputs.browser != 'none' && inputs.browser != '')
-    name: Browser (${{ matrix.browser }})
+    name: Browser (${{ matrix.browser }}, ${{ matrix.shard }}/2)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 12
     strategy:
       fail-fast: false
       matrix:
         browser: ${{ fromJSON(inputs.full && '["chromium", "firefox", "webkit"]' || format('["{0}"]', inputs.browser)) }}
+        shard: [1, 2]
     env:
       TALARIA_TEST_BROWSER: ${{ matrix.browser }}
+      TALARIA_TEST_SHARD: ${{ matrix.shard }}/2
       TALARIA_AXE_PATH: ${{ github.workspace }}/.local/axe.min.js
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -169,15 +174,15 @@ jobs:
           monitor=$!
           trap 'kill "$monitor" 2>/dev/null || true' EXIT
           # Leave time for artifact upload even if pytest or browser teardown stalls.
-          timeout --kill-after=15s 17m bash -o pipefail <<'BROWSER'
-          uv run --locked pytest -v -n 2 -m browser --fail-on-skip --timeout=120 --timeout-method=thread --max-worker-restart=0 --maxfail=1 -o faulthandler_timeout=90 --durations=10 --junitxml=test-results/browser.xml 2>&1 | tee test-results/browser.log | awk '
+          timeout --kill-after=15s 10m bash -o pipefail <<'BROWSER'
+          uv run --locked pytest -v -n 2 --dist load --maxschedchunk=1 -m browser --browser-shard "$TALARIA_TEST_SHARD" --fail-on-skip --timeout=120 --timeout-method=thread --max-worker-restart=0 --maxfail=1 -o faulthandler_timeout=90 --durations=10 --junitxml=test-results/browser.xml 2>&1 | tee test-results/browser.log | awk '
             length($0) > 2000 { print substr($0, 1, 2000) "... [line shortened; see browser.log]"; fflush(); next }
             { print; fflush() }'
           BROWSER
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
-          name: browser-${{ matrix.browser }}
+          name: browser-${{ matrix.browser }}-${{ matrix.shard }}
           path: test-results/
           retention-days: 7
 

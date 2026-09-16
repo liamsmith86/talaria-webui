@@ -58,8 +58,8 @@ def test_home_screen_chrome_tracks_saved_and_system_theme(page):
     expect(color).to_have_attribute("content", "#fbfbf9")
 
 
-def test_maskable_icon_keeps_the_mark_inside_the_safe_circle(page):
-    assert page.evaluate("""async () => {
+def test_maskable_icon_keeps_the_mark_inside_the_safe_circle(module_page):
+    assert module_page.evaluate("""async () => {
       const image = new Image(); image.src = '/static/icons/maskable-512.png';
       await image.decode();
       const canvas = document.createElement('canvas'); canvas.width = canvas.height = 512;

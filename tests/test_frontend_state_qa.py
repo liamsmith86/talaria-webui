@@ -135,8 +135,8 @@ def test_return_to_discord_original_after_branching(page, live_app):
     expect(page.locator(".message.assistant").last).to_contain_text("Only in the copy")
 
 
-def test_image_submission_keeps_its_original_boundary_during_navigation(page):
-    result = page.evaluate(
+def test_image_submission_keeps_its_original_boundary_during_navigation(module_page):
+    result = module_page.evaluate(
         """async image => {
       const {state,update,newConversation}=await import('/static/store.js');
       const {sendMessage}=await import('/static/runs.js');
@@ -216,8 +216,8 @@ def test_incomplete_run_acknowledgement_preserves_draft_and_safe_retry(page, liv
     assert len(live_app[1].runs) == 1
 
 
-def test_api_preserves_body_abort_and_http_error_status(page):
-    result = page.evaluate("""async () => {
+def test_api_preserves_body_abort_and_http_error_status(module_page):
+    result = module_page.evaluate("""async () => {
         const {api} = await import('/static/api.js');
         const fetch = window.fetch;
         try {
@@ -238,8 +238,8 @@ def test_api_preserves_body_abort_and_http_error_status(page):
     assert result == {"aborted": "AbortError", "failed": 503, "empty": {}}
 
 
-def test_history_refresh_cannot_overwrite_a_reopened_session(page):
-    result = page.evaluate("""async () => {
+def test_history_refresh_cannot_overwrite_a_reopened_session(module_page):
+    result = module_page.evaluate("""async () => {
         const store = await import('/static/store.js');
         const fetch = window.fetch;
         const requests = [];
@@ -267,8 +267,8 @@ def test_history_refresh_cannot_overwrite_a_reopened_session(page):
     assert result == {"ids": [20], "offset": 1}
 
 
-def test_history_refresh_keeps_the_latest_successful_snapshot(page):
-    result = page.evaluate("""async () => {
+def test_history_refresh_keeps_the_latest_successful_snapshot(module_page):
+    result = module_page.evaluate("""async () => {
         const store = await import('/static/store.js');
         const fetch = window.fetch;
         const requests = [];
@@ -291,8 +291,8 @@ def test_history_refresh_keeps_the_latest_successful_snapshot(page):
     assert result == [2]
 
 
-def test_concurrent_older_pages_share_one_request_and_deduplicate_overlap(page):
-    result = page.evaluate("""async () => {
+def test_concurrent_older_pages_share_one_request_and_deduplicate_overlap(module_page):
+    result = module_page.evaluate("""async () => {
         const store = await import('/static/store.js');
         const fetch = window.fetch;
         const requests = [];
@@ -322,8 +322,8 @@ def test_concurrent_older_pages_share_one_request_and_deduplicate_overlap(page):
     assert result == {"count": 1, "ids": [2, 3], "offset": 3}
 
 
-def test_older_page_cannot_prepend_into_a_reopened_session(page):
-    result = page.evaluate("""async () => {
+def test_older_page_cannot_prepend_into_a_reopened_session(module_page):
+    result = module_page.evaluate("""async () => {
         const store = await import('/static/store.js');
         const fetch = window.fetch;
         const requests = [];
@@ -349,8 +349,8 @@ def test_older_page_cannot_prepend_into_a_reopened_session(page):
     assert result == [9]
 
 
-def test_session_refresh_supersedes_stale_pagination(page):
-    result = page.evaluate("""async () => {
+def test_session_refresh_supersedes_stale_pagination(module_page):
+    result = module_page.evaluate("""async () => {
         const store = await import('/static/store.js');
         const fetch = window.fetch;
         const requests = [];
@@ -378,8 +378,8 @@ def test_session_refresh_supersedes_stale_pagination(page):
     assert result == {"requests": 2, "ids": ["current"], "offset": 100, "more": False}
 
 
-def test_session_pagination_waits_for_an_inflight_refresh(page):
-    result = page.evaluate("""async () => {
+def test_session_pagination_waits_for_an_inflight_refresh(module_page):
+    result = module_page.evaluate("""async () => {
         const store = await import('/static/store.js');
         const fetch = window.fetch;
         const requests = [];
@@ -407,8 +407,8 @@ def test_session_pagination_waits_for_an_inflight_refresh(page):
     }
 
 
-def test_replaced_event_sources_cannot_mutate_the_current_run(page):
-    result = page.evaluate("""async () => {
+def test_replaced_event_sources_cannot_mutate_the_current_run(module_page):
+    result = module_page.evaluate("""async () => {
         const store = await import('/static/store.js');
         const runs = await import('/static/runs.js');
         const EventSource = window.EventSource;
@@ -438,8 +438,8 @@ def test_replaced_event_sources_cannot_mutate_the_current_run(page):
     assert result == {"text": "current", "reconnecting": True, "closed": True}
 
 
-def test_tool_completion_uses_call_id_and_deltas_do_not_copy_tool_history(page):
-    result = page.evaluate("""async () => {
+def test_tool_completion_uses_call_id_and_deltas_do_not_copy_tool_history(module_page):
+    result = module_page.evaluate("""async () => {
         const {applyEvent} = await import('/static/runs.js');
         const original = {
             text:'', tools:[
@@ -467,8 +467,8 @@ def test_tool_completion_uses_call_id_and_deltas_do_not_copy_tool_history(page):
     }
 
 
-def test_malformed_saved_run_state_does_not_crash_or_request_undefined_runs(page):
-    result = page.evaluate("""async () => {
+def test_malformed_saved_run_state_does_not_crash_or_request_undefined_runs(module_page):
+    result = module_page.evaluate("""async () => {
         const {restoreRuns} = await import('/static/runs.js');
         const {writeStorage} = await import('/static/lib.js');
         const fetch = window.fetch;
@@ -490,8 +490,8 @@ def test_malformed_saved_run_state_does_not_crash_or_request_undefined_runs(page
     assert result == []
 
 
-def test_run_restoration_preserves_receipts_when_offline(page):
-    result = page.evaluate("""async () => {
+def test_run_restoration_preserves_receipts_when_offline(module_page):
+    result = module_page.evaluate("""async () => {
         const {restoreRuns} = await import('/static/runs.js');
         const {state} = await import('/static/store.js');
         const {readStorage, writeStorage} = await import('/static/lib.js');
@@ -516,8 +516,8 @@ def test_run_restoration_preserves_receipts_when_offline(page):
     assert result == {"id": "saved-run", "uncertain": True, "stored": "saved-run"}
 
 
-def test_run_restoration_cannot_overwrite_a_new_submission(page):
-    result = page.evaluate("""async () => {
+def test_run_restoration_cannot_overwrite_a_new_submission(module_page):
+    result = module_page.evaluate("""async () => {
         const {restoreRuns} = await import('/static/runs.js');
         const {state, update} = await import('/static/store.js');
         const {writeStorage} = await import('/static/lib.js');
@@ -584,8 +584,8 @@ def test_pending_run_restoration_preserves_drafts_and_explains_failed_recovery(p
     assert len(live_app[1].runs) == 0
 
 
-def test_restored_active_runs_do_not_duplicate_the_status_snapshot(page):
-    result = page.evaluate("""async () => {
+def test_restored_active_runs_do_not_duplicate_the_status_snapshot(module_page):
+    result = module_page.evaluate("""async () => {
         const runs = await import('/static/runs.js');
         const {state, update} = await import('/static/store.js');
         const {writeStorage} = await import('/static/lib.js');
@@ -615,8 +615,8 @@ def test_restored_active_runs_do_not_duplicate_the_status_snapshot(page):
     assert result == "First second"
 
 
-def test_restored_failed_runs_retain_their_diagnostic_and_pending_guidance(page):
-    result = page.evaluate("""async () => {
+def test_restored_failed_runs_retain_their_diagnostic_and_pending_guidance(module_page):
+    result = module_page.evaluate("""async () => {
         const {restoreRuns} = await import('/static/runs.js');
         const {state} = await import('/static/store.js');
         const {writeStorage} = await import('/static/lib.js');
@@ -711,8 +711,8 @@ def test_settled_run_keeps_history_pagination_consistent(page, live_app):
     assert result == {"pageSize": 132, "offset": 132, "total": 132}
 
 
-def test_cached_images_are_read_in_one_transaction(page):
-    result = page.evaluate(
+def test_cached_images_are_read_in_one_transaction(module_page):
+    result = module_page.evaluate(
         """async url => {
             const cache = await import('/static/attachments.js');
             for (const id of [1, 2])
@@ -735,8 +735,8 @@ def test_cached_images_are_read_in_one_transaction(page):
     assert result == {"transactions": 1, "ids": [1, 2]}
 
 
-def test_attachment_database_can_be_deleted_and_reopened(page):
-    result = page.evaluate("""async () => {
+def test_attachment_database_can_be_deleted_and_reopened(module_page):
+    result = module_page.evaluate("""async () => {
         const {pendingStorage} = await import('/static/attachments.js');
         const {databaseName} = await import('/static/profile-context.js');
         await pendingStorage('qa-old', ['old']);
@@ -753,8 +753,8 @@ def test_attachment_database_can_be_deleted_and_reopened(page):
     assert result == {"deleted": True, "old": None, "current": ["new"]}
 
 
-def test_oversized_image_cache_entry_keeps_its_receipt_and_existing_cache(page):
-    result = page.evaluate(
+def test_oversized_image_cache_entry_keeps_its_receipt_and_existing_cache(module_page):
+    result = module_page.evaluate(
         """async url => {
             const cache = await import('/static/attachments.js');
             await cache.cacheMessageImages('qa-size', 1, [{url, name:'Existing'}]);
@@ -780,8 +780,8 @@ def test_oversized_image_cache_entry_keeps_its_receipt_and_existing_cache(page):
     assert result == {"rejected": True, "receipt": True, "ids": [1], "orphan": False}
 
 
-def test_forgetting_images_does_not_delete_another_sessions_receipts(page):
-    result = page.evaluate(
+def test_forgetting_images_does_not_delete_another_sessions_receipts(module_page):
+    result = module_page.evaluate(
         """async url => {
             const cache = await import('/static/attachments.js');
             for (const sid of ['qa', 'qa.child']) {
@@ -809,8 +809,8 @@ def test_forgetting_images_does_not_delete_another_sessions_receipts(page):
     }
 
 
-def test_image_placeholder_suffix_keeps_literal_markers_inside_text(page):
-    result = page.evaluate("""async () => {
+def test_image_placeholder_suffix_keeps_literal_markers_inside_text(module_page):
+    result = module_page.evaluate("""async () => {
         const {placeholderCount, withoutImagePlaceholders} =
             await import('/static/attachments.js');
         return [
@@ -826,8 +826,8 @@ def test_image_placeholder_suffix_keeps_literal_markers_inside_text(page):
     assert result[3]["count"] == 0 and result[3]["text"].endswith("More text")
 
 
-def test_failed_thumbnail_recovers_when_the_image_changes(page):
-    result = page.evaluate(
+def test_failed_thumbnail_recovers_when_the_image_changes(module_page):
+    result = module_page.evaluate(
         """async url => {
             const {render} = await import('/static/lib.js');
             const {Images} = await import('/static/images.js');

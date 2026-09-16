@@ -37,8 +37,8 @@ def test_static_compression_revalidation_and_uncompressed_event_streams(live_app
             assert first
 
 
-def test_restoration_prioritizes_visible_run_with_bounded_concurrency(page):
-    page.evaluate("""async () => {
+def test_restoration_prioritizes_visible_run_with_bounded_concurrency(module_page):
+    module_page.evaluate("""async () => {
       const {restoreRuns} = await import('/static/runs.js');
       const {update} = await import('/static/store.js');
       const {writeStorage} = await import('/static/lib.js');
@@ -61,17 +61,17 @@ def test_restoration_prioritizes_visible_run_with_bounded_concurrency(page):
         window.fetch=originalFetch; window.EventSource=originalSource;
       });
     }""")
-    page.wait_for_function("() => restoreCheck.started.length === 4")
-    assert page.evaluate("restoreCheck.started[0]") == "run-7"
-    page.evaluate("restoreCheck.release['run-7']()")
-    page.wait_for_function("() => restoreCheck.started.length === 5")
-    page.evaluate("""async () => {
+    module_page.wait_for_function("() => restoreCheck.started.length === 4")
+    assert module_page.evaluate("restoreCheck.started[0]") == "run-7"
+    module_page.evaluate("restoreCheck.release['run-7']()")
+    module_page.wait_for_function("() => restoreCheck.started.length === 5")
+    module_page.evaluate("""async () => {
       restoreCheck.automatic=true;
       Object.values(restoreCheck.release).forEach(release=>release());
       await restoreCheck.done;
     }""")
-    assert page.evaluate("restoreCheck.peak") == 4
-    assert page.evaluate("restoreCheck.started.length") == 8
+    assert module_page.evaluate("restoreCheck.peak") == 4
+    assert module_page.evaluate("restoreCheck.started.length") == 8
 
 
 def test_mobile_network_reconnect_replays_without_duplicate_messages(page, live_app):

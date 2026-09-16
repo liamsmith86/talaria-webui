@@ -16,8 +16,7 @@ pytestmark = pytest.mark.skipif(not AXE, reason="Set TALARIA_AXE_PATH to a local
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
-@pytest.mark.parametrize("palette", ["blue", "sage", "violet", "rose"])
-def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
+def test_theme_accessibility(page, live_app, theme, monkeypatch):
     live_app[1].extension = {
         "context_runs": True,
         "profile_context": {"instructions": "ready", "prefill": "unavailable"},
@@ -41,17 +40,34 @@ def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
     page.reload()
     page.evaluate(
         "([t,p]) => Object.assign(document.documentElement.dataset, {theme:t, palette:p})",
-        [theme, palette],
+        [theme, "blue"],
     )
     page.evaluate("document.fonts.ready")
     reports = {}
 
     def audit(name):
-        result = page.evaluate("""async () => (await axe.run(document, {
-          runOnly: {type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa']}
-        })).violations.map(v => ({id:v.id, impact:v.impact,
-          nodes:v.nodes.map(n=>({target:n.target,summary:n.failureSummary}))}))""")
-        reports[name] = result
+        # Palette changes only affect accent colors. Audit every screen's semantics
+        # once, then cover accent controls/surfaces in every palette on real screens.
+        palettes = (
+            ["blue", "sage", "violet", "rose"]
+            if name in {"welcome", "settings-Appearance", "approval", "session"}
+            else ["blue"]
+        )
+        for palette in palettes:
+            result = page.evaluate(
+                """async palette => {
+              document.documentElement.dataset.palette = palette;
+              const runOnly = palette === 'blue'
+                ? {type:'tag', values:['wcag2a','wcag2aa','wcag21aa']}
+                : {type:'rule', values:['color-contrast']};
+              return (await axe.run(document, {runOnly})).violations.map(v => ({
+                id:v.id, impact:v.impact,
+                nodes:v.nodes.map(n=>({target:n.target,summary:n.failureSummary}))}));
+            }""",
+                palette,
+            )
+            reports[f"{name}-{palette}"] = result
+        page.evaluate("document.documentElement.dataset.palette = 'blue'")
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), name
 
     audit("welcome")
@@ -154,7 +170,5 @@ def test_theme_accessibility(page, live_app, theme, palette, monkeypatch):
     page.get_by_role("button", name="Switch profile").click()
     audit("mobile-profile-picker")
     Path("test-results").mkdir(exist_ok=True)
-    Path(f"test-results/accessibility-{theme}-{palette}.json").write_text(
-        json.dumps(reports, indent=2)
-    )
+    Path(f"test-results/accessibility-{theme}.json").write_text(json.dumps(reports, indent=2))
     assert not {state: issues for state, issues in reports.items() if issues}

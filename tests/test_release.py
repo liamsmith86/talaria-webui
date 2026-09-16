@@ -91,6 +91,47 @@ def test_browser_log_pipeline_preserves_failure_and_deadline_status(tmp_path, ex
     assert max(map(len, saved.splitlines())) == 800000
 
 
+def test_browser_failure_stops_before_draining_a_large_worker_queue(tmp_path):
+    import shlex
+    import sys
+
+    workflow = yaml.load((ROOT / ".github/workflows/ci.yml").read_text())
+    script = next(
+        s["run"]
+        for s in workflow["jobs"]["browsers"]["steps"]
+        if s.get("name") == "Browser regressions"
+    )
+    command = next(
+        line for line in script.splitlines() if line.startswith("uv run --locked pytest")
+    )
+    args = shlex.split(command.split(" 2>&1", 1)[0])[4:]
+    args = ["1/1" if arg == "$TALARIA_TEST_SHARD" else arg for arg in args]
+    (tmp_path / "conftest.py").write_text(
+        "from tests.conftest import (pytest_addoption, pytest_collection_modifyitems, "
+        "pytest_sessionfinish)\n"
+    )
+    (tmp_path / "test_queue.py").write_text(
+        "import time, pytest\nfrom pathlib import Path\n"
+        "@pytest.mark.browser\n@pytest.mark.parametrize('i', range(40))\n"
+        "def test_queue(i):\n"
+        "    with Path('started').open('a') as f: f.write(str(i) + '\\n')\n"
+        "    assert i != 0, 'Synthetic first failure'\n"
+        "    time.sleep(0.05)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", *args, "-o", "markers=browser: synthetic browser cases"],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(ROOT)},
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    # xdist reports its intentional --maxfail shutdown as an interruption.
+    assert result.returncode in (1, 2), result.stdout + result.stderr
+    assert "Synthetic first failure" in result.stdout
+    assert len((tmp_path / "started").read_text().splitlines()) <= 5
+
+
 @pytest.mark.parametrize(
     "tag,package", [("v1.2.3", "1.2.3"), ("v1.2.3-rc.1", "1.2.3rc1"), ("v0.4.0-beta.2", "0.4.0b2")]
 )
@@ -267,8 +308,21 @@ def test_workflow_gates_publication_and_keeps_prs_lightweight():
     )
     assert quality["if"] == "inputs.full"
     assert "-m quality --fail-on-skip" in quality["run"]
-    assert "not quality" in json.dumps(ci["jobs"]["platforms"])
-    assert "not quality" in (ROOT / ".github/scripts/wsl.sh").read_text()
+    platform_command = next(
+        step["run"]
+        for step in ci["jobs"]["platforms"]["steps"]
+        if "contrib/check.py platform" in step.get("run", "")
+    )
+    assert "matrix.os == 'ubuntu-24.04' && '--full'" in platform_command
+    assert "contrib/check.py platform\n" in (ROOT / ".github/scripts/wsl.sh").read_text()
+    browsers = ci["jobs"]["browsers"]
+    assert browsers["strategy"]["matrix"]["shard"] == [1, 2]
+    assert browsers["env"]["TALARIA_TEST_SHARD"] == "${{ matrix.shard }}/2"
+    assert "${{ matrix.shard }}" in browsers["steps"][-1]["with"]["name"]
+    browser_command = next(
+        s["run"] for s in browsers["steps"] if s.get("name") == "Browser regressions"
+    )
+    assert '--browser-shard "$TALARIA_TEST_SHARD"' in browser_command
     steps = workflow["jobs"]["publish"]["steps"]
     smoke = next(i for i, step in enumerate(steps) if "docker_smoke.py" in step.get("run", ""))
     push = next(i for i, step in enumerate(steps) if step.get("id") == "publish")

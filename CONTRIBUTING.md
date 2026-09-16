@@ -23,7 +23,7 @@ This selects checks from changes against `origin/main`, including uncommitted fi
 - **Push hook:** test the committed revision in a temporary checkout with locked dependencies. Tests follow the affected code; documentation-only changes skip runtime tests. Missing prerequisites or skipped tests fail.
 - **Full suite:** `uv run --locked python contrib/check.py full` runs backend, browser, accessibility and native Hermes checks.
 
-To prepare a push, run `check --revision HEAD`. The hook reuses matching successful results for one hour; `--fresh` forces a rerun. Cache keys include source, tests, tools and environment. Native Hermes checks always run fresh. Hooks are local guardrails; Git allows bypassing them.
+To prepare a push, run `check --revision HEAD`. The hook reuses matching successful results for one hour; `--fresh` forces a rerun. Cache keys include source, tests, tools and environment. Native Hermes checks always run fresh; successful local checks remain reusable even when a native check fails. Hooks are local guardrails; Git allows bypassing them.
 
 Native contracts use a separate Hermes checkout, its `venv/bin/python3`, temporary storage and a loopback model simulator. Set `HERMES_SOURCE=/path/to/hermes-agent` or `git config --local talaria.hermesSource /path/to/hermes-agent`. Never use production sessions or credentials.
 
@@ -39,6 +39,8 @@ uv run --locked python contrib/check.py prove --base BASE_COMMIT \
 ```
 
 Selected cases must pass now and fail before. Setup errors, skips, unchanged behavior and different lockfiles are rejected. Inspect the failure reason; a failing assertion alone does not prove a realistic bug.
+
+Use `module_page` for isolated module/component checks that do not need app startup or Hermes; it retains the real styles, vendor scripts and browser storage APIs. Use `page` for full user journeys and login/startup coverage. Both provide a fresh browser context and report uncaught errors. Mark timer-driven `page` tests with `@pytest.mark.clock` to install clock control before startup; advance timers and wait for observable network/DOM completion. Keep actual rendering and native network-deadline checks real.
 
 Exercise user actions and event sequences: navigate during a request, reconnect, interrupt or scroll upward. Use synchronous Playwright polling predicates; our fixtures reject async predicates that can finish before their condition becomes true. PR descriptions should distinguish reproduced fixes, preventive changes and cleanup, with validation and its limits.
 
@@ -70,12 +72,12 @@ Register new locales in `i18n.js`. Validate with `uv run --locked node contrib/i
 
 ## Releases
 
-Private PRs run lint. Public PRs also run affected backend and focused Chromium checks. A published GitHub Release runs installation/backend checks on Linux, Linux ARM64, macOS and WSL2; all three browser engines with accessibility checks; native Hermes contracts; and Docker smoke tests for AMD64/ARM64.
+Private PRs run lint. Public PRs also run affected backend and focused Chromium checks. A published GitHub Release runs the full backend suite on Linux and portable installation/runtime checks on Linux ARM64, macOS and WSL2; all three browser engines with accessibility checks; native Hermes contracts; and Docker smoke tests for AMD64/ARM64. `contrib/check.py platform` selects the shared portability suite; `--full` includes general backend logic.
 
-The native baseline is `205645ee424163c7b6cfc032c331c3557797497b`. A weekly canary tests Hermes `main`; **hermes_latest** runs it on demand. In **Actions → CI → Run workflow**, choose **full** for the complete non-container suite or a single **browser** for a focused run. Browser tests have per-test and process deadlines; artifacts retain complete logs when oversized console lines are shortened. Local Docker checks use `.github/scripts/docker_smoke.py IMAGE`.
+The native baseline is `205645ee424163c7b6cfc032c331c3557797497b`. A weekly canary tests Hermes `main`; **hermes_latest** runs it on demand. In **Actions → CI → Run workflow**, choose **full** for the complete non-container suite or a single **browser** for a focused run. Each browser is split into two balanced jobs, partitioned by individual test case. Reproduce one with `uv run --locked pytest -n 2 --dist load --maxschedchunk=1 -m browser --browser-shard 1/2` and `TALARIA_TEST_BROWSER` set to its engine. Structural accessibility runs in light and dark mode; focused contrast checks cover every palette on real controls and surfaces. Small worker queues let a failure stop the job promptly. Browser tests have per-test and process deadlines; artifacts retain complete logs when oversized console lines are shortened. Local Docker checks use `.github/scripts/docker_smoke.py IMAGE`.
 
 Update `pyproject.toml` and `src/talaria/__init__.py`, run `uv lock`, merge to `main`, and publish the matching version tag. For example, `v0.4.0-rc.1` uses Python version `0.4.0rc1` and must be marked as a prerelease. Drafts and ordinary tag pushes do not publish images. Never overwrite version tags.
 
 Successful releases publish `ghcr.io/liamsmith86/talaria-webui:VERSION`. Only the newest successful stable release advances `:latest` and the `stable` source branch. Installs and managed updates follow `stable`; `--branch main` opts into development builds. Existing installations retain their configured branch.
 
-Protect `stable` with **checks / Release validation** and disable force pushes/deletion. Rerun failed publication workflows after resolving the cause. Package visibility is managed separately; workflows never change it.
+Protect `stable` with the **Talaria stable release** status from GitHub Actions and disable force pushes/deletion. Rerun failed publication workflows after resolving the cause. Package visibility is managed separately; workflows never change it.

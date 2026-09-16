@@ -14,6 +14,7 @@ from .test_conversation_features import seed
 
 @pytest.mark.parametrize("width", [390, 1440])
 @pytest.mark.parametrize("motion", ["reduce", "no-preference"])
+@pytest.mark.clock
 def test_scroll_shortcuts_stay_clear_of_text_and_fade_while_reading(page, width, motion):
     page.set_viewport_size({"width": width, "height": 844})
     page.emulate_media(reduced_motion=motion)
@@ -29,6 +30,7 @@ def test_scroll_shortcuts_stay_clear_of_text_and_fade_while_reading(page, width,
     content_box = page.locator(".conversation-content").bounding_box()
     assert button_box["x"] >= content_box["x"] + content_box["width"]
     assert button_box["width"] == button_box["height"] == 36
+    page.clock.fast_forward(2100)
     expect(controls).to_have_css("opacity", "0", timeout=4000)
     expect(controls).to_have_css("pointer-events", "none")
     # Automatic follow must not reveal the controls on every arriving token.
@@ -41,13 +43,22 @@ def test_scroll_shortcuts_stay_clear_of_text_and_fade_while_reading(page, width,
     expect(controls).to_have_css("opacity", "0")
     viewport = page.locator(".conversation-viewport")
     viewport.hover()
+    before_wheel = viewport.evaluate("el => el.scrollTop")
     page.mouse.wheel(0, -160)
     expect(controls).to_have_css("opacity", "1")
     expect(page.get_by_role("button", name="Jump to latest message")).to_be_visible()
+    # Clock control advances JS timers, not the browser's native wheel animation.
+    page.wait_for_function(
+        "top => Math.abs(document.querySelector('.conversation-viewport').scrollTop"
+        " - (top - 160)) < 2",
+        arg=before_wheel,
+    )
+    page.clock.fast_forward(2100)
     expect(controls).to_have_css("opacity", "0", timeout=4000)
     viewport.dispatch_event("pointerdown", {"pointerType": "touch"})
     expect(controls).to_have_css("opacity", "1")
     start.focus()
+    page.clock.fast_forward(2100)
     expect(controls).to_have_class("conversation-jumps is-idle", timeout=4000)
     expect(controls).to_have_css("opacity", "1")
     page.keyboard.press("Enter")

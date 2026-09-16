@@ -17,8 +17,8 @@ def image(identifier, size=100):
     }
 
 
-def test_image_draft_move_merges_and_consumption_only_removes_submitted_ids(page):
-    result = page.evaluate(
+def test_image_draft_move_merges_and_consumption_only_removes_submitted_ids(module_page):
+    result = module_page.evaluate(
         """async (images) => {
           const {pendingStorage, migratePendingImages, consumePendingImages} =
             await import('/static/attachments.js');
@@ -41,13 +41,13 @@ def test_image_draft_move_merges_and_consumption_only_removes_submitted_ids(page
 
 
 @pytest.mark.parametrize("large", [False, True])
-def test_conflicting_image_drafts_abort_without_losing_either_record(page, large):
+def test_conflicting_image_drafts_abort_without_losing_either_record(module_page, large):
     source = [image("one", 2_000_000), image("two", 2_000_000)]
     target = [image("three", 2_000_000), image("four", 2_000_000)]
     if not large:
         source = [image("one"), image("two"), image("five")]
         target = [image("three"), image("four")]
-    result = page.evaluate(
+    result = module_page.evaluate(
         """async ([source, target]) => {
           const {pendingStorage, migratePendingImages} = await import('/static/attachments.js');
           await pendingStorage('draft.original', source);
@@ -159,8 +159,8 @@ def test_text_draft_continues_when_indexeddb_is_unavailable(page, live_app):
     assert page.evaluate("async () => (await import('/static/store.js')).state.active") == continued
 
 
-def test_aborted_image_move_preserves_both_records(page):
-    result = page.evaluate(
+def test_aborted_image_move_preserves_both_records(module_page):
+    result = module_page.evaluate(
         """async ([source, target]) => {
           const {pendingStorage, migratePendingImages} = await import('/static/attachments.js');
           await pendingStorage('draft.original', source);

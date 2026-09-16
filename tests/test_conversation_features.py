@@ -481,10 +481,10 @@ def test_interrupted_cache_write_keeps_the_original_until_recovery(page, live_ap
     assert len(live_app[1].runs) == 1
 
 
-def test_browser_image_cache_evicts_older_originals_within_its_budget(page):
+def test_browser_image_cache_evicts_older_originals_within_its_budget(module_page):
     # PNG padding represents accepted, large originals without a decoder dependency.
     original = "data:image/png;base64," + base64.b64encode(png() + b"\0" * 1024 * 1024).decode()
-    result = page.evaluate(
+    result = module_page.evaluate(
         """async url => {
         const {cacheMessageImages, pendingStorage} = await import('/static/attachments.js');
         const images = Array.from({length:4}, (_, i) => ({url, name:`Image ${i}`, size:1048576}));

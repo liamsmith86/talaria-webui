@@ -33,6 +33,13 @@ INSTALL_TESTS = [
     "tests/test_environments.py",
     "tests/test_proxy_paths.py",
 ]
+PLATFORM_TESTS = [
+    *INSTALL_TESTS,
+    "tests/test_cli_shutdown.py",
+    "tests/test_environment_key.py",
+    "tests/test_request_log.py",
+    "tests/test_container_health.py",
+]
 INSTALL_FILES = {
     "src/talaria/control.py",
     "src/talaria/supervisor.py",
@@ -181,21 +188,24 @@ def pytest(*args, env=None):
         "-n",
         str(workers()),
         "--dist",
-        "worksteal",
+        "load",
+        "--maxschedchunk=1",
         "--fail-on-skip",
         *args,
         env=env,
     )
 
 
-def check(full=False, native=False, paths=None):
+def check(full=False, native=False, paths=None, skip_native=False):
     env = environment()
     scope = plan(None if full else paths)
     if full or native:
         scope["native"] = ["tests"]
+    if skip_native:
+        scope["native"] = []
     if scope["native"] and not env.get("HERMES_SOURCE"):
         raise SystemExit("Native checks need HERMES_SOURCE (see CONTRIBUTING.md).")
-    if full:
+    if full or "tests/test_accessibility.py" in scope["extra_browser"]:
         axe = Path(env.get("TALARIA_AXE_PATH", ""))
         digest = "c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1"
         if not axe.is_file() or hashlib.sha256(axe.read_bytes()).hexdigest() != digest:
@@ -223,6 +233,16 @@ def check(full=False, native=False, paths=None):
             )
     if scope["native"]:
         pytest(*scope["native"], "-m", "hermes", env=env)
+
+
+def platform_check(full=False):
+    pytest(
+        *([] if full else PLATFORM_TESTS),
+        "-m",
+        "not browser and not hermes and not quality",
+        "--junitxml=test-results/platform.xml",
+        env=environment(),
+    )
 
 
 def pre_commit():
@@ -321,67 +341,90 @@ def check_environment():
 
 
 def verify_revision(commit, paths, *, fresh=False, native=False):
-    """Only immutable snapshots can earn a reusable, short-lived local result."""
+    """Cache immutable local checks separately from mutable native Hermes inputs."""
     env = check_environment()
     scope = plan(paths)
     if native:
         scope["native"] = ["tests"]
+    if scope["native"] and not env.get("HERMES_SOURCE"):
+        raise SystemExit("Native checks need HERMES_SOURCE (see CONTRIBUTING.md).")
     cache = Path(git("rev-parse", "--git-path", "talaria-checks.json"))
-    # Native Hermes is mutable external input; always recheck it.
-    key = None
+    identity = [
+        git("rev-parse", f"{commit}^{{tree}}"),
+        {**scope, "native": []},
+        sys.version,
+        sys.executable,
+        platform.platform(),
+        workers(),
+        subprocess.check_output(["node", "--version"]).decode().strip(),
+        subprocess.check_output(["uv", "--version"]).decode().strip(),
+        subprocess.check_output(["npm", "--version"]).decode().strip(),
+        {
+            k: v
+            for k, v in env.items()
+            if k.startswith(("PYTEST_", "TALARIA_", "PLAYWRIGHT_", "NODE_", "UV_"))
+        },
+    ]
+    key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     records = {}
-    if not scope["native"]:
-        identity = [
-            git("rev-parse", f"{commit}^{{tree}}"),
-            scope,
-            sys.version,
-            sys.executable,
-            platform.platform(),
-            workers(),
-            subprocess.check_output(["node", "--version"]).decode().strip(),
-            subprocess.check_output(["uv", "--version"]).decode().strip(),
-            subprocess.check_output(["npm", "--version"]).decode().strip(),
-            {
-                k: v
-                for k, v in env.items()
-                if k.startswith(("PYTEST_", "TALARIA_", "PLAYWRIGHT_", "NODE_", "UV_"))
-            },
-        ]
-        key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
-        with contextlib.suppress(OSError, ValueError, AttributeError):
-            records = {
-                k: v
-                for k, v in json.loads(cache.read_text()).items()
-                if isinstance(v, (int, float)) and 0 <= time.time() - v < 3600
-            }
-        if not fresh and key in records:
-            print(f"Reusing successful local checks for {commit[:10]} (under one hour old).")
+    with contextlib.suppress(OSError, ValueError, AttributeError):
+        records = {
+            k: v
+            for k, v in json.loads(cache.read_text()).items()
+            if isinstance(v, (int, float)) and 0 <= time.time() - v < 3600
+        }
+    cached = not fresh and key in records
+    if cached:
+        print(f"Reusing successful local checks for {commit[:10]} (under one hour old).")
+        if not scope["native"]:
             return
-        if key in records:
-            del records[key]
-            cache.write_text(json.dumps(records))
+    elif key in records:
+        del records[key]
+        cache.write_text(json.dumps(records))
     with tempfile.TemporaryDirectory(prefix="talaria-push-") as directory:
         root = Path(directory)
         export(commit, root)
-        run(
-            "uv",
-            "run",
-            "--locked",
-            "python",
-            str(root / "contrib/check.py"),
-            "check",
-            *(["--native"] if native else []),
-            *(["--paths", *paths] if paths else []),
-            cwd=root,
-            env=env,
-        )
-    if key:
-        records[key] = time.time()
-        records = dict(sorted(records.items(), key=lambda item: item[1])[-32:])
-        try:
-            cache.write_text(json.dumps(records))
-        except OSError:
-            print("Checks passed; the optional local result cache could not be saved.")
+        if not cached:
+            run(
+                "uv",
+                "run",
+                "--locked",
+                "python",
+                str(root / "contrib/check.py"),
+                "check",
+                "--skip-native",
+                *(["--paths", *paths] if paths else []),
+                cwd=root,
+                env=env,
+            )
+            records[key] = time.time()
+            records = dict(sorted(records.items(), key=lambda item: item[1])[-32:])
+            try:
+                cache.write_text(json.dumps(records))
+            except OSError:
+                print("Checks passed; the optional local result cache could not be saved.")
+        # Never cache native results: Hermes can change without a Talaria commit.
+        if scope["native"]:
+            run(
+                "uv",
+                "run",
+                "--locked",
+                "python",
+                "-m",
+                "pytest",
+                "-q",
+                "-n",
+                str(workers()),
+                "--dist",
+                "load",
+                "--maxschedchunk=1",
+                "--fail-on-skip",
+                *scope["native"],
+                "-m",
+                "hermes",
+                cwd=root,
+                env=env,
+            )
 
 
 def pre_push():
@@ -463,13 +506,17 @@ def main():
     for name in ("pre-commit", "pre-push", "lint", "full"):
         commands.add_parser(name)
     command = commands.add_parser("check")
-    command.add_argument("--native", action="store_true")
+    native_mode = command.add_mutually_exclusive_group()
+    native_mode.add_argument("--native", action="store_true")
+    native_mode.add_argument("--skip-native", action="store_true", help=argparse.SUPPRESS)
     selection = command.add_mutually_exclusive_group()
     selection.add_argument("--changed", action="store_true", help="Test the changed areas locally")
     selection.add_argument("--revision", help="Check and cache an immutable committed revision")
     selection.add_argument("--paths", nargs="+", help=argparse.SUPPRESS)
     command.add_argument("--base", default="origin/main", help="Comparison base for focused checks")
     command.add_argument("--fresh", action="store_true", help="Ignore cached revision results")
+    command = commands.add_parser("platform", help="Portable install/runtime checks for CI")
+    command.add_argument("--full", action="store_true", help="Include all backend logic")
     command = commands.add_parser("prove")
     command.add_argument("--base", required=True)
     command.add_argument("tests", nargs="+")
@@ -483,6 +530,8 @@ def main():
         pre_push()
     elif args.command == "lint":
         lint()
+    elif args.command == "platform":
+        platform_check(full=args.full)
     elif args.command == "prove":
         prove(args.base, args.tests)
     elif args.command == "ci":
@@ -503,7 +552,12 @@ def main():
         env = check_environment()
         if env.get("HERMES_SOURCE"):
             os.environ["HERMES_SOURCE"] = env["HERMES_SOURCE"]
-        check(full=args.command == "full", native=getattr(args, "native", False), paths=paths)
+        check(
+            full=args.command == "full",
+            native=getattr(args, "native", False),
+            paths=paths,
+            skip_native=getattr(args, "skip_native", False),
+        )
 
 
 if __name__ == "__main__":
