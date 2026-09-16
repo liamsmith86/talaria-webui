@@ -120,17 +120,6 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
-      - name: Verify package access for a private repository
-        if: github.event.repository.private
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          owner_type=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.owner.type')
-          namespace=users
-          if [ "$owner_type" = Organization ]; then namespace=orgs; fi
-          package=${GITHUB_REPOSITORY#*/}
-          visibility=$(gh api "$namespace/$GITHUB_REPOSITORY_OWNER/packages/container/${package,,}" --jq '.visibility')
-          test "$visibility" = private
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -147,6 +136,13 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
         run: python3 .github/scripts/release.py publish
+      - name: Verify anonymous image access
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          anonymous_config=$(mktemp -d)
+          trap 'rm -rf -- "$anonymous_config"' EXIT
+          docker --config "$anonymous_config" manifest inspect "ghcr.io/${GITHUB_REPOSITORY,,}:$RELEASE_TAG" >/dev/null
       - name: Promote the validated stable installation source
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

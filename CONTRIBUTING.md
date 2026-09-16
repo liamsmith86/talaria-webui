@@ -72,7 +72,7 @@ Register new locales in `i18n.js`. Validate with `uv run --locked node contrib/i
 
 ## Releases
 
-Private PRs run lint. Public PRs also run affected backend and focused Chromium checks. A published GitHub Release runs the full backend suite on Linux and portable installation/runtime checks on Linux ARM64, macOS and WSL2; all three browser engines with accessibility checks; native Hermes contracts; and Docker smoke tests for AMD64/ARM64. `contrib/check.py platform` selects the shared portability suite; `--full` includes general backend logic.
+Pull requests run lint, affected backend tests and focused Chromium checks. A published GitHub Release runs the full backend suite on Linux and portable installation/runtime checks on Linux ARM64, macOS and WSL2; all three browser engines with accessibility checks; native Hermes contracts; and Docker smoke tests for AMD64/ARM64. `contrib/check.py platform` selects the shared portability suite; `--full` includes general backend logic.
 
 The native baseline is `205645ee424163c7b6cfc032c331c3557797497b`. A weekly canary tests Hermes `main`; **hermes_latest** runs it on demand. In **Actions → CI → Run workflow**, choose **full** for the complete non-container suite or a single **browser** for a focused run. Each browser is split into two balanced jobs, partitioned by individual test case. Reproduce one with `uv run --locked pytest -n 2 --dist load --maxschedchunk=1 -m browser --browser-shard 1/2` and `TALARIA_TEST_BROWSER` set to its engine. Structural accessibility runs in light and dark mode; focused contrast checks cover every palette on real controls and surfaces. Small worker queues let a failure stop the job promptly. Browser tests have per-test and process deadlines; artifacts retain complete logs when oversized console lines are shortened. Local Docker checks use `.github/scripts/docker_smoke.py IMAGE`.
 
@@ -80,4 +80,4 @@ Update `pyproject.toml` and `src/talaria/__init__.py`, run `uv lock`, merge to `
 
 Successful releases publish `ghcr.io/liamsmith86/talaria-webui:VERSION`. Only the newest successful stable release advances `:latest` and the `stable` source branch. Installs and managed updates follow `stable`; `--branch main` opts into development builds. Existing installations retain their configured branch.
 
-Protect `stable` with the **Talaria stable release** status from GitHub Actions and disable force pushes/deletion. Rerun failed publication workflows after resolving the cause. Package visibility is managed separately; workflows never change it.
+Protect `stable` with the **Talaria stable release** status from GitHub Actions and disable force pushes/deletion. Rerun failed publication workflows after resolving the cause. The container package must be public. Releases verify anonymous image access before promoting the stable source; package visibility is managed separately in GitHub.

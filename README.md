@@ -51,7 +51,6 @@ Follow the prompts, then open the URL printed by the installer.
 With [Docker](https://docs.docker.com/get-started/get-docker/) installed:
 
 ```sh
-docker login ghcr.io
 docker pull ghcr.io/liamsmith86/talaria-webui:latest
 docker run -d --name talaria --restart unless-stopped \
   -p 127.0.0.1:8766:8766 -v talaria-data:/data \
