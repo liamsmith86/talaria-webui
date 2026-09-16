@@ -24,7 +24,7 @@ def bundle(path, value):
     return path
 
 
-@pytest.mark.parametrize("provenance", ["pin", "git", "invalid"])
+@pytest.mark.parametrize("provenance", ["pin", "git", "catalog", "invalid"])
 def test_bundled_updates_preserve_native_ownership(tmp_path, provenance):
     home = tmp_path / "hermes"
     target = bundle(home / "plugins/talaria", "native")
@@ -32,6 +32,8 @@ def test_bundled_updates_preserve_native_ownership(tmp_path, provenance):
     before = fingerprint(target)
     if provenance == "git":
         (target / ".git").mkdir()
+    elif provenance == "catalog":
+        (target / ".hermes-catalog.json").write_text('{"catalog_name":"talaria"}')
     else:
         (home / "plugins/.install-metadata.json").write_text(
             '{"talaria":{"pinned":true,"revision":"reviewed"}}' if provenance == "pin" else "["
@@ -40,6 +42,104 @@ def test_bundled_updates_preserve_native_ownership(tmp_path, provenance):
         plugin_install.install(home, source, lambda _: pytest.fail("Restarted native plugin"))
     assert fingerprint(target) == before
     assert not (home / "plugins/.talaria-maintenance/restart-required").exists()
+
+
+@pytest.mark.parametrize("provenance", ["pin", "git", "catalog"])
+def test_native_handoff_retires_link_across_activation_and_rollback(
+    deployment, tmp_path, monkeypatch, provenance
+):
+    home = tmp_path / "hermes"
+    plugin = bundle(home / "plugins/talaria", "reviewed")
+    if provenance == "git":
+        (plugin / ".git").mkdir()
+    elif provenance == "catalog":
+        (plugin / ".hermes-catalog.json").write_text('{"catalog_name":"talaria"}')
+    else:
+        write_json(home / "plugins/.install-metadata.json", {"talaria": {"pinned": True}})
+    deployment.config["hermes_plugin"] = {"home": str(home), "command": "/unavailable/hermes"}
+    write_json(deployment.root / "deployment.json", deployment.config)
+    previous = {k: v for k, v in deployment.config.items() if k != "hermes_plugin"}
+    before = fingerprint(plugin)
+    notices = []
+    deployment.report = notices.append
+    calls = []
+
+    def worker(home, source, **kwargs):
+        calls.append(source)
+        plugin_install.install(home, source, lambda _: pytest.fail("Restarted native plugin"))
+
+    monkeypatch.setattr(plugin_updates, "run_as_owner", worker)
+    bundle(
+        deployment.root / f"releases/{A}/venv/lib/python3.12/site-packages/talaria/hermes_plugin",
+        "old-bundled",
+    )
+    target = release(deployment.root, B)
+    bundle(
+        deployment.root / target / "venv/lib/python3.12/site-packages/talaria/hermes_plugin",
+        "new-bundled",
+    )
+    deployment.activate(target)
+    assert selected(deployment.root, "current") == target
+    assert deployment.config == read_json(deployment.root / "deployment.json") == previous
+    assert notices == ["Hermes now manages the plugin; local update link removed."]
+    reloaded = plugin_updates.Deployment(deployment.root)
+    reloaded.rollback()
+    assert selected(deployment.root, "current") == f"releases/{A}"
+    assert fingerprint(plugin) == before
+    assert not (home / "plugins/.talaria-maintenance").exists()
+    assert calls == []
+
+
+@pytest.mark.parametrize("missing_target", [False, True])
+def test_native_handoff_blocks_stale_restart_and_backup_restore(tmp_path, missing_target):
+    home = tmp_path / "hermes"
+    source = bundle(tmp_path / "source", "same-code")
+    plugin_install.install(home, source)
+    target = home / "plugins/talaria"
+    backup = home / "plugins/.talaria-maintenance/backups/talaria"
+    bundle(backup, "old-bundled-code")
+    if missing_target:
+        plugin_install.shutil.rmtree(target)
+    write_json(home / "plugins/.install-metadata.json", {"talaria": {"pinned": True}})
+    with pytest.raises(DeploymentError, match="Hermes manages"):
+        plugin_install.install(home, source, lambda _: pytest.fail("Restarted Hermes"))
+    assert target.exists() is not missing_target
+    if not missing_target:
+        assert fingerprint(target) == fingerprint(source)
+    assert (backup / "__init__.py").read_text() == "VALUE = 'old-bundled-code'\n"
+
+
+def test_unreadable_ownership_keeps_link_and_refuses_sync(deployment, tmp_path, monkeypatch):
+    home = tmp_path / "hermes"
+    bundle(home / "plugins/talaria", "native")
+    (home / "plugins/.install-metadata.json").write_text("[")
+    deployment.config["hermes_plugin"] = {"home": str(home), "command": "/fake/hermes"}
+    write_json(deployment.root / "deployment.json", deployment.config)
+    monkeypatch.setattr(
+        plugin_updates, "run_as_owner", lambda *a, **kw: pytest.fail("Touched unknown plugin")
+    )
+    with pytest.raises(DeploymentError, match="Cannot verify"):
+        deployment.sync_plugin(f"releases/{A}")
+    assert read_json(deployment.root / "deployment.json") == deployment.config
+    assert "hermes_plugin" in deployment.config
+
+
+def test_remote_connection_updates_and_rolls_back_without_plugin_access(deployment, monkeypatch):
+    config_file = Path(deployment.config["config"])
+    config = read_json(config_file)
+    config["hermes_url"] = "https://agent.example.com"
+    write_json(config_file, config)
+    for module, name in (
+        (plugin_install, "hermes_managed"),
+        (plugin_updates, "run_as_owner"),
+    ):
+        monkeypatch.setattr(module, name, lambda *a, **kw: pytest.fail("Accessed a local plugin"))
+    target = release(deployment.root, B)
+    deployment.activate(target)
+    assert selected(deployment.root, "current") == target
+    deployment.rollback()
+    assert selected(deployment.root, "current") == f"releases/{A}"
+    assert read_json(config_file) == config
 
 
 def test_managed_cli_syncs_plugin_even_when_app_is_current(tmp_path, monkeypatch):

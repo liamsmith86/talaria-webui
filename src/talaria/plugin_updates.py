@@ -80,13 +80,24 @@ def sync(deployment, release):
     config = deployment.config.get("hermes_plugin")
     if not config:
         return
+    from .plugin_install import hermes_managed
+
+    home = Path(config["home"])
+    if hermes_managed(home):
+        # A native reinstall transfers ownership. Persist the handoff so later
+        # updates, rollback and activation recovery also leave this plugin alone.
+        updated = {key: value for key, value in deployment.config.items() if key != "hermes_plugin"}
+        write_json(deployment.root / "deployment.json", updated)
+        deployment.config = updated
+        deployment.report("Hermes now manages the plugin; local update link removed.")
+        return
     sources = list(
         (deployment.root / release).glob("venv/lib/python*/site-packages/talaria/hermes_plugin")
     )
     if len(sources) != 1:
         raise DeploymentError("The selected release has no unambiguous plugin bundle.")
     deployment.report("Updating local Hermes plugin…")
-    run_as_owner(Path(config["home"]), sources[0], command=config["command"])
+    run_as_owner(home, sources[0], command=config["command"])
 
 
 def register(root, home, command):

@@ -13,7 +13,7 @@ from .hermes_plugin.release import fingerprint
 from .maintenance import DeploymentError, locked
 
 
-def require_bundled_target(home):
+def hermes_managed(home):
     metadata = home / "plugins/.install-metadata.json"
     try:
         with metadata.open() as file:
@@ -26,7 +26,16 @@ def require_bundled_target(home):
         raise DeploymentError(
             "Cannot verify Hermes plugin ownership; nothing was changed."
         ) from exc
-    if "talaria" in data or (home / "plugins/talaria/.git").exists():
+    target = home / "plugins/talaria"
+    return (
+        "talaria" in data
+        or (target / ".git").exists()
+        or (target / ".hermes-catalog.json").exists()
+    )
+
+
+def require_bundled_target(home):
+    if hermes_managed(home):
         raise DeploymentError(
             "Hermes manages this plugin's source or pin. Update it through Hermes Desktop "
             "or its native plugin installer; Talaria will not overwrite it."
@@ -97,11 +106,13 @@ def install(home, source, restart=None):
     if target.is_symlink() or backup.is_symlink():
         raise DeploymentError("The Talaria plugin is symlinked; update it through its owner.")
     with locked(maintenance):
+        # Ownership can change after an export, even when the code is identical.
+        # Check before restoring backups or acting on an old pending restart.
+        require_bundled_target(home)
         if not target.exists() and backup.exists():
             restore(target, backup)
         changed = not target.exists() or fingerprint(target) != fingerprint(source)
         if changed:
-            require_bundled_target(home)
             install_files(source, target, backup, pending)
         if restart and pending.exists():
             try:
