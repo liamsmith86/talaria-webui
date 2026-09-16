@@ -44,24 +44,11 @@ Linux, macOS, and Windows through WSL2:
 curl -fsSL https://raw.githubusercontent.com/liamsmith86/talaria-webui/stable/install.sh | bash
 ```
 
-Follow the prompts, then open the URL printed by the installer. Installs and updates follow tested stable releases.
-
-For HTTPS, set `--bind local --public-url https://hermes.example.com` during setup and use your reverse proxy. For example, with Caddy and your own certificate:
-
-```caddyfile
-hermes.example.com {
-    tls /path/to/fullchain.pem /path/to/privkey.pem
-    reverse_proxy 127.0.0.1:8766
-}
-```
-
-Omit `tls` to let Caddy manage the certificate. Keep the private key readable only by the proxy account, and reload the proxy after replacing it.
+Follow the prompts, then open the URL printed by the installer.
 
 ### Install via Docker
 
 With [Docker](https://docs.docker.com/get-started/get-docker/) installed:
-
-For registry login, use your GitHub username and a [classic token](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic) with `read:packages` as the password.
 
 ```sh
 docker login ghcr.io
