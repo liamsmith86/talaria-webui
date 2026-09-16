@@ -61,9 +61,9 @@ jobs:
           uv run --locked pytest -q -m quality --fail-on-skip
 
   behavior:
-    name: Public PR behavior
+    name: PR behavior
     needs: lint
-    if: github.event_name == 'pull_request' && !github.event.repository.private
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -260,7 +260,7 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
           FULL: ${{ inputs.full || false }}
-          PUBLIC_PR: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
+          PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
           NATIVE: ${{ inputs.hermes_latest || github.event_name == 'schedule' }}
         run: |
           python3 - <<'PY'
@@ -269,7 +269,7 @@ jobs:
           required = {'lint'}
           if os.environ['FULL'] == 'true':
               required.update({'platforms', 'browsers', 'hermes', 'wsl'})
-          if os.environ['PUBLIC_PR'] == 'true':
+          if os.environ['PULL_REQUEST'] == 'true':
               required.add('behavior')
           if os.environ['NATIVE'] == 'true':
               required.add('hermes')

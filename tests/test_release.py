@@ -15,6 +15,43 @@ release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release)
 
 
+@pytest.mark.parametrize("registry_exit", [0, 1])
+def test_release_requires_anonymous_image_access_before_promoting(tmp_path, registry_exit):
+    workflow = yaml.load((ROOT / ".github/workflows/release.yml").read_text())
+    steps = workflow["jobs"]["manifest"]["steps"]
+    position = next(
+        i for i, step in enumerate(steps) if step.get("name") == "Verify anonymous image access"
+    )
+    assert "release.py publish" in steps[position - 1]["run"]
+    assert "release.py promote" in steps[position + 1]["run"]
+    assert "if" not in steps[position]
+    docker = tmp_path / "docker"
+    docker.write_text(
+        '#!/bin/sh\n[ "$1" = --config ] || exit 90\n'
+        '[ -d "$2" ] && [ ! -e "$2/config.json" ] || exit 91\n'
+        'printf "%s\\n" "$2" > "$CONFIG_PATH"\nshift 2\n'
+        '[ "$*" = "manifest inspect ghcr.io/owner/app:v1.2.3" ] || exit 92\n'
+        f"exit {registry_exit}\n"
+    )
+    docker.chmod(0o755)
+    config_path = tmp_path / "config-path"
+    result = subprocess.run(
+        ["bash", "-e", "-c", steps[position]["run"]],
+        env={
+            **os.environ,
+            "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+            "GITHUB_REPOSITORY": "Owner/App",
+            "RELEASE_TAG": "v1.2.3",
+            "CONFIG_PATH": str(config_path),
+        },
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == registry_exit, result.stderr
+    assert not Path(config_path.read_text().strip()).exists()
+
+
 @pytest.mark.parametrize("git_exit,install_exit", [(0, 0), (2, 0), (128, 0), (0, 1)])
 def test_documented_plugin_install_requires_stable_pin_before_install_or_restart(
     tmp_path, git_exit, install_exit
@@ -288,9 +325,7 @@ def test_workflow_gates_publication_and_keeps_prs_lightweight():
         for name, job in workflow["jobs"].items()
         if name != "manifest"
     )
-    assert ci["jobs"]["behavior"]["if"] == (
-        "github.event_name == 'pull_request' && !github.event.repository.private"
-    )
+    assert ci["jobs"]["behavior"]["if"] == ("github.event_name == 'pull_request'")
     for name in ("platforms", "wsl"):
         assert ci["jobs"][name]["if"] == "inputs.full"
     assert ci["on"]["workflow_dispatch"]["inputs"]["browser"]["options"] == [
@@ -444,7 +479,7 @@ def test_source_promotion_fails_closed_on_github_errors(monkeypatch, error):
 
 
 @pytest.mark.parametrize(
-    "full,public,failed,expected",
+    "full,pull_request,failed,expected",
     [
         (False, False, None, 0),
         (False, True, "behavior", 1),
@@ -454,7 +489,7 @@ def test_source_promotion_fails_closed_on_github_errors(monkeypatch, error):
     ],
 )
 def test_required_barrier_cannot_hide_missing_behavior_or_release_jobs(
-    full, public, failed, expected
+    full, pull_request, failed, expected
 ):
     import os
     import sys
@@ -464,7 +499,7 @@ def test_required_barrier_cannot_hide_missing_behavior_or_release_jobs(
     required = {"lint"}
     if full:
         required.update({"platforms", "browsers", "hermes", "wsl"})
-    if public:
+    if pull_request:
         required.add("behavior")
     for name in required - {failed}:
         jobs[name]["result"] = "success"
@@ -476,7 +511,7 @@ def test_required_barrier_cannot_hide_missing_behavior_or_release_jobs(
         env={
             **os.environ,
             "FULL": str(full).lower(),
-            "PUBLIC_PR": str(public).lower(),
+            "PULL_REQUEST": str(pull_request).lower(),
             "NATIVE": "false",
             "RESULTS": json.dumps(jobs),
         },
