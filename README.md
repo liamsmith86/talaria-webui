@@ -31,9 +31,11 @@ Talaria connects remotely to your Hermes Agent's API and does not need to be ins
 ### Ask your agent (Recommended)
 
 ```text
-Install Talaria WebUI from https://github.com/liamsmith86/talaria-webui and
-connect it to my Hermes Agent, including the recommended plugin. Use the
-installer's --help for headless options and give me the URL and login details file path.
+Install Talaria WebUI using https://raw.githubusercontent.com/liamsmith86/talaria-webui/stable/install.sh
+with --non-interactive --service auto --enable-hermes-api --plugin. Let setup
+discover Hermes and generate the login password; check --help for other options.
+Do not restart the Hermes gateway hosting this session; report any required restart.
+Return the URL and password file path, not the password.
 ```
 
 ### Install manually

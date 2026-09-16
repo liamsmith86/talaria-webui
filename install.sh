@@ -29,14 +29,16 @@ Existing installations update Talaria without repeating setup or Hermes changes.
   --install-deps                Allow installing missing Git, uv, and Python
   --repository URL --branch REF Trusted source (default: validated stable release)
   --directory PATH --config PATH
-  --bind local|lan|all          Default: local; --host IP overrides
+  --bind local|lan|all          Default: local; use --host IP instead for an explicit bind
   --port PORT --public-url URL  Public URL may include /talaria
-  --password-file PATH         Read a chosen WebUI password (4+ characters)
-  --hermes-home PATH --hermes-python PATH
-  --hermes-url URL --hermes-key-file PATH
+  --password-file PATH         Optional (4+ characters); otherwise generate and save one
+  --hermes-home PATH           Local profile (auto-detected)
+  --hermes-python PATH         Override the detected Hermes Python
+  --hermes-url URL             Remote API; use --hermes-home for local plugin setup
+  --hermes-key-file PATH        Read an API key; local profiles import it automatically
   --enable-hermes-api           Enable local Hermes API; reuse or create its key
   --plugin                     Install and enable the bundled Hermes plugin
-  --restart-hermes              Restart the selected local gateway
+  --restart-hermes              Restart only when needed; interrupts active sessions
   --skip-hermes                 Configure connectivity in the WebUI later
   --service auto|none|systemd|launchd  Default: prompt, or none headlessly
 
@@ -149,7 +151,7 @@ GIT_TERMINAL_PROMPT=0 git clone --quiet --depth 1 --single-branch --branch "$bra
 commit=$(git -C "$work/source" rev-parse HEAD)
 # Downloaded dependencies use the repository lock and its seven-day cooldown.
 # Do not install development dependencies or leave a temporary Python interpreter behind.
-uv run --project "$work/source" --python "$python_path" --locked --no-dev talaria setup \
+PYTHONUNBUFFERED=1 uv run --project "$work/source" --python "$python_path" --locked --no-dev talaria setup \
     --repository "$repository" --branch "$branch" --expect "$commit" ${forward[@]+"${forward[@]}"}
 }
 

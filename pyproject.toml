@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "talaria-webui"
-version = "0.3.8"
+version = "0.3.9"
 description = "A lightweight web interface for Hermes Agent"
 readme = "README.md"
 license = "MIT"
