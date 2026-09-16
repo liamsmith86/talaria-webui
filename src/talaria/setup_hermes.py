@@ -38,6 +38,10 @@ def configure(home, request):
     extra = api.extra if api else {}
     key = extra.get("key", "") or ""
     changed = False
+    if request.get("enable") or request.get("plugin"):
+        pending = home / "plugins/.talaria-maintenance/config-restart-required"
+        pending.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        pending.touch(mode=0o600)
     if request.get("enable"):
         env_path = home / ".env"
         if env_path.exists():
@@ -83,7 +87,8 @@ def main():
         backup_hermes(home)
         result = {}
     elif action == "clear_restart":
-        (home / "plugins/.talaria-maintenance/restart-required").unlink(missing_ok=True)
+        for name in ("restart-required", "config-restart-required"):
+            (home / "plugins/.talaria-maintenance" / name).unlink(missing_ok=True)
         result = {}
     else:
         result = configure(home, request)

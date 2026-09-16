@@ -264,27 +264,35 @@ def configure_hermes(args, prompts, settings, home, python, info, *, owner=None)
                 "Multiplexed gateway: also enable the plugin in its primary profile. "
                 "Use --hermes-url for a routed /p/PROFILE endpoint."
             )
-    pending = changed or (home / "plugins/.talaria-maintenance/restart-required").exists()
-    restart = args.restart_hermes or (
-        pending and prompts.yes("Restart Hermes now? Active work may be interrupted.")
+    pending = changed or hermes_restart_pending(home)
+    restart = pending and (
+        args.restart_hermes or prompts.yes("Restart Hermes now? Active work may be interrupted.")
     )
     if restart:
-        restart_setup_hermes(home, python, owner=owner)
+        print("Restarting Hermes…", flush=True)
+        restart_setup_hermes(home, python, owner=owner, plugin_enabled=info.get("plugin_enabled"))
     elif pending:
         print("Restart the Hermes gateway to apply its configuration changes.")
     return pending and not restart
 
 
-def restart_setup_hermes(home, python, *, owner=None):
+def hermes_restart_pending(home):
+    return any(
+        (home / "plugins/.talaria-maintenance" / name).exists()
+        for name in ("restart-required", "config-restart-required")
+    )
+
+
+def restart_setup_hermes(home, python, *, owner=None, plugin_enabled=False):
     owner = owner or select_owner(home)
-    pending = home / "plugins/.talaria-maintenance/restart-required"
-    if pending.exists():
+    if hermes_restart_pending(home) and plugin_enabled:
         from .plugin_updates import restart_and_verify
 
         restart_and_verify(home, home / "plugins/talaria", None, owner=owner)
-        hermes_request(python, home, owner=owner, action="clear_restart")
     else:
         restart_gateway(home, owner=owner)
+    if hermes_restart_pending(home):
+        hermes_request(python, home, owner=owner, action="clear_restart")
 
 
 def verify_hermes(settings):
@@ -626,7 +634,10 @@ def export_owned_plugin(home, *, owner=None):
 
 def configure_remote_hermes(args, prompts, settings):
     if args.enable_hermes_api or args.plugin or args.restart_hermes or args.hermes_home:
-        raise ValueError("Local Hermes was not found; supply --hermes-home and --hermes-python.")
+        raise ValueError(
+            "Select a local Hermes profile with --hermes-home; "
+            "add --hermes-python only if it cannot be detected."
+        )
     if not settings.api_key and prompts.terminal:
         url = prompts.ask("Hermes API URL (blank to connect later)", args.hermes_url or "")
         if url:
@@ -869,6 +880,7 @@ def activate_setup_service(plan, root, config, deployment, settings):
 
 
 def install_runtime(args, root, config, settings, metadata, existing_service, settings_changed):
+    print("Updating Talaria…" if metadata else "Installing Talaria…", flush=True)
     if metadata:
         deployment = Deployment(root)
         before = deployment.status()["current"]["commit"]
@@ -914,6 +926,8 @@ def report_setup(
     print(f"\nURL: {url + '/'}\nConfig: {config}")
     if password_path or (config.parent / "initial-password.txt").is_file():
         print(f"Sign-in password file: {config.parent / 'initial-password.txt'}")
+    elif args.password_file:
+        print(f"Sign-in password file: {args.password_file.expanduser().resolve()}")
     connection = "restart required" if pending else verify_hermes(settings)
     print("Hermes: " + connection)
     if plan:

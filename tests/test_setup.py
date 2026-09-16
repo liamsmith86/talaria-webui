@@ -480,6 +480,9 @@ runpy.run_path(sys.argv[1], run_name='__main__')
     )
     data = json.loads(result.stdout.rsplit("TALARIA_SETUP_RESULT=", 1)[1])
     assert data["enabled"] and data["key"] == "external-test-api-key"
+    pending = tmp_path / "plugins/.talaria-maintenance/config-restart-required"
+    assert pending.exists() is bool(setup_request.get("enable"))
+    assert not (pending.parent / "restart-required").exists()
     assert "API_SERVER_KEY=" not in (tmp_path / ".env").read_text()
     assert (tmp_path / "config.yaml").read_bytes() == original_config
 
@@ -652,13 +655,14 @@ def test_installer_refreshes_explicit_local_plugin_using_installed_release(optio
     ]
 
 
-def test_current_enabled_plugin_does_not_prompt_or_restart(options, monkeypatch, tmp_path):
+@pytest.mark.parametrize("restart", [False, True])
+def test_current_enabled_plugin_does_not_prompt_or_restart(options, monkeypatch, tmp_path, restart):
     from talaria.config import Settings
     from talaria.plugin_install import install
 
     options.skip_hermes = False
-    options.plugin = options.enable_hermes_api = options.restart_hermes = True
-    options.restart_hermes = False
+    options.plugin = options.enable_hermes_api = True
+    options.restart_hermes = restart
     home = tmp_path / "hermes"
     install(home, Path(wizard.__file__).with_name("hermes_plugin"), lambda _: None)
     info = {
@@ -672,8 +676,82 @@ def test_current_enabled_plugin_does_not_prompt_or_restart(options, monkeypatch,
     monkeypatch.setattr(
         wizard, "hermes_request", lambda *a, **kw: pytest.fail("Reconfigured Hermes")
     )
-    monkeypatch.setattr(wizard, "restart_gateway", lambda *a: pytest.fail("Restarted Hermes"))
+    monkeypatch.setattr(wizard, "restart_gateway", lambda *a, **kw: pytest.fail("Restarted Hermes"))
     assert not wizard.configure_hermes(options, wizard.Prompts(None), Settings(), home, None, info)
+
+
+@pytest.mark.parametrize("restart", [False, True])
+@pytest.mark.parametrize("marker", ["restart-required", "config-restart-required"])
+def test_pending_plugin_restart_still_requires_consent(
+    options, monkeypatch, tmp_path, restart, marker
+):
+    from talaria.config import Settings
+    from talaria.plugin_install import install
+
+    options.skip_hermes = False
+    options.restart_hermes = restart
+    home = tmp_path / "hermes"
+    install(home, Path(wizard.__file__).with_name("hermes_plugin"), lambda _: None)
+    (home / "plugins/.talaria-maintenance" / marker).touch()
+    info = {
+        "enabled": True,
+        "plugin_enabled": True,
+        "key": "existing",
+        "host": "127.0.0.1",
+        "port": 8642,
+    }
+    calls = []
+    monkeypatch.setattr(wizard, "restart_setup_hermes", lambda *a, **kw: calls.append(a))
+    pending = wizard.configure_hermes(options, wizard.Prompts(None), Settings(), home, None, info)
+    assert pending is (not restart)
+    assert len(calls) == int(restart)
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_api_only_restart_preserves_pending_state_on_failure(tmp_path, monkeypatch, fails):
+    pending = tmp_path / "plugins/.talaria-maintenance/config-restart-required"
+    pending.parent.mkdir(parents=True)
+    pending.touch()
+    calls = []
+
+    def restart(*args, **kwargs):
+        calls.append("restart")
+        if fails:
+            raise ValueError("Synthetic restart failure")
+
+    def native(*args, **kwargs):
+        assert kwargs["action"] == "clear_restart"
+        calls.append("clear")
+        pending.unlink()
+
+    monkeypatch.setattr(wizard, "restart_gateway", restart)
+    monkeypatch.setattr(wizard, "hermes_request", native)
+    if fails:
+        with pytest.raises(ValueError, match="Synthetic restart failure"):
+            wizard.restart_setup_hermes(tmp_path, None)
+    else:
+        wizard.restart_setup_hermes(tmp_path, None)
+    assert pending.exists() is fails
+    assert calls == (["restart"] if fails else ["restart", "clear"])
+
+
+def test_setup_reports_chosen_password_file_without_printing_or_copying_secret(
+    options, monkeypatch, capsys
+):
+    settings = load(options.config)
+    options.password_file = options.directory.parent / "chosen-password"
+    options.password_file.write_text("private-test-passphrase\n")
+    options.password_file.chmod(0o600)
+    wizard.configure_password(options, wizard.Prompts(None), settings)
+    password_path = wizard.initialize_password(options.config, settings)
+    monkeypatch.setattr(wizard, "verify_hermes", lambda _: "connected")
+    wizard.report_setup(
+        options, settings, options.directory, options.config, password_path, False, None, None, {}
+    )
+    output = capsys.readouterr().out
+    assert f"Sign-in password file: {options.password_file}" in output
+    assert "private-test-passphrase" not in output
+    assert not (options.config.parent / "initial-password.txt").exists()
 
 
 @pytest.mark.parametrize("version", ["1.0.0", "999.0.0"])
