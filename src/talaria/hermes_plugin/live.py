@@ -83,9 +83,7 @@ class LiveRun:
         if not getattr(agent, "status_callback", None):
             agent.status_callback = self.status
         if not getattr(agent, "clarify_callback", None):
-            agent.clarify_callback = lambda question, choices, multi_select=False: self.clarify(
-                agent, question, choices, multi_select
-            )
+            agent.clarify_callback = self.clarification_callback(agent)
         stream = agent.stream_delta_callback
 
         @wraps(stream)
@@ -95,6 +93,15 @@ class LiveRun:
             return stream(delta)
 
         agent.stream_delta_callback = text
+
+    def clarification_callback(self, agent):
+        from tools.clarify_tool import clarify_tool
+
+        if "question" in inspect.signature(clarify_tool).parameters:
+            return lambda question, choices, multi_select=False: self.clarify(
+                agent, question, choices, multi_select
+            )
+        return lambda questions: self.clarify_batch(agent, questions)
 
     async def cancel_when_stopped(self, agent, request_id):
         from tools import clarify_gateway
@@ -108,14 +115,37 @@ class LiveRun:
             clarify_gateway.resolve_gateway_clarify(request_id, "")
 
     def clarify(self, agent, question, choices, multi_select):
+        from tools.clarify_tool import TIMEOUT_RESPONSE
+
         with self.question_lock:
             if getattr(agent, "_interrupt_requested", False):
                 return ""
-            return self.ask(agent, question, choices, multi_select)
+            response = self.ask(agent, question, choices, multi_select)
+            return TIMEOUT_RESPONSE if response is None else response
+
+    def clarify_batch(self, agent, questions):
+        from tools import clarify_gateway
+
+        answers = {}
+        with self.question_lock:
+            for entry in questions:
+                if getattr(agent, "_interrupt_requested", False):
+                    return {"answers": answers, "outcome": "cancelled"}
+                response = self.ask(
+                    agent, entry["question"], entry["choices"], entry["multi_select"]
+                )
+                if (
+                    getattr(agent, "_interrupt_requested", False)
+                    or response == clarify_gateway.CANCELLED
+                ):
+                    return {"answers": answers, "outcome": "cancelled"}
+                if response is None:
+                    return {"answers": answers, "outcome": "timed_out"}
+                answers[entry["qid"]] = response or None
+        return {"answers": answers, "outcome": "submitted"}
 
     def ask(self, agent, question, choices, multi_select):
         from tools import clarify_gateway
-        from tools.clarify_tool import TIMEOUT_RESPONSE
 
         if len(question) > 16000 or any(len(choice) > 4000 for choice in choices or []):
             raise ValueError("Use a shorter clarification question or choices.")
@@ -133,10 +163,9 @@ class LiveRun:
             self.cancel_when_stopped(agent, request_id), self.loop
         )
         try:
-            response = clarify_gateway.wait_for_response(
+            return clarify_gateway.wait_for_response(
                 request_id, timeout=clarify_gateway.get_clarify_timeout()
             )
-            return TIMEOUT_RESPONSE if response is None else response
         finally:
             monitor.cancel()
             self.reasoning_id = None

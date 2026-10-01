@@ -9,6 +9,44 @@ from .conftest import wait_for_store
 from .test_app import signed_in
 
 
+def test_native_tool_result_preview_keeps_the_original_command(module_page):
+    tool = module_page.evaluate("""async () => {
+      const {applyEvent} = await import('/static/runs.js');
+      let live = applyEvent({text: ''}, {event: 'tool.started', tool: 'terminal',
+        tool_call_id: 'a', preview: 'date'});
+      live = applyEvent(live, {event: 'tool.completed', tool: 'terminal',
+        tool_call_id: 'a', preview: 'Wednesday', error: false});
+      return live.tools[0];
+    }""")
+    assert tool["preview"] == "date" and tool["output"] == "Wednesday"
+    assert tool["status"] == "completed"
+
+
+@pytest.mark.parametrize("streamed", [False, True])
+def test_native_commentary_is_visible_once_and_preserved_before_the_answer(module_page, streamed):
+    result = module_page.evaluate(
+        """async streamed => {
+          const {applyEvent} = await import('/static/runs.js');
+          let live = {status: 'running', text: ''};
+          if (streamed) live = applyEvent(live, {event: 'message.delta', delta: 'Checking first.'});
+          live = applyEvent(live, {event: 'message.interim', text: 'Checking first.',
+            already_streamed: streamed});
+          const commentary = live;
+          live = applyEvent(live, {event: 'message.delta', delta: 'Partial answer'});
+          live = applyEvent(live, {event: 'run.completed', output: 'Final answer.'});
+          return {commentary, live};
+        }""",
+        streamed,
+    )
+    assert result["commentary"]["text"] == "Checking first."
+    assert result["commentary"].get("reasoning") is None
+    assert [part["text"] for part in result["live"]["parts"]] == [
+        "Checking first.",
+        "Final answer.",
+    ]
+    assert result["live"]["text"] == "Checking first.\n\nFinal answer."
+
+
 def question_stream(peer, *, multi=False):
     async def events(run):
         def frame(event, **fields):

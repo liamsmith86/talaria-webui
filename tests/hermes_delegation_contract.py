@@ -30,14 +30,16 @@ async def verify_delegation(home):
                 parent = SimpleNamespace(session_id=f"parent-{name}")
                 assert _resolve_async_session_key(parent, "")[0] == authority
                 child = SimpleNamespace(session_id=f"child-{name}", run_conversation=child_turn)
-                fixture = SimpleNamespace(
+                fixture = _ChildRun(
                     child=child,
+                    parent_agent=parent,
                     task_index=0,
                     goal="Fixture",
+                    subagent_id=None,
+                    child_progress_cb=None,
                     child_task_id="fixture",
-                    relay_text=None,
                 )
-                result, error, deferred = await asyncio.to_thread(_ChildRun.await_child, fixture)
+                result, error, deferred = await asyncio.to_thread(fixture.await_child)
                 assert result == {"profile": str(directory), "authority": authority}
                 assert error is None and not deferred
             finally:

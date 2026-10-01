@@ -15,7 +15,7 @@ from hermes_cli import models_reasoning_caps as native_caps
 from hermes_cli.plugins_discovery import scan_directory
 from hermes_delegation_contract import verify_delegation
 from hermes_state import SessionDB
-from hermes_views_contract import verify_views
+from hermes_views_contract import verify_history, verify_views
 from providers import get_provider_profile
 
 from talaria.hermes_plugin.bridge import rewind, rewind_preview, wire
@@ -25,6 +25,7 @@ from talaria.hermes_plugin.observations import Observations
 home = Path(sys.argv[1])
 assert home.is_dir() and str(home).startswith("/tmp/")
 verify_views(home)
+asyncio.run(verify_history(home))
 asyncio.run(verify_delegation(home))
 db = SessionDB(home / "state.db")
 db.create_session("contract", "api_server")
@@ -217,7 +218,7 @@ for effort, expected in [("high", "high"), (False, "none"), ("", None)]:
     config = {
         "agent": {"reasoning_effort": effort, "reasoning_overrides": {"override-model": "low"}}
     }
-    with patch("gateway.run._load_gateway_runtime_config", return_value=config):
+    with patch("hermes_cli.config.load_config_readonly", return_value=config):
         add_reasoning_defaults(catalog)
     assert catalog.get("configured_reasoning") == expected
     caps = catalog["providers"][0]["capabilities"]

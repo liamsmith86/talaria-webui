@@ -38,7 +38,7 @@ class FixtureMemory(MemoryProvider):
         self.written.set()
 
 
-async def verify_memory(run, db, seen, configure, home):
+async def verify_memory(run, db, seen, configure, home, adapter):
     providers = []
 
     def load(name):
@@ -54,6 +54,8 @@ async def verify_memory(run, db, seen, configure, home):
     db.create_session("memory-contract", "api_server")
     with patch("plugins.memory.load_memory_provider", side_effect=load):
         for turn in (1, 2):
+            if providers:
+                providers[-1].written.clear()
             prompt = f"Recall the fixture's favorite color on turn {turn}"
             await run(prompt, f"memory-{turn}", session_id="memory-contract")
             wire = json.dumps(seen[-1]["messages"])
@@ -67,8 +69,9 @@ async def verify_memory(run, db, seen, configure, home):
             assert provider.initialized["session_id"] == "memory-contract"
             assert provider.initialized["hermes_home"] == str(home)
             assert provider.initialized["platform"] == "api_server"
-            assert provider.reads == [("memory-contract", prompt)]
+            assert provider.reads[-1] == ("memory-contract", prompt)
+            assert len(providers) == (1 if hasattr(adapter, "_memory_sessions") else turn)
             assert await asyncio.to_thread(provider.written.wait, 5)
-            assert provider.writes[0][0:2] == ("memory-contract", prompt)
-            assert provider.writes[0][2]
+            assert provider.writes[-1][0:2] == ("memory-contract", prompt)
+            assert provider.writes[-1][2]
     configure(debug_requests=False)

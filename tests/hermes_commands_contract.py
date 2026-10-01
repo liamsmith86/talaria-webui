@@ -1,6 +1,7 @@
 """Exercise real Hermes compression, leases and SQLite; substitute only the summary LLM."""
 
 import asyncio
+import inspect
 import json
 import threading
 import uuid
@@ -87,6 +88,15 @@ async def verify_commands(client, db, model):
                 m["content"] for m in before_conversation[-4:]
             ]
         assert not any(m["content"].startswith("/compress") for m in after)
+        if "include_ancestors" in inspect.signature(db.get_messages).parameters:
+            response = await client.get(
+                f"/api/sessions/{canonical}/messages",
+                headers=headers,
+                params={"order": "oldest", "limit": 2, "include_compacted": "true"},
+            )
+            assert response.status == 200, await response.text()
+            rows = (await response.json())["data"]
+            assert [row["content"] for row in rows] == [row["content"] for row in before[:2]]
         assert db.try_acquire_session_turn_lease(canonical, "test-after")
         db.release_session_turn_lease(canonical, "test-after")
     await verify_admission(client, db)

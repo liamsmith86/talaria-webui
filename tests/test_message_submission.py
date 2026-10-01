@@ -6,6 +6,17 @@ from playwright.sync_api import expect
 from .test_conversation_features import seed
 
 
+def test_new_session_lets_hermes_name_the_conversation(page, live_app):
+    peer = live_app[1]
+    page.get_by_label("Message Hermes").fill("Please fix the profile configuration")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.locator(".message.assistant")).to_contain_text(
+        "What would you like to explore next?"
+    )
+    assert len(peer.sessions) == 1
+    assert next(iter(peer.sessions.values()))["title"] == "Untitled"
+
+
 def test_saved_reply_replaces_the_stream_without_a_duplicate_frame(page):
     page.evaluate("""async () => {
         const {options} = await import('/static/vendor/preact.js');
