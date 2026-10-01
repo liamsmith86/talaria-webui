@@ -19,9 +19,11 @@ async def wait_for(check):
 
 
 async def verify_live(client, adapter, db, planned, seen, home):
-    for mode in ("answer", "batch", "skip", "stop", "timeout"):
+    for mode in ("answer", "batch", "batch-timeout", "skip", "stop", "timeout"):
         with patch.object(
-            clarify_gateway, "get_clarify_timeout", return_value=1 if mode == "timeout" else 30
+            clarify_gateway,
+            "get_clarify_timeout",
+            return_value=1 if mode.endswith("timeout") else 30,
         ):
             events, sid = await verify_mode(client, adapter, db, planned, seen, mode)
             if mode in {"answer", "stop"}:
@@ -40,6 +42,7 @@ def capture(home, name, events, messages):
         "event",
         "delta",
         "text",
+        "already_streamed",
         "output",
         "tool",
         "preview",
@@ -106,7 +109,7 @@ async def verify_mode(client, adapter, db, planned, seen, mode):
     sid = f"clarify-{mode}"
     db.create_session(sid, "api_server")
     questions = [{"question": "Which environment?", "choices": ["Development", "Production"]}]
-    if mode == "batch":
+    if mode.startswith("batch"):
         questions.append(
             {"question": "Which checks?", "choices": ["Lint", "Browser"], "multi_select": True}
         )
@@ -159,17 +162,25 @@ async def verify_mode(client, adapter, db, planned, seen, mode):
                 events.append(json.loads(line[6:]))
 
     consumer = asyncio.create_task(consume())
-    prompt = await wait_for(lambda: adapter._run_statuses[rid].get("clarification"))
+    try:
+        prompt = await wait_for(lambda: adapter._run_statuses[rid].get("clarification"))
+    except AssertionError as exc:
+        raise AssertionError(
+            {"mode": mode, "status": adapter._run_statuses[rid], "events": events}
+        ) from exc
     await wait_for(lambda: any(e["event"] == "talaria.reasoning.delta" for e in events))
     assert any(e.get("delta") == "ACTUAL_PROVIDER_REASONING_ONE" for e in events)
     assert not any(e["event"] == "reasoning.available" for e in events)
+    for event in events:
+        if event["event"] == "message.interim":
+            assert event["text"] == "Before the question." and event["already_streamed"] is True
     assert prompt["question"] == "Which environment?"
     assert prompt["choices"][0] == "Development (Recommended)"
     status = await (await client.get(f"/v1/runs/{rid}", headers=headers)).json()
     assert status["status"] == "waiting_for_input" and status["clarification"] == prompt
-    if mode in {"answer", "batch"}:
+    if mode in {"answer", "batch", "batch-timeout"}:
         await verify_answer(client, adapter, rid, headers, prompt)
-        if mode == "batch":
+        if mode.startswith("batch"):
             second = await wait_for(
                 lambda: (
                     pending
@@ -179,12 +190,16 @@ async def verify_mode(client, adapter, db, planned, seen, mode):
                 )
             )
             assert second["question"] == "Which checks?" and second["multi_select"]
-            response = await client.post(
-                f"/talaria/v1/runs/{rid}/clarification",
-                headers=headers,
-                json={"request_id": second["request_id"], "answer": json.dumps(second["choices"])},
-            )
-            assert response.status == 200
+            if mode == "batch":
+                response = await client.post(
+                    f"/talaria/v1/runs/{rid}/clarification",
+                    headers=headers,
+                    json={
+                        "request_id": second["request_id"],
+                        "answer": json.dumps(second["choices"]),
+                    },
+                )
+                assert response.status == 200
     elif mode == "skip":
         response = await client.post(
             f"/talaria/v1/runs/{rid}/clarification",
@@ -209,12 +224,24 @@ async def verify_mode(client, adapter, db, planned, seen, mode):
         result = json.loads(tool_rows[-1]["content"])
         if mode in {"answer", "batch"}:
             assert result["responses"][0]["user_response"] == "Development"
+            if "outcome" in result:
+                assert result["outcome"] == "submitted"
+                assert result["responses"][0]["status"] == "answered"
             if mode == "batch":
                 assert result["responses"][1]["user_response"] == ["Lint", "Browser"]
         elif mode == "skip":
-            assert result["responses"][0]["user_response"] == ""
+            assert result["responses"][0]["user_response"] in ("", None)
+            if "outcome" in result:
+                assert result["outcome"] == "submitted"
+                assert result["responses"][0]["status"] == "skipped"
         else:
-            assert result["timed_out"] is True
+            assert result.get("timed_out") is True or result.get("outcome") == "timed_out"
+            index = 1 if mode == "batch-timeout" else 0
+            if mode == "batch-timeout":
+                assert result["responses"][0]["user_response"] == "Development"
+            if "outcome" in result:
+                assert result["responses"][index]["status"] == "unanswered"
+                assert result["responses"][index]["user_response"] is None
     planned.clear()
     return events, sid
 

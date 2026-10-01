@@ -1,0 +1,22 @@
+{
+  "events": [
+    {
+      "event": "run.failed",
+      "error": "HTTP 400: Synthetic model unavailable"
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Exercise a provider error",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "Your request was not processed. Send it again if you still want me to carry it out.",
+      "tool_call_id": null,
+      "tool_calls": null
+    }
+  ]
+}

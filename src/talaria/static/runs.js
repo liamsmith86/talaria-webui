@@ -23,8 +23,8 @@ import {
   withoutImagePlaceholders,
 } from "./attachments.js";
 import { plainContent } from "./content.js";
-import { responseParts, appendText, finishText } from "./response-parts.js";
-import { t, msg } from "./i18n.js";
+import { responseParts, appendText, finishText, interimText } from "./response-parts.js";
+import { msg } from "./i18n.js";
 
 const sources = new Map();
 let recoveryRecords = {};
@@ -168,6 +168,11 @@ export function applyEvent(live, event) {
     next.statusText = "";
     next.parts = appendText(responseParts(live), event.delta);
   }
+  if (type === "message.interim" && typeof event.text === "string" && event.text.trim()) {
+    next.parts = interimText(live, event.text, event.already_streamed === true);
+    if (event.already_streamed !== true) next.text = (live.text || "") + event.text;
+    next.statusText = "";
+  }
   if (type === "reasoning.available" && typeof event.text === "string") {
     next.reasoning = event.text;
     const parts = responseParts(live);
@@ -217,6 +222,7 @@ export function applyEvent(live, event) {
         ...next.tools[index],
         status: event.error ? "failed" : "completed",
         duration: event.duration,
+        ...(typeof event.preview === "string" ? { output: event.preview } : {}),
       };
   }
   if (type === "subagent.start" || type === "subagent.complete") {
@@ -350,9 +356,7 @@ export async function sendMessage(
   if (!sid) {
     const result = await api("/sessions", {
       method: "POST",
-      body: {
-        title: text.replace(/\s+/g, " ").slice(0, 70) || t("Image session"),
-      },
+      body: {},
     });
     sid = result.id || result.session_id || result.session?.id;
     if (!sid) throw new Error(msg("Hermes did not return a session ID."));

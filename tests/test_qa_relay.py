@@ -8,6 +8,24 @@ import pytest
 from talaria import relay
 
 
+async def test_native_replay_gap_requests_history_before_retained_events():
+    class Upstream:
+        async def events(self, run_id):
+            yield {"event": "replay.truncated", "oldest_retained_seq": 100}
+            yield {"event": "message.delta", "delta": "Retained tail", "seq": 100}
+            yield {"event": "run.completed", "output": "Final answer", "seq": 101}
+
+    channel = relay.Channel("native-replay")
+    await relay.Relay(Upstream()).observe(channel)
+    events = [json.loads(event) for _, event in channel.events]
+    assert events == [
+        {"event": "talaria.reconcile"},
+        {"event": "message.delta", "delta": "Retained tail", "seq": 100},
+        {"event": "run.completed", "output": "Final answer", "seq": 101},
+    ]
+    assert channel.finished
+
+
 @pytest.mark.parametrize("replacement", [False, True])
 async def test_polling_clears_only_the_last_pending_approval(monkeypatch, replacement):
     first = {"request_id": "question-one", "command": "First command"}

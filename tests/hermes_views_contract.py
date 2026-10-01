@@ -1,11 +1,36 @@
 """Native indexed search, archived windows and per-owner activity isolation."""
 
-from aiohttp.test_utils import make_mocked_request
+import inspect
+from unittest.mock import patch
+
+from aiohttp import web
+from aiohttp.test_utils import TestClient, TestServer, make_mocked_request
 from gateway.config import PlatformConfig
 from gateway.platforms.api_server import APIServerAdapter
 from hermes_state import SessionDB
 
+from talaria.hermes import Hermes
 from talaria.hermes_plugin import activity, search
+from talaria.transcripts import message_page
+
+
+async def verify_titles(run, db, configure, client, headers):
+    from hermes_live_contract import wait_for
+
+    configure(auxiliary={"title_generation": {"enabled": True}})
+    response = await client.post("/api/sessions", headers=headers, json={"source": "api_server"})
+    assert response.status == 201, await response.text()
+    sid = (await response.json())["session"]["id"]
+    assert not db.get_session(sid).get("title")
+    with patch("agent.title_generator.generate_title", return_value="Hermes generated title"):
+        await run("Please fix the profile configuration", "native-title", session_id=sid)
+        await wait_for(lambda: db.get_session_title(sid) == "Hermes generated title")
+    assert db.get_session_title_source(sid) == "llm"
+    db.set_session_title(sid, "Owner title")
+    await run("Keep my chosen title", "owner-title", session_id=sid)
+    assert db.get_session_title(sid) == "Owner title"
+    assert db.get_session_title_source(sid) == "user"
+    configure(debug_requests=False)
 
 
 def verify_views(home):
@@ -40,6 +65,47 @@ def verify_views(home):
         from gateway.platforms.api_server_runs import _close_run_state
 
         _close_run_state(adapter)
+
+
+async def verify_history(home):
+    db = SessionDB(home / "history.db")
+    adapter = APIServerAdapter(PlatformConfig(enabled=True, extra={"key": "fixture-key"}))
+    adapter._session_db = db
+    app = web.Application()
+    app.router.add_get("/api/sessions/{session_id}/messages", adapter._handle_session_messages)
+    try:
+        db.create_session("history", "api_server")
+        db.append_message("history", "user", "Earlier question")
+        db.append_message("history", "assistant", "Earlier answer")
+        db.archive_and_compact("history", [{"role": "user", "content": "Synthetic summary"}])
+        db.append_message("history", "user", "Current question")
+        db.append_message("history", "assistant", "Current answer")
+        removed = db.append_message("history", "user", "Rewound question")
+        db.append_message("history", "assistant", "Rewound answer")
+        db.rewind_to_message("history", removed)
+        async with TestClient(TestServer(app)) as client:
+            transport = Hermes(str(client.make_url("/")), "fixture-key")
+            try:
+                pages = [
+                    await message_page(transport, "history", offset, order="oldest", limit=2)
+                    for offset in (0, 2, 4)
+                ]
+                rows = [row for page in pages for row in page["data"]]
+                assert len({row["id"] for row in rows}) == len(rows)
+                content = [row["content"] for row in rows]
+                assert content.count("Current question") == content.count("Current answer") == 1
+                assert not any("Rewound" in text for text in content)
+                # Older API servers ignore include_compacted; current Hermes must
+                # return the archived display history through its native projection.
+                if "include_ancestors" in inspect.signature(db.get_messages).parameters:
+                    assert content[:2] == ["Earlier question", "Earlier answer"], content
+                latest = await message_page(transport, "history", order="latest", limit=1)
+                assert latest["data"][0]["content"] == "Current answer"
+            finally:
+                await transport.close()
+    finally:
+        await adapter.disconnect()
+        db.close()
 
 
 def verify_activity(adapter):

@@ -236,7 +236,9 @@ async def sessions(request: Request):
             )
         )
     data = await body(request)
-    payload = {"title": text_field(data, "title", 160, "New session"), "source": "api_server"}
+    payload = {"source": "api_server"}
+    if "title" in data:
+        payload["title"] = text_field(data, "title", 160)
     for attempt in range(6):
         try:
             result = await client.request("POST", "/api/sessions", json=payload)

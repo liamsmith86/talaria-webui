@@ -52,6 +52,8 @@ def configure(prompt="PROFILE_INSTRUCTION", *, debug_requests=True, **extras):
                     "context_length": 128000,
                 },
                 "agent": {"system_prompt": prompt},
+                # Keep title-model requests out of the conversation simulator.
+                "auxiliary": {"title_generation": {"enabled": False}},
                 "prefill_messages_file": "prefill.json",
                 **extras,
             }
@@ -208,6 +210,8 @@ async def main():
             assert not supports_context_runs(adapter)
         app = web.Application(middlewares=[adapter._make_profile_prefix_middleware()])
         app.router.add_post("/v1/runs", adapter._handle_runs)
+        app.router.add_post("/api/sessions", adapter._handle_create_session)
+        app.router.add_get("/api/sessions/{session_id}/messages", adapter._handle_session_messages)
         app.router.add_get("/v1/runs/{run_id}/events", adapter._handle_run_events)
         app.router.add_get("/v1/runs/{run_id}", adapter._handle_get_run)
         app.router.add_post("/v1/runs/{run_id}/stop", adapter._handle_stop_run)
@@ -332,7 +336,9 @@ async def main():
                     return data["run_id"]
 
                 first = await run("First real user turn", "first")
-                assert len(seen) == 1
+                assert len(seen) == 1, [
+                    (request.get("model"), str(request.get("messages"))[-500:]) for request in seen
+                ]
                 before = deepcopy(seen[0])
                 configure("UPDATED_PROFILE_INSTRUCTION")
                 assert load_context().instructions == "UPDATED_PROFILE_INSTRUCTION"
@@ -446,7 +452,10 @@ async def main():
                 await verify_parity(run, db, seen, agents, configure, model_name, provider_name)
                 from hermes_memory_contract import verify_memory
 
-                await verify_memory(run, db, seen, configure, home)
+                await verify_memory(run, db, seen, configure, home, adapter)
+                from hermes_views_contract import verify_titles
+
+                await verify_titles(run, db, configure, client, headers)
                 from hermes_live_contract import verify_live
 
                 await verify_live(client, adapter, db, planned_replies, seen, home)

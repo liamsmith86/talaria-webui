@@ -71,6 +71,8 @@ class Relay:
                     kind = object_result(event).get("event")
                     if not isinstance(kind, str):
                         raise APIError("Hermes returned an unreadable live update.")
+                    if kind == "replay.truncated":
+                        event = {"event": "talaria.reconcile"}
                     await channel.publish(event)
                     if kind in TERMINAL_EVENTS:
                         return

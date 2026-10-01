@@ -41,7 +41,12 @@ async def message_page(client, sid, offset=0, *, order="latest", limit=100):
             result = await client.request(
                 "GET",
                 f"/api/sessions/{sid}/messages",
-                params={"offset": offset, "limit": limit, "order": order},
+                params={
+                    "offset": offset,
+                    "limit": limit,
+                    "order": order,
+                    "include_compacted": "true",
+                },
             )
             break
         except APIError as exc:

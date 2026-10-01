@@ -39,10 +39,10 @@ def add_reasoning_defaults(payload):
     from .observations import reasoning
 
     try:
-        from gateway.run import _load_gateway_runtime_config
+        from hermes_cli.config import load_config_readonly
         from hermes_constants import resolve_reasoning_config
 
-        config = _load_gateway_runtime_config()
+        config = load_config_readonly()
 
         def configured(model):
             return reasoning({"reasoning": resolve_reasoning_config(config, model)})

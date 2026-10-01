@@ -52,7 +52,13 @@ jobs:
           cache: npm
       - run: npm install --global npm@12.0.1 --ignore-scripts
         working-directory: ${{ runner.temp }}
-      - run: uv sync --locked --only-group lint
+      - name: Install lint tools (retry transient binary downloads)
+        run: |
+          for attempt in 1 2 3; do
+            if uv sync --locked --only-group lint; then exit 0; fi
+            if [ "$attempt" -lt 3 ]; then sleep "$((attempt * 5))"; fi
+          done
+          exit 1
       - run: uv run --locked --only-group lint python contrib/quality.py
       - name: Verify the quality gates
         if: inputs.full
@@ -202,19 +208,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: NousResearch/hermes-agent
-          ref: ${{ (inputs.hermes_latest || github.event_name == 'schedule') && 'main' || '205645ee424163c7b6cfc032c331c3557797497b' }}
+          ref: ${{ (inputs.hermes_latest || github.event_name == 'schedule') && 'main' || 'f97608f178d1ffeca59860195ab7da295f7c8e5f' }}
           path: .local/hermes
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.12.9'
           checksum: *uv-checksum
-          python-version: '3.12'
+          # Hermes main's lockfile targets 3.14; the release baseline retains 3.12.
+          python-version: ${{ (inputs.hermes_latest || github.event_name == 'schedule') && '3.14' || '3.12' }}
       - run: uv sync --locked
       - name: Install Hermes from its own lockfile (sms extra supplies aiohttp)
         env:
           UV_PROJECT_ENVIRONMENT: ${{ env.HERMES_SOURCE }}/venv
-        run: uv sync --project "$HERMES_SOURCE" --frozen --no-dev --extra sms --python 3.12
+        run: uv sync --project "$HERMES_SOURCE" --frozen --no-dev --extra sms --python "$UV_PYTHON"
       - run: uv run --locked pytest -q -m hermes --fail-on-skip --junitxml=test-results/hermes.xml
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()

@@ -15,6 +15,44 @@ release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release)
 
 
+@pytest.mark.parametrize("failures,attempts,exit_code", [(0, 1, 0), (2, 3, 0), (4, 3, 1)])
+def test_lint_install_retries_download_failures_without_hiding_permanent_errors(
+    tmp_path, failures, attempts, exit_code
+):
+    workflow = yaml.load((ROOT / ".github/workflows/ci.yml").read_text())
+    step = next(
+        item
+        for item in workflow["jobs"]["lint"]["steps"]
+        if item.get("name") == "Install lint tools (retry transient binary downloads)"
+    )
+    uv = tmp_path / "uv"
+    uv.write_text(
+        '#!/bin/sh\n[ "$*" = "sync --locked --only-group lint" ] || exit 90\n'
+        'count=0\n[ ! -f "$ATTEMPTS" ] || count=$(cat "$ATTEMPTS")\n'
+        'count=$((count + 1))\nprintf "%s" "$count" > "$ATTEMPTS"\n'
+        '[ "$count" -gt "$FAILURES" ]\n'
+    )
+    uv.chmod(0o755)
+    sleep = tmp_path / "sleep"
+    sleep.write_text("#!/bin/sh\nexit 0\n")
+    sleep.chmod(0o755)
+    calls = tmp_path / "attempts"
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={
+            **os.environ,
+            "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+            "ATTEMPTS": str(calls),
+            "FAILURES": str(failures),
+        },
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == exit_code, result.stderr
+    assert int(calls.read_text()) == attempts
+
+
 @pytest.mark.parametrize("registry_exit", [0, 1])
 def test_release_requires_anonymous_image_access_before_promoting(tmp_path, registry_exit):
     workflow = yaml.load((ROOT / ".github/workflows/release.yml").read_text())

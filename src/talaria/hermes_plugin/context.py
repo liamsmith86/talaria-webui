@@ -38,11 +38,13 @@ def load_context():
     result = ProfileContext()
     try:
         from agent.secret_scope import get_secret
-        from gateway.run import _load_gateway_runtime_config
-        from hermes_cli.config import resolve_ephemeral_system_prompt_from_config
+        from hermes_cli.config import (
+            load_config_readonly,
+            resolve_ephemeral_system_prompt_from_config,
+        )
         from hermes_constants import get_hermes_home
 
-        cfg = _load_gateway_runtime_config()
+        cfg = load_config_readonly()
     except Exception:
         log.warning("Talaria could not read the Hermes profile context")
         return result

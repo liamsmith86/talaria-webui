@@ -13,15 +13,20 @@ from .conftest import wait_for_store
 
 
 @pytest.mark.parametrize("chunk_size", [31, 4096])
-@pytest.mark.parametrize("name", ["completed", "tools", "interrupted", "failure"])
+@pytest.mark.parametrize(
+    "fixture",
+    sorted(path.stem for path in Path(__file__).with_name("fixtures").glob("hermes-*.json")),
+)
 def test_native_trace_reconciles_with_fragmented_or_batched_delivery(
     page,
     live_app,
     monkeypatch,
     chunk_size,
-    name,
+    fixture,
 ):
-    trace = json.loads((Path(__file__).with_name("fixtures") / f"hermes-{name}.json").read_text())
+    trace = json.loads((Path(__file__).with_name("fixtures") / f"{fixture}.json").read_text())
+    name = fixture.split("-")[1]
+    assistant_count = int(any(row["role"] == "assistant" for row in trace["messages"]))
     peer = live_app[1]
     original_events = peer.events
     terminal = trace["events"][-1]
@@ -43,7 +48,7 @@ def test_native_trace_reconciles_with_fragmented_or_batched_delivery(
     wait_for_store(page, f"state => state.lives[state.active]?.status === {json.dumps(status)}")
     if name != "failure":
         wait_for_store(page, "state => state.lives[state.active]?.persisted")
-    expect(page.locator(".message.assistant")).to_have_count(0 if name == "failure" else 1)
+    expect(page.locator(".message.assistant")).to_have_count(assistant_count)
     text = {
         "completed": "Fixture reply.",
         "tools": "After the answer.",
@@ -55,12 +60,15 @@ def test_native_trace_reconciles_with_fragmented_or_batched_delivery(
     if name in {"tools", "interrupted"}:
         expect(page.locator(".message.assistant .tool-card")).to_have_count(1)
     page.reload()
-    expect(page.locator(".message.assistant")).to_have_count(0 if name == "failure" else 1)
+    expect(page.locator(".message.assistant")).to_have_count(assistant_count)
     if name != "failure":
         expect(target).to_contain_text(text)
     else:
-        # Hermes saves the user message, but no assistant row for this failure.
         expect(page.locator(".message.user")).to_contain_text(trace["messages"][0]["content"])
+        if assistant_count:
+            expect(page.locator(".message.assistant")).to_contain_text(
+                "Your request was not processed."
+            )
     # A provider failure or interruption must leave the session usable.
     monkeypatch.setattr(peer, "events", original_events)
     page.get_by_label("Message Hermes").fill("Continue after the native fixture")

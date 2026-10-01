@@ -25,6 +25,9 @@ class Runner(GatewayShutdownMixin):
     def _wedged_agent_count(self):
         return 0
 
+    def _sessions_map(self):
+        return {}
+
     def _scale_to_zero_status(self, *_):
         pass
 

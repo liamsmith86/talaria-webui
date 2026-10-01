@@ -76,8 +76,7 @@ def test_connection_detects_releases_and_offers_native_installation(page, live_a
 @pytest.mark.skipif(
     not os.getenv("HERMES_SOURCE"), reason="Set HERMES_SOURCE for native validation"
 )
-@pytest.mark.parametrize("command", ["doctor", "compat"])
-def test_native_plugin_validation(tmp_path, command):
+def test_native_plugin_validation(tmp_path):
     source = Path(os.environ["HERMES_SOURCE"])
     plugin = Path(plugin_status.__file__).with_name("hermes_plugin")
     result = subprocess.run(
@@ -86,9 +85,9 @@ def test_native_plugin_validation(tmp_path, command):
             "-m",
             "hermes_cli.main",
             "plugins",
-            command,
+            "doctor",
             str(plugin),
-            *(["--ci"] if command == "doctor" else []),
+            "--ci",
         ],
         cwd=tmp_path,
         env={
