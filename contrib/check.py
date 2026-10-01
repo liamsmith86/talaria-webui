@@ -21,7 +21,12 @@ STREAMING = [
     "tests/test_stream_reveal.py",
     "tests/test_reply_settlement.py",
 ]
-FOCUSED = [*STREAMING, "tests/test_frontend_state_qa.py", "tests/test_message_submission.py"]
+FOCUSED = [
+    *STREAMING,
+    "tests/test_frontend_state_qa.py",
+    "tests/test_message_submission.py",
+    "tests/test_conversation_features.py",
+]
 INSTALL_TESTS = [
     "tests/test_setup.py",
     "tests/test_install.py",
