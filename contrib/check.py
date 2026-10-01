@@ -26,6 +26,7 @@ FOCUSED = [
     "tests/test_frontend_state_qa.py",
     "tests/test_message_submission.py",
     "tests/test_conversation_features.py",
+    "tests/test_settings.py",
 ]
 INSTALL_TESTS = [
     "tests/test_setup.py",
