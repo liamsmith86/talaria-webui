@@ -527,7 +527,8 @@ def test_image_resize_removal_and_image_only_message(page, live_app):
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
     expect(page.locator(".message-image")).to_have_count(1)
-    expect(page.locator(".topbar-title")).to_have_text("Image session")
+    expect(page.locator(".topbar-title")).to_have_text("Untitled")
+    assert next(iter(live_app[1].sessions.values()))["title"] == "Untitled"
     run = next(iter(live_app[1].runs.values()))
     assert len(run["raw_input"][0]["content"]) == 1
     assert run["raw_input"][0]["content"][0]["image_url"]["url"].startswith("data:image/jpeg")
@@ -579,7 +580,10 @@ def test_find_includes_earlier_messages_and_literal_formatted_text(page, live_ap
     expect(page.get_by_role("button", name="Find in session", exact=True)).to_be_focused()
 
 
-def test_child_details_and_read_only_transcript(page):
+def test_child_details_and_read_only_transcript(page, live_app):
+    seed(live_app[1], count=0)
+    page.reload()
+    page.get_by_role("link", name="Design notes", exact=True).click()
     send(page, "Delegate this review")
     card = page.locator(".tool-card").filter(has_text="Subagent")
     expect(card).to_have_count(1)
@@ -600,7 +604,7 @@ def test_child_details_and_read_only_transcript(page):
     expect(page.get_by_label("Message Hermes")).to_have_count(0)
     page.get_by_role("button", name="Back to parent session").click()
     expect(page.get_by_label("Message Hermes")).to_be_visible()
-    expect(page.locator(".topbar-title")).to_have_text("Delegate this review")
+    expect(page.locator(".topbar-title")).to_have_text("Design notes")
 
 
 def test_saved_child_cards_use_native_tool_results_and_explain_missing_links(page, live_app):
