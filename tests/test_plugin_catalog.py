@@ -47,6 +47,7 @@ def test_catalog_images_and_metadata_follow_the_reviewed_commit():
         {
             "name": "talaria-webui",
             "version": "1.5.0",
+            "description": "Plugin description from the manifest.",
             "requires_hermes": ">=0.21.5",
             "provides_hooks": ["pre_api_request"],
             "provides_middleware": ["llm_request"],
@@ -55,6 +56,7 @@ def test_catalog_images_and_metadata_follow_the_reviewed_commit():
     )
     assert entry["sha"] == sha
     assert entry["version"] == "1.5.0"
+    assert entry["description"] == "Plugin description from the manifest."
     assert entry["capabilities"]["provides_hooks"] == ["pre_api_request"]
     assert entry["capabilities"]["provides_middleware"] == ["llm_request"]
     assert entry["capabilities"]["requires_env"] == []

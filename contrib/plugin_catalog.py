@@ -132,10 +132,7 @@ def entry_for(manifest, sha):
         "repo": REPOSITORY,
         "sha": sha,
         "subdir": PLUGIN,
-        "description": (
-            "API extensions for Talaria WebUI: profile context, response details, "
-            "and session controls."
-        ),
+        "description": manifest["description"],
         "maintainer": "liamsmith86",
         "tier": "community",
         "category": "web",
