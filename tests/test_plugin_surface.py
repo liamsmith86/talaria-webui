@@ -4,7 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from talaria.hermes_plugin.surface import HINT, apply_surface
+from talaria.hermes_plugin.request_log import run_scope
+from talaria.hermes_plugin.surface import HINT, shape_request
 
 
 @pytest.mark.parametrize("shape", ["chat", "responses", "instructions", "anthropic", "blocks"])
@@ -29,11 +30,11 @@ def test_surface_hint_preserves_provider_payload_and_user_instructions(monkeypat
     else:
         request = {"instructions": system, "input": [user]}
     snapshot = deepcopy(request)
-    overrides = {"api_server": {"append": "PROFILE_APPEND"}}
-    agent = SimpleNamespace(_platform_hint_overrides=overrides, _build_api_kwargs=lambda: request)
-    apply_surface(agent)
-    wire = agent._build_api_kwargs()
-    assert request == snapshot and overrides == {"api_server": {"append": "PROFILE_APPEND"}}
+    assert shape_request(request=request, platform="api_server") is None
+    with run_scope():
+        assert shape_request(request=request, platform="discord") is None
+        wire = shape_request(request=request, platform="api_server")["request"]
+    assert request == snapshot
     assert user in (wire.get("messages") or wire.get("input"))
     content = wire.get("system") or wire.get("instructions")
     if content is None:
@@ -42,7 +43,6 @@ def test_surface_hint_preserves_provider_payload_and_user_instructions(monkeypat
         assert content[0]["cache_control"] == {"type": "ephemeral"}
         content = content[0]["text"]
     assert content == "PROFILE_PERSONA\n" + HINT + "\nPROFILE_APPEND"
-    assert agent._platform_hint_overrides["api_server"]["append"] == "PROFILE_APPEND"
 
 
 def test_explicit_platform_replacement_wins(monkeypatch):
@@ -53,9 +53,5 @@ def test_explicit_platform_replacement_wins(monkeypatch):
         SimpleNamespace(PLATFORM_HINTS={"api_server": "NATIVE"}),
     )
     request = {"messages": [{"role": "system", "content": "OWNER_INSTRUCTION"}]}
-    agent = SimpleNamespace(
-        _platform_hint_overrides={"api_server": {"replace": "OWNER_INSTRUCTION"}},
-        _build_api_kwargs=lambda: request,
-    )
-    apply_surface(agent)
-    assert agent._build_api_kwargs() == request
+    with run_scope():
+        assert shape_request(request=request, platform="api_server") is None

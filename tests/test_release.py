@@ -520,6 +520,7 @@ def test_source_promotion_fails_closed_on_github_errors(monkeypatch, error):
     "full,pull_request,failed,expected",
     [
         (False, False, None, 0),
+        (False, False, "catalog", 1),
         (False, True, "behavior", 1),
         (False, True, None, 0),
         (True, False, "hermes", 1),
@@ -534,7 +535,7 @@ def test_required_barrier_cannot_hide_missing_behavior_or_release_jobs(
 
     ci = yaml.load((ROOT / ".github/workflows/ci.yml").read_text())
     jobs = {name: {"result": "skipped"} for name in ci["jobs"]["required"]["needs"]}
-    required = {"lint"}
+    required = {"lint", "catalog"}
     if full:
         required.update({"platforms", "browsers", "hermes", "wsl"})
     if pull_request:

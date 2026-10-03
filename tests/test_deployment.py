@@ -315,7 +315,7 @@ def test_real_git_wheel_install_update_failure_and_rollback(
     assert "pytest" not in packages and "playwright" not in packages
     plugin_home = tmp_path / "exported-hermes"
     run([root / "current/venv/bin/talaria", "hermes-plugin", "--home", plugin_home])
-    exported = plugin_home / "plugins/talaria"
+    exported = plugin_home / "plugins/talaria-webui"
     bundled = project / "src/talaria/hermes_plugin"
     for file in bundled.iterdir():
         if file.suffix in {".py", ".yaml"}:

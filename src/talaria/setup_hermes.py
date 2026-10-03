@@ -57,7 +57,7 @@ def configure(home, request):
     if request.get("plugin"):
         from hermes_cli.plugins_cmd import cmd_enable
 
-        cmd_enable("talaria", allow_tool_override=False)
+        cmd_enable("talaria-webui", allow_tool_override=False)
         changed = True
     return {
         "enabled": bool(request.get("enable") or (api and api.enabled)),
@@ -72,8 +72,8 @@ def configure(home, request):
             or (
                 isinstance(plugins.get("enabled"), list)
                 and isinstance(plugins.get("disabled", []), list)
-                and "talaria" in (plugins.get("enabled") or [])
-                and "talaria" not in (plugins.get("disabled") or [])
+                and "talaria-webui" in (plugins.get("enabled") or [])
+                and "talaria-webui" not in (plugins.get("disabled") or [])
             )
         ),
     }

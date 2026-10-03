@@ -26,9 +26,9 @@ def hermes_managed(home):
         raise DeploymentError(
             "Cannot verify Hermes plugin ownership; nothing was changed."
         ) from exc
-    target = home / "plugins/talaria"
+    target = home / "plugins/talaria-webui"
     return (
-        "talaria" in data
+        "talaria-webui" in data
         or (target / ".git").exists()
         or (target / ".hermes-catalog.json").exists()
     )
@@ -53,14 +53,16 @@ def restore(target, backup):
 def replace_plugin(source, target, backup, *, preserve_backup=False):
     # The backup survives interruption between the two directory renames.
     with tempfile.TemporaryDirectory(prefix=".talaria-stage-", dir=backup.parent) as temporary:
-        staged = Path(temporary) / "talaria"
+        staged = Path(temporary) / "talaria-webui"
         shutil.copytree(target, staged, symlinks=True) if target.exists() else staged.mkdir()
         staged.chmod(0o700)
         for path in staged.iterdir():
             if path.suffix == ".py" or path.name in {"plugin.yaml", "__pycache__"}:
                 shutil.rmtree(path) if path.is_dir() and not path.is_symlink() else path.unlink()
         for path in source.iterdir():
-            if path.is_file() and path.suffix in {".py", ".yaml"}:
+            if path.is_file() and (
+                path.suffix in {".py", ".yaml"} or path.name in {"README.md", "LICENSE"}
+            ):
                 (staged / path.name).unlink(missing_ok=True)
                 shutil.copyfile(path, staged / path.name)
                 (staged / path.name).chmod(0o600)
@@ -99,9 +101,9 @@ def install(home, source, restart=None):
     # Hermes scans two plugin-directory levels, including hidden directories.
     # Keep backup/staging manifests below that discovery depth.
     maintenance = plugins / ".talaria-maintenance"
-    backup = maintenance / "backups" / "talaria"
+    backup = maintenance / "backups" / "talaria-webui"
     backup.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    target = plugins / "talaria"
+    target = plugins / "talaria-webui"
     pending = maintenance / "restart-required"
     if target.is_symlink() or backup.is_symlink():
         raise DeploymentError("The Talaria plugin is symlinked; update it through its owner.")
@@ -168,9 +170,9 @@ def main(argv, *, owner=None):
         else None
     )
     changed = install(home, args.source, restart)
-    print(f"Plugin {'installed' if changed else 'unchanged'}: {home / 'plugins/talaria'}")
+    print(f"Plugin {'installed' if changed else 'unchanged'}: {home / 'plugins/talaria-webui'}")
     if not args.restart:
-        print("Enable with `hermes plugins enable talaria`, then restart the gateway.")
+        print("Enable with `hermes plugins enable talaria-webui`, then restart the gateway.")
         print("For multiplexed gateways, also install and enable it in the primary profile.")
 
 

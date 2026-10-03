@@ -241,19 +241,19 @@ def check_service_account(plan):
             raise DeploymentError("The talaria-webui account is unsuitable for a service.")
 
 
-def migrate_service(deployment, *, refresh=False):
-    """Upgrade only our unmodified app unit; restore it if the new launcher fails."""
+def refresh_service(deployment):
+    """Apply changed permissions to our service; restore it if the restart fails."""
     import hashlib
 
     from .deployment import check_health, write_json
 
     metadata = deployment.config
     owned = metadata.get("setup")
-    if not owned or (metadata.get("supervised") and not refresh):
+    if not owned:
         return
     if (owned["scope"] == "system") != (os.geteuid() == 0):
         raise DeploymentError(
-            "Run setup as the service installation owner to upgrade its launcher."
+            "Run setup as the service installation owner to refresh its configuration."
         )
     plan = service_plan(owned["kind"], deployment.root, Path(metadata["config"]))
     path = plan["path"]
@@ -262,11 +262,10 @@ def migrate_service(deployment, *, refresh=False):
     previous = path.read_text()
     if hashlib.sha256(previous.encode()).hexdigest() != owned["service_sha256"]:
         raise DeploymentError("Service configuration changed; it was preserved.")
-    if previous == plan["text"] and metadata.get("supervised"):
+    if previous == plan["text"]:
         return
     upgraded = {
         **metadata,
-        "supervised": True,
         "setup": {
             **owned,
             "service_sha256": hashlib.sha256(plan["text"].encode()).hexdigest(),

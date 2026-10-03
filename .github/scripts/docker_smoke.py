@@ -96,7 +96,7 @@ print(hashlib.sha256(p.read_bytes()).hexdigest())
 """
     before = docker("exec", name, "python", "-c", fingerprint)
     docker("exec", name, "talaria", "hermes-plugin", "--home", "/tmp/hermes-export")
-    docker("exec", name, "test", "-s", "/tmp/hermes-export/plugins/talaria/plugin.yaml")
+    docker("exec", name, "test", "-s", "/tmp/hermes-export/plugins/talaria-webui/plugin.yaml")
     docker("restart", name)
     ready()
     assert before == docker("exec", name, "python", "-c", fingerprint)

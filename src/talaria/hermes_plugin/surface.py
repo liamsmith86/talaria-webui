@@ -1,7 +1,6 @@
 """Describe Talaria's renderer without changing the profile's persona or history."""
 
-from copy import deepcopy
-from functools import wraps
+from .request_log import in_talaria_run
 
 HINT = (
     "You're responding in Talaria, a web interface to Hermes Agent. "
@@ -25,42 +24,32 @@ def replace_hint(content, original):
     return content
 
 
-def apply_surface(agent):
+def shape_request(*, request=None, platform=None, **kwargs):
+    """Use Hermes's request middleware; leave native agents and stored prompts intact."""
+    if platform != "api_server" or not in_talaria_run() or not isinstance(request, dict):
+        return None
     from agent.prompt_builder import PLATFORM_HINTS
 
     original = PLATFORM_HINTS.get("api_server")
-    if not original or not callable(getattr(agent, "_build_api_kwargs", None)):
-        return
-    overrides = deepcopy(getattr(agent, "_platform_hint_overrides", {}) or {})
-    spec = overrides.get("api_server")
-    if isinstance(spec, dict) and isinstance(spec.get("replace"), str) and spec["replace"].strip():
-        return  # A deliberate profile instruction outranks our renderer description.
-    spec = {"append": spec} if isinstance(spec, str) else spec
-    overrides["api_server"] = {**(spec if isinstance(spec, dict) else {}), "replace": HINT}
-    agent._platform_hint_overrides = overrides
-    build = agent._build_api_kwargs
-
-    @wraps(build)
-    def build_for_surface(*args, **kwargs):
-        # Older sessions restore their cached system prompt. Adjust only the known
-        # built-in hint on the wire; Hermes's stored prompt and history stay intact.
-        request = {**build(*args, **kwargs)}
-        for key in ("system", "instructions"):
-            if key in request:
-                request[key] = replace_hint(request[key], original)
-        messages = request.get("messages") or request.get("input")
-        if (
-            isinstance(messages, list)
-            and messages
-            and isinstance(messages[0], dict)
-            and messages[0].get("role") in {"system", "developer"}
-        ):
-            first = messages[0]
-            field = "messages" if "messages" in request else "input"
-            request[field] = [
-                {**first, "content": replace_hint(first.get("content"), original)},
-                *messages[1:],
-            ]
-        return request
-
-    agent._build_api_kwargs = build_for_surface
+    if not original:
+        return None
+    shaped = dict(request)
+    for key in ("system", "instructions"):
+        if key in shaped:
+            shaped[key] = replace_hint(shaped[key], original)
+    messages = shaped.get("messages") or shaped.get("input")
+    if (
+        isinstance(messages, list)
+        and messages
+        and isinstance(messages[0], dict)
+        and messages[0].get("role") in {"system", "developer"}
+    ):
+        first = messages[0]
+        field = "messages" if "messages" in shaped else "input"
+        shaped[field] = [
+            {**first, "content": replace_hint(first.get("content"), original)},
+            *messages[1:],
+        ]
+    if shaped != request:
+        return {"request": shaped, "source": "talaria", "reason": "web interface formatting"}
+    return None

@@ -105,11 +105,11 @@ def test_plugin_export_replaces_stale_same_second_bytecode(tmp_path, monkeypatch
     package = tmp_path / "package"
     source = package / "hermes_plugin"
     source.mkdir(parents=True)
-    (source / "plugin.yaml").write_text("name: talaria\n")
+    (source / "plugin.yaml").write_text("name: talaria-webui\n")
     (source / "__init__.py").touch()
     (source / "identity.py").write_text('VALUE = "new"\n')
     monkeypatch.setattr(plugin_install, "__file__", str(package / "plugin_install.py"))
-    target = tmp_path / "hermes/plugins/talaria"
+    target = tmp_path / "hermes/plugins/talaria-webui"
     target.mkdir(parents=True)
     module = target / "identity.py"
     module.write_text('VALUE = "old"\n')
@@ -130,11 +130,11 @@ def test_interrupted_plugin_copy_keeps_the_previous_module(tmp_path, monkeypatch
     package = tmp_path / "package"
     source = package / "hermes_plugin"
     source.mkdir(parents=True)
-    (source / "plugin.yaml").write_text("name: talaria\n")
+    (source / "plugin.yaml").write_text("name: talaria-webui\n")
     (source / "__init__.py").touch()
     (source / "identity.py").write_text('VALUE = "new"\n')
     monkeypatch.setattr(plugin_install, "__file__", str(package / "plugin_install.py"))
-    target = tmp_path / "hermes/plugins/talaria"
+    target = tmp_path / "hermes/plugins/talaria-webui"
     target.mkdir(parents=True)
     module = target / "identity.py"
     module.write_text('VALUE = "old"\n')
@@ -216,8 +216,8 @@ def test_managed_launcher_exports_the_plugin_without_server_arguments(deployment
     home = deployment.root.parent / "hermes profile"
     deployment.launcher()
     operations.run([deployment.root / "bin/talaria", "hermes-plugin", "--home", home])
-    assert (home / "plugins/talaria/bridge.py").is_file()
-    assert (home / "plugins/talaria/bridge.py").stat().st_mode & 0o077 == 0
+    assert (home / "plugins/talaria-webui/bridge.py").is_file()
+    assert (home / "plugins/talaria-webui/bridge.py").stat().st_mode & 0o077 == 0
     assert config_path.read_bytes() == original_config
 
 

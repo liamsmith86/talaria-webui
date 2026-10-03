@@ -43,8 +43,8 @@ def configure(prompt="PROFILE_INSTRUCTION", *, debug_requests=True, **extras):
         json.dumps(
             {
                 "plugins": {
-                    "enabled": ["talaria"],
-                    "entries": {"talaria": {"settings": {"debug_requests": debug_requests}}},
+                    "enabled": ["talaria-webui"],
+                    "entries": {"talaria-webui": {"settings": {"debug_requests": debug_requests}}},
                 },
                 "model": {
                     "default": model_name,
@@ -141,7 +141,7 @@ async def main():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     with patch("talaria.hermes_plugin.bridge.RequestLog", module.RequestLog):
-        register(PluginContext(PluginManifest(name="talaria"), manager))
+        register(PluginContext(PluginManifest(name="talaria-webui"), manager))
 
     async def complete(request):
         payload = await request.json()

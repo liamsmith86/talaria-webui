@@ -33,7 +33,7 @@ def release_status(data):
 
 
 def installed_status(home):
-    directory = Path(home) / "plugins/talaria"
+    directory = Path(home) / "plugins/talaria-webui"
     if not (directory / "plugin.yaml").is_file():
         return {"status": "missing", "version": "", "bundled_version": PLUGIN_VERSION}
     return release_status(

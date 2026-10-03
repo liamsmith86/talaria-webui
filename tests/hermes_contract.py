@@ -232,7 +232,7 @@ async def http_contract():
     from aiohttp.test_utils import TestClient, TestServer
     from gateway.platforms.api_server import APIServerAdapter
 
-    (home / "config.yaml").write_text("plugins:\n  enabled: [talaria]\n")
+    (home / "config.yaml").write_text("plugins:\n  enabled: [talaria-webui]\n")
     (home / "SOUL.md").write_text("Name: Contract agent\nPrivate instructions")
 
     class Adapter:
@@ -264,9 +264,9 @@ async def http_contract():
             [],
             {"plugins": ["talaria"]},
             {"plugins": {"enabled": "not-talaria"}},
-            {"plugins": {"enabled": ["talaria"], "disabled": "unknown"}},
+            {"plugins": {"enabled": ["talaria-webui"], "disabled": "unknown"}},
             *(
-                {"plugins": {"enabled": ["talaria"], "disabled": malformed}}
+                {"plugins": {"enabled": ["talaria-webui"], "disabled": malformed}}
                 for malformed in ({}, "", 0, False)
             ),
         ):
@@ -316,10 +316,10 @@ print("Native Hermes contracts passed")
 
 # Maintenance copies must never be discovered as additional enabled plugins.
 
-active_copy = home / "plugins/talaria"
+active_copy = home / "plugins/talaria-webui"
 active_copy.mkdir(parents=True, exist_ok=True)
-(active_copy / "plugin.yaml").write_text("name: talaria\nversion: 'new'\n")
-maintenance_copy = home / "plugins/.talaria-maintenance/backups/talaria"
+(active_copy / "plugin.yaml").write_text("name: talaria-webui\nversion: 'new'\n")
+maintenance_copy = home / "plugins/.talaria-maintenance/backups/talaria-webui"
 maintenance_copy.mkdir(parents=True)
-(maintenance_copy / "plugin.yaml").write_text("name: talaria\nversion: 'old'\n")
-assert [item.name for item in scan_directory(home / "plugins", "user")] == ["talaria"]
+(maintenance_copy / "plugin.yaml").write_text("name: talaria-webui\nversion: 'old'\n")
+assert [item.name for item in scan_directory(home / "plugins", "user")] == ["talaria-webui"]

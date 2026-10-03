@@ -67,7 +67,7 @@ def test_setup_does_not_open_owner_backup_files_in_parent(tmp_path, monkeypatch)
 
 def test_export_does_not_revisit_owner_files_as_root(tmp_path, monkeypatch):
     home = tmp_path / "hermes"
-    target = home / "plugins/talaria"
+    target = home / "plugins/talaria-webui"
     target.mkdir(parents=True)
     (target / "plugin.yaml").write_text("name: fixture\n")
     calls = []

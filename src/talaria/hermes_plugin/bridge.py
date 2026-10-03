@@ -9,6 +9,7 @@ import logging
 from .observations import Observations
 from .release import LOADED_REVISION, PLUGIN_VERSION
 from .request_log import RequestLog
+from .surface import shape_request
 
 log = logging.getLogger(__name__)
 PREFIX = "/talaria/v1"
@@ -28,8 +29,8 @@ def enabled():
         return (
             isinstance(allowed, list)
             and (denied is None or isinstance(denied, list))
-            and "talaria" in allowed
-            and "talaria" not in (denied or [])
+            and "talaria-webui" in allowed
+            and "talaria-webui" not in (denied or [])
         )
     except Exception:
         return False
@@ -157,6 +158,7 @@ def register(ctx):
 
     observations = Observations(get_hermes_home())
     ctx.register_platform_handler("api_server", wire)
+    ctx.register_middleware("llm_request", shape_request)
     ctx.register_hook("pre_api_request", observations.before)
     ctx.register_hook("pre_api_request", RequestLog(ctx).before)
     ctx.register_hook("post_api_request", observations.after)

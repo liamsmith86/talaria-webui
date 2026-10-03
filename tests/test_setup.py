@@ -510,7 +510,7 @@ def test_native_hermes_key_reuse_plugin_and_config_preservation(tmp_path):
     assert again["key"] == info["key"]
     assert (home / "config.yaml.before-talaria").read_bytes() == original
     assert "preserve-this-model" in (home / "config.yaml").read_text()
-    assert "talaria" in (home / "config.yaml").read_text()
+    assert "talaria-webui" in (home / "config.yaml").read_text()
     assert (home / ".env").stat().st_mode & 0o077 == 0
 
 
@@ -762,9 +762,9 @@ def test_setup_refreshes_older_plugin_but_preserves_newer_version(
     from talaria.hermes_plugin.release import LOADED_REVISION, fingerprint
 
     home = tmp_path / "hermes"
-    target = home / "plugins/talaria"
+    target = home / "plugins/talaria-webui"
     target.mkdir(parents=True)
-    (target / "plugin.yaml").write_text(f'name: talaria\nversion: "{version}"\n')
+    (target / "plugin.yaml").write_text(f'name: talaria-webui\nversion: "{version}"\n')
     (target / "__init__.py").write_text("# Prior plugin\n")
     before = fingerprint(target)
     info = {
@@ -927,7 +927,7 @@ def test_resumed_setup_restarts_only_when_saved_credentials_changed(options, mon
 
 @pytest.mark.parametrize("kind", ["systemd", "launchd"])
 @pytest.mark.parametrize("fails", [False, True])
-def test_owned_service_migration_and_failed_migration_restore(tmp_path, monkeypatch, kind, fails):
+def test_service_refresh_and_failed_restart_restore(tmp_path, monkeypatch, kind, fails):
     import hashlib
     from types import SimpleNamespace
 
@@ -950,6 +950,7 @@ def test_owned_service_migration_and_failed_migration_restore(tmp_path, monkeypa
         "service": plan["service"],
         "scope": "user",
         "health_url": "http://127.0.0.1:8766",
+        "supervised": True,
         "setup": {
             "scope": "user",
             "kind": kind,
@@ -982,11 +983,11 @@ def test_owned_service_migration_and_failed_migration_restore(tmp_path, monkeypa
     monkeypatch.setattr(deploy, "check_health", health)
     if fails:
         with pytest.raises(DeploymentError, match="New launcher failed"):
-            services.migrate_service(deployment)
+            services.refresh_service(deployment)
         assert path.read_text() == previous
         assert deploy.read_json(root / "deployment.json") == metadata
     else:
-        services.migrate_service(deployment)
+        services.refresh_service(deployment)
         assert path.read_text() == plan["text"]
         assert deploy.read_json(root / "deployment.json")["supervised"]
         assert (

@@ -252,13 +252,13 @@ export async function forgetImages(session) {
     const records = transaction.objectStore("pending");
     const request = records.get("image-index");
     const receipts = records.openCursor(
-      IDBKeyRange.bound(`run.${session}`, `run.${session}.\uffff`),
+      IDBKeyRange.bound(`run.${session}.`, `run.${session}.\uffff`),
     );
     receipts.onsuccess = () => {
       const cursor = receipts.result;
       if (!cursor) return;
       // Session identifiers can contain dots. A key prefix alone also matches
-      // other sessions, including legacy receipts without a request suffix.
+      // other sessions, so confirm the session in the receipt itself.
       if (cursor.value?.payload?.session_id === session) cursor.delete();
       cursor.continue();
     };

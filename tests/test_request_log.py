@@ -21,14 +21,15 @@ def recorder(tmp_path, monkeypatch):
 
 
 def emit(recorder, **kwargs):
-    request_log.scoped_run(recorder.before)(
-        platform="api_server",
-        session_id="session",
-        api_request_id="request",
-        request_messages=[{"role": "user", "content": "PRIVATE_QUERY"}],
-        system_prompt="PRIVATE_INSTRUCTION",
-        **kwargs,
-    )
+    with request_log.run_scope():
+        recorder.before(
+            platform="api_server",
+            session_id="session",
+            api_request_id="request",
+            request_messages=[{"role": "user", "content": "PRIVATE_QUERY"}],
+            system_prompt="PRIVATE_INSTRUCTION",
+            **kwargs,
+        )
 
 
 def test_logging_requires_explicit_opt_in_and_talaria_route(recorder, tmp_path):
@@ -38,7 +39,8 @@ def test_logging_requires_explicit_opt_in_and_talaria_route(recorder, tmp_path):
         emit(logger)
     state.enabled = True
     logger.before(platform="api_server", request_messages=[])
-    request_log.scoped_run(logger.before)(platform="discord", request_messages=[])
+    with request_log.run_scope():
+        logger.before(platform="discord", request_messages=[])
     assert not (tmp_path / "talaria").exists()
     emit(
         logger,
@@ -120,15 +122,11 @@ def test_symlink_is_not_followed(recorder, tmp_path, caplog):
 
 
 def test_run_scope_restores_context_on_success_and_error():
-    assert request_log.scoped_run(lambda: request_log.active_run.get())() is True
+    with request_log.run_scope():
+        assert request_log.in_talaria_run() is True
     assert request_log.active_run.get() is False
-
-    @request_log.scoped_run
-    def fail():
+    with pytest.raises(RuntimeError, match="original failure"), request_log.run_scope():
         raise RuntimeError("original failure")
-
-    with pytest.raises(RuntimeError, match="original failure"):
-        fail()
     assert request_log.active_run.get() is False
 
 

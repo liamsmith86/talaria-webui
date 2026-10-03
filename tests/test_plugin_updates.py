@@ -19,7 +19,7 @@ deployment = deployment_fixture
 
 def bundle(path, value):
     path.mkdir(parents=True, exist_ok=True)
-    (path / "plugin.yaml").write_text('name: talaria\nversion: "1"\n')
+    (path / "plugin.yaml").write_text('name: talaria-webui\nversion: "1"\n')
     (path / "__init__.py").write_text(f"VALUE = {value!r}\n")
     return path
 
@@ -27,16 +27,18 @@ def bundle(path, value):
 @pytest.mark.parametrize("provenance", ["pin", "git", "catalog", "invalid"])
 def test_bundled_updates_preserve_native_ownership(tmp_path, provenance):
     home = tmp_path / "hermes"
-    target = bundle(home / "plugins/talaria", "native")
+    target = bundle(home / "plugins/talaria-webui", "native")
     source = bundle(tmp_path / "source", "bundled")
     before = fingerprint(target)
     if provenance == "git":
         (target / ".git").mkdir()
     elif provenance == "catalog":
-        (target / ".hermes-catalog.json").write_text('{"catalog_name":"talaria"}')
+        (target / ".hermes-catalog.json").write_text('{"catalog_name":"talaria-webui"}')
     else:
         (home / "plugins/.install-metadata.json").write_text(
-            '{"talaria":{"pinned":true,"revision":"reviewed"}}' if provenance == "pin" else "["
+            '{"talaria-webui":{"pinned":true,"revision":"reviewed"}}'
+            if provenance == "pin"
+            else "["
         )
     with pytest.raises(DeploymentError):
         plugin_install.install(home, source, lambda _: pytest.fail("Restarted native plugin"))
@@ -49,13 +51,13 @@ def test_native_handoff_retires_link_across_activation_and_rollback(
     deployment, tmp_path, monkeypatch, provenance
 ):
     home = tmp_path / "hermes"
-    plugin = bundle(home / "plugins/talaria", "reviewed")
+    plugin = bundle(home / "plugins/talaria-webui", "reviewed")
     if provenance == "git":
         (plugin / ".git").mkdir()
     elif provenance == "catalog":
-        (plugin / ".hermes-catalog.json").write_text('{"catalog_name":"talaria"}')
+        (plugin / ".hermes-catalog.json").write_text('{"catalog_name":"talaria-webui"}')
     else:
-        write_json(home / "plugins/.install-metadata.json", {"talaria": {"pinned": True}})
+        write_json(home / "plugins/.install-metadata.json", {"talaria-webui": {"pinned": True}})
     deployment.config["hermes_plugin"] = {"home": str(home), "command": "/unavailable/hermes"}
     write_json(deployment.root / "deployment.json", deployment.config)
     previous = {k: v for k, v in deployment.config.items() if k != "hermes_plugin"}
@@ -95,12 +97,12 @@ def test_native_handoff_blocks_stale_restart_and_backup_restore(tmp_path, missin
     home = tmp_path / "hermes"
     source = bundle(tmp_path / "source", "same-code")
     plugin_install.install(home, source)
-    target = home / "plugins/talaria"
-    backup = home / "plugins/.talaria-maintenance/backups/talaria"
+    target = home / "plugins/talaria-webui"
+    backup = home / "plugins/.talaria-maintenance/backups/talaria-webui"
     bundle(backup, "old-bundled-code")
     if missing_target:
         plugin_install.shutil.rmtree(target)
-    write_json(home / "plugins/.install-metadata.json", {"talaria": {"pinned": True}})
+    write_json(home / "plugins/.install-metadata.json", {"talaria-webui": {"pinned": True}})
     with pytest.raises(DeploymentError, match="Hermes manages"):
         plugin_install.install(home, source, lambda _: pytest.fail("Restarted Hermes"))
     assert target.exists() is not missing_target
@@ -111,7 +113,7 @@ def test_native_handoff_blocks_stale_restart_and_backup_restore(tmp_path, missin
 
 def test_unreadable_ownership_keeps_link_and_refuses_sync(deployment, tmp_path, monkeypatch):
     home = tmp_path / "hermes"
-    bundle(home / "plugins/talaria", "native")
+    bundle(home / "plugins/talaria-webui", "native")
     (home / "plugins/.install-metadata.json").write_text("[")
     deployment.config["hermes_plugin"] = {"home": str(home), "command": "/fake/hermes"}
     write_json(deployment.root / "deployment.json", deployment.config)
@@ -168,7 +170,7 @@ def test_replacement_removes_retired_code_and_restarts_once(tmp_path):
         calls.append(fingerprint(target))
 
     assert plugin_install.install(home, source, restart)
-    target = home / "plugins/talaria"
+    target = home / "plugins/talaria-webui"
     (target / "config.yaml").write_text("user: retained\n")
     assert not plugin_install.install(home, source, restart)
     assert len(calls) == 1
@@ -178,7 +180,7 @@ def test_replacement_removes_retired_code_and_restarts_once(tmp_path):
     assert not (target / "retired.py").exists()
     assert (target / "config.yaml").read_text() == "user: retained\n"
     assert len(calls) == 2
-    assert (home / "plugins/.talaria-maintenance/backups/talaria/retired.py").exists()
+    assert (home / "plugins/.talaria-maintenance/backups/talaria-webui/retired.py").exists()
 
 
 def test_restart_failure_restores_and_verifies_previous_plugin(tmp_path):
@@ -197,7 +199,7 @@ def test_restart_failure_restores_and_verifies_previous_plugin(tmp_path):
     with pytest.raises(DeploymentError, match="health check"):
         plugin_install.install(home, source, restart)
     assert calls == [fingerprint(source), old]
-    assert fingerprint(home / "plugins/talaria") == old
+    assert fingerprint(home / "plugins/talaria-webui") == old
     assert not (home / "plugins/.talaria-maintenance/restart-required").exists()
 
 
@@ -214,8 +216,8 @@ def test_interrupted_directory_swap_recovers_original(tmp_path, monkeypatch):
     home = tmp_path / "hermes"
     source = bundle(tmp_path / "source", "old")
     plugin_install.install(home, source, lambda _: None)
-    target = home / "plugins/talaria"
-    backup = home / "plugins/.talaria-maintenance/backups/talaria"
+    target = home / "plugins/talaria-webui"
+    backup = home / "plugins/.talaria-maintenance/backups/talaria-webui"
     (home / "plugins/.talaria-maintenance/restart-required").touch()
     target.rename(backup)
     calls = []
@@ -229,7 +231,7 @@ def test_staging_failure_leaves_original_untouched(tmp_path, monkeypatch):
     home = tmp_path / "hermes"
     source = bundle(tmp_path / "source", "old")
     plugin_install.install(home, source, lambda _: None)
-    target = home / "plugins/talaria"
+    target = home / "plugins/talaria-webui"
     before = fingerprint(target)
     bundle(source, "new")
     monkeypatch.setattr(
@@ -274,32 +276,32 @@ def test_linked_plugin_follows_activation_recovery_and_rollback(deployment, tmp_
     with pytest.raises(DeploymentError, match="previous release was restored"):
         deployment.activate(target)
     assert selected(deployment.root, "current") == f"releases/{A}"
-    assert fingerprint(home / "plugins/talaria") == fingerprint(old)
+    assert fingerprint(home / "plugins/talaria-webui") == fingerprint(old)
     assert calls[-2:] == [fingerprint(new), fingerprint(old)]
 
 
 def test_linking_updates_never_restarts_hermes(deployment, tmp_path, monkeypatch):
     home = tmp_path / "hermes"
-    bundle(home / "plugins/talaria", "old")
+    bundle(home / "plugins/talaria-webui", "old")
     command = tmp_path / "hermes-cli"
     command.touch()
     refreshed = []
-    monkeypatch.setattr(setup_services, "migrate_service", lambda obj, **kw: refreshed.append(kw))
+    monkeypatch.setattr(setup_services, "refresh_service", lambda obj, **kw: refreshed.append(kw))
     monkeypatch.setattr(setup, "restart_gateway", lambda *a: pytest.fail("Must not restart Hermes"))
     plugin_updates.register(deployment.root, home, command)
     assert read_json(deployment.root / "deployment.json")["hermes_plugin"]["home"] == str(home)
-    assert refreshed == [{"refresh": True}]
+    assert refreshed == [{}]
 
 
 def test_linking_failure_restores_deployment_config(deployment, tmp_path, monkeypatch):
     home = tmp_path / "hermes"
-    bundle(home / "plugins/talaria", "old")
+    bundle(home / "plugins/talaria-webui", "old")
     command = tmp_path / "hermes-cli"
     command.touch()
     previous = read_json(deployment.root / "deployment.json")
     monkeypatch.setattr(
         setup_services,
-        "migrate_service",
+        "refresh_service",
         lambda *a, **k: (_ for _ in ()).throw(DeploymentError("custom unit preserved")),
     )
     with pytest.raises(DeploymentError, match="custom unit"):
@@ -396,7 +398,7 @@ def test_failed_deferred_restart_restores_previous_export(tmp_path, exports):
     with pytest.raises(DeploymentError, match="did not load"):
         plugin_install.install(home, source, restart)
     assert calls == [fingerprint(source), old]
-    assert fingerprint(home / "plugins/talaria") == old
+    assert fingerprint(home / "plugins/talaria-webui") == old
 
 
 def test_interrupted_repeated_export_recovers_verified_plugin(tmp_path, monkeypatch):
@@ -407,7 +409,7 @@ def test_interrupted_repeated_export_recovers_verified_plugin(tmp_path, monkeypa
     bundle(source, "unverified")
     plugin_install.install(home, source)
     bundle(source, "next")
-    target = home / "plugins/talaria"
+    target = home / "plugins/talaria-webui"
     replace = Path.replace
 
     def interrupted(path, destination):

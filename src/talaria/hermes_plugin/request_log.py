@@ -5,9 +5,9 @@ import logging
 import os
 import stat
 import threading
+from contextlib import contextmanager
 from contextvars import ContextVar, copy_context
 from datetime import UTC, datetime
-from functools import wraps
 
 log = logging.getLogger(__name__)
 MAX_RECORD = 8 * 1024 * 1024
@@ -40,18 +40,23 @@ PARAMETERS = frozenset(
 )
 
 
-def scoped_run(run):
-    """Mark only this agent's invocation; Hermes propagates context into hook workers."""
+@contextmanager
+def run_scope():
+    """Scope native child tasks and hook workers without replacing an agent method."""
+    token = active_run.set(True)
+    try:
+        yield
+    finally:
+        active_run.reset(token)
 
-    @wraps(run)
-    def invoke(*args, **kwargs):
-        token = active_run.set(True)
-        try:
-            return run(*args, **kwargs)
-        finally:
-            active_run.reset(token)
 
-    return invoke
+def in_talaria_run():
+    # Multiplexed Hermes loads separate plugin modules per profile. Admission
+    # belongs to the listener; hooks recognize its marker across module copies.
+    return any(
+        variable.name == active_run.name and value is True
+        for variable, value in copy_context().items()
+    )
 
 
 def private_append(path, data):
@@ -102,13 +107,7 @@ class RequestLog:
         try:
             from hermes_constants import get_hermes_home
 
-            # Multiplexed Hermes loads a separate plugin module per profile. The
-            # primary listener marks admission; the named profile observes it.
-            # Match our marker by name across those module-local ContextVars.
-            if platform != "api_server" or not any(
-                variable.name == active_run.name and value is True
-                for variable, value in copy_context().items()
-            ):
+            if platform != "api_server" or not in_talaria_run():
                 return
             if self.ctx.get_config("debug_requests", False) is not True:
                 return

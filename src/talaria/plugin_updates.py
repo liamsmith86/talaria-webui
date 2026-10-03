@@ -35,7 +35,7 @@ def run_as_owner(home, source, restart=True, command=None, *, owner=None):
         raise DeploymentError("Cannot locate Hermes's Python for local plugin maintenance.")
     python = validate_execution(home, python, owner)
     verify = (
-        (lambda: restart_and_verify(home, home / "plugins/talaria", command, owner=owner))
+        (lambda: restart_and_verify(home, home / "plugins/talaria-webui", command, owner=owner))
         if restart
         else None
     )
@@ -53,7 +53,7 @@ def restart_and_verify(home, target, command, *, owner=None):
     if not info.get("enabled") or not info.get("key"):
         raise DeploymentError("Enable this local Hermes API before managing its plugin.")
     restart_gateway(home, command, owner=owner)
-    expected = fingerprint(target) if (target / "release.py").is_file() else None
+    expected = fingerprint(target)
     url = local_url(str(info["host"]), int(info["port"])) + "/talaria/v1/capabilities"
     deadline = time.monotonic() + 30
     with httpx.Client(
@@ -67,7 +67,7 @@ def restart_and_verify(home, target, command, *, owner=None):
                     response.status_code == 200
                     and isinstance(data, dict)
                     and data.get("version") == 1
-                    and (expected is None or data.get("revision") == expected)
+                    and data.get("revision") == expected
                 ):
                     return
             except (httpx.HTTPError, ValueError):
@@ -102,13 +102,13 @@ def sync(deployment, release):
 
 def register(root, home, command):
     from .plugin_install import require_bundled_target
-    from .setup_services import migrate_service
+    from .setup_services import refresh_service
 
     require_bundled_target(home)
     executable = str(command.expanduser().resolve()) if command else shutil.which("hermes")
     if not executable or not Path(executable).is_file():
         raise DeploymentError("Pass --hermes-command with the local Hermes executable.")
-    if not (home / "plugins/talaria/plugin.yaml").is_file():
+    if not (home / "plugins/talaria-webui/plugin.yaml").is_file():
         raise DeploymentError("Install and enable the local Talaria plugin before linking updates.")
     deployment = Deployment(root)
     with locked(deployment.root):
@@ -120,7 +120,7 @@ def register(root, home, command):
         deployment.config["hermes_plugin"] = {"home": str(home), "command": executable}
         write_json(deployment.root / "deployment.json", deployment.config)
         try:
-            migrate_service(deployment, refresh=True)
+            refresh_service(deployment)
         except BaseException:
             write_json(deployment.root / "deployment.json", previous)
             raise

@@ -4,14 +4,14 @@ import asyncio
 import inspect
 import json
 import logging
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .files import read_text
-from .request_log import scoped_run
+from .request_log import run_scope
 from .runtime import inherit_defaults, inherit_options, session_runtime
-from .surface import apply_surface
 
 log = logging.getLogger(__name__)
 MAX_INSTRUCTIONS = 64 * 1024
@@ -105,6 +105,13 @@ class ProfileRunAdapter:
     def __getattr__(self, name):
         return getattr(self._adapter, name)
 
+    @contextmanager
+    def _profile_scope(self, profile):
+        # Hermes enters this scope in both the event-loop task and its worker.
+        # Executor workers do not inherit the admission task's ContextVars.
+        with self._adapter._profile_scope(profile), run_scope():
+            yield
+
     def _make_run_event_callback(self, run_id, loop):
         from .live import LiveRun, supported
 
@@ -122,14 +129,11 @@ class ProfileRunAdapter:
             kwargs["ephemeral_system_prompt"] = self._context.instructions or None
         agent = self._adapter._create_agent(**kwargs)
         inherit_defaults(agent)
-        apply_surface(agent)
         if "_live" in self.__dict__:
             self._live.bind(agent)
         # Prefer native support if a later Hermes version starts loading these itself.
         if hasattr(agent, "prefill_messages") and not agent.prefill_messages:
             agent.prefill_messages = deepcopy(self._context.prefill)
-        if callable(getattr(agent, "run_conversation", None)):
-            agent.run_conversation = scoped_run(agent.run_conversation)
         return agent
 
 

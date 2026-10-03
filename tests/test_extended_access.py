@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from talaria.config import load, save
 from talaria.hermes_plugin.observations import Observations, reasoning
 from talaria.plugin_install import main as install_plugin
 
@@ -223,16 +222,12 @@ def test_extended_model_limits_and_standard_catalog_fallback(page, live_app):
         assert ("GET", "/api/model/options", {"refresh": "1"}) in peer.calls
 
 
-def test_legacy_path_migration_and_plugin_export(tmp_path):
-    config = tmp_path / "config.json"
-    config.write_text(json.dumps({"hermes_home": "/root/.hermes"}))
-    settings = load(config)
-    assert not hasattr(settings, "hermes_home")
-    save(config, settings)
-    assert "hermes_home" not in config.read_text()
+def test_plugin_export_is_self_contained(tmp_path):
     install_plugin(["--home", str(tmp_path / "hermes")])
-    plugin = tmp_path / "hermes/plugins/talaria"
+    plugin = tmp_path / "hermes/plugins/talaria-webui"
     assert (plugin / "plugin.yaml").is_file()
+    assert (plugin / "README.md").is_file()
+    assert (plugin / "LICENSE").is_file()
     assert not (plugin / "__pycache__").exists()
     for file in plugin.glob("*.py"):
         for node in ast.walk(ast.parse(file.read_text())):

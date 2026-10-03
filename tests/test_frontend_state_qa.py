@@ -788,10 +788,8 @@ def test_forgetting_images_does_not_delete_another_sessions_receipts(module_page
                 await cache.cacheMessageImages(sid, 1, [{url}]);
                 await cache.pendingStorage('run.' + sid + '.request', {payload:{session_id:sid}});
             }
-            await cache.pendingStorage('run.qa', {payload:{session_id:'qa'}});
             await cache.forgetImages('qa');
             return {
-                legacy:!!await cache.pendingStorage('run.qa'),
                 own:!!await cache.pendingStorage('run.qa.request'),
                 other:!!await cache.pendingStorage('run.qa.child.request'),
                 ownImages:(await cache.browserAttachments('qa')).length,
@@ -801,7 +799,6 @@ def test_forgetting_images_does_not_delete_another_sessions_receipts(module_page
         IMAGE,
     )
     assert result == {
-        "legacy": False,
         "own": False,
         "other": True,
         "ownImages": 0,
