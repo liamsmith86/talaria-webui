@@ -9,11 +9,11 @@ A lightweight web-based interface for using Hermes Agent.
 
 Talaria WebUI is a lightweight, performant, and secure application for chatting with your Hermes Agent. The core development principle is that Talaria should remain a thin interface layer over your existing Hermes Agent, and as such all agentic system management including settings, prefills, and sessions are handled by your Hermes Agent software and are not subject to a third party reinterpretation.
 
-Talaria WebUI uses Hermes Agent's [API server](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server) feature to interface with your agent and upon installation you will be prompted to enter an API key for connectivity.
+Talaria WebUI uses Hermes Agent's [API server](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server) feature to interface with your agent and upon installation you will be prompted to enter an API key for connectivity. Accordingly, Talaria WebUI connects to your agent remotely and does not need to be installed on the same server.
 
-Optionally you can install the Talaria Hermes Agent plugin, a lightweight extension for your Hermes Agent app which extends the information returned by the API. This allows Talaria WebUI to deliver a more polished experience; for example, the Hermes Agent API does not yet return context information with session data. This plugin allows us to continue offloading as much functionality to Hermes Agent's existing code without reinventing the wheel ourselves.
+Optionally you can install the Talaria Hermes Agent plugin, a lightweight extension for your Hermes Agent app which extends the information returned to Talaria WebUI by the Hermes Agent API. This allows Talaria WebUI to deliver a more polished experience and support features you would expect from a modern agent web interface. This plugin allows us to continue offloading as much functionality to Hermes Agent's existing code without reinventing the wheel ourselves.
 
-**[Try the demo](https://talaria.everla.st)** — sample sessions and placeholder replies.
+**[Try the demo](https://talaria.everla.st)**
 
 ![Talaria on desktop: a streamed reply, code and tool details](.github/assets/demo-desktop.gif)
 
@@ -85,9 +85,7 @@ Connect to your Hermes API in Settings.
 
 Talaria can also use an optional, but highly recommended, plugin that you install on your Hermes Agent to extend the native API capabilities and improve the amount of information we can display in the WebUI. As Hermes Agent developers continue to extend the capabilities of their native API we will update Talaria to use native routes.
 
-Read the [plugin's compatibility, data access, and update policy](src/talaria/hermes_plugin/README.md) before enabling it.
-
-Run on your Hermes host to install the stable source release at its full commit SHA:
+To install the Talaria helper plugin on your Hermes agent, run the following command on your Hermes host:
 
 ```sh
 ref=$(git ls-remote --exit-code https://github.com/liamsmith86/talaria-webui.git refs/heads/stable) &&
