@@ -23,8 +23,8 @@ import { msg, t, n } from "./i18n.js";
 function rewindDescription(deleting, later) {
   if (later > 0) return deleting
     ? n(
-      "Remove this turn and {count} later turn? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.",
-      "Remove this turn and {count} later turns? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.",
+      "Remove this prompt, its response, and {count} later turn? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.",
+      "Remove this prompt, its response, and {count} later turns? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.",
       later,
     )
     : n(
@@ -33,7 +33,7 @@ function rewindDescription(deleting, later) {
       later,
     );
   return deleting
-    ? t("Remove this turn? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.")
+    ? t("Remove this prompt and its response? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.")
     : t("Replace this turn? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.");
 }
 

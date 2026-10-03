@@ -213,6 +213,20 @@ def session_action(page, name):
     page.get_by_role("button", name=name, exact=True).click()
 
 
+def test_demo_branches_at_a_response_without_changing_the_original(demo_page):
+    page = demo_page
+    page.get_by_role("link", name="Build a small reading list").click()
+    page.get_by_role("button", name="Branch from here", exact=True).click()
+    dialog = page.get_by_role("dialog", name="Branch from here", exact=True)
+    dialog.get_by_label("Session name", exact=True).fill("Response copy")
+    dialog.get_by_role("button", name="Create branch", exact=True).click()
+    expect(page.locator(".topbar-title")).to_have_text("Response copy")
+    expect(page.locator(".message.user")).to_have_count(1)
+    expect(page.locator(".message.assistant")).to_have_count(1)
+    page.get_by_role("link", name="Build a small reading list", exact=True).click()
+    expect(page.locator(".message.user")).to_have_count(1)
+
+
 def test_demo_session_actions_edit_regenerate_and_delete_are_native_and_isolated(demo_page):
     page = demo_page
     page.get_by_role("link", name="Build a small reading list").click()

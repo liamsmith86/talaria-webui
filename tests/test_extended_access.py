@@ -119,6 +119,7 @@ def test_stale_edits_and_missing_images_never_rewind(page, live_app):
     sid = open_seed(page, peer)
     page.get_by_role("button", name="Delete turn", exact=True).first.click()
     dialog = page.get_by_role("dialog", name="Delete turn", exact=True)
+    expect(dialog).to_contain_text("this prompt, its response")
     expect(dialog).to_contain_text("and 1 later turn")
     peer.messages[sid].append({"id": 10, "role": "user", "content": "Arrived elsewhere"})
     dialog.get_by_role("button", name="Delete turn", exact=True).click()
@@ -152,6 +153,7 @@ def test_regenerate_delete_and_mobile_toolbar(page, live_app):
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
     assert list(peer.runs.values())[-1]["input"] == "Message 000"
     page.get_by_role("button", name="Delete turn", exact=True).first.click()
+    expect(page.get_by_role("dialog")).to_contain_text("this prompt and its response")
     page.get_by_role("dialog").get_by_role("button", name="Delete turn", exact=True).click()
     expect(page.get_by_role("dialog")).to_have_count(0)
     expect(page.locator(".message")).to_have_count(0)
@@ -265,6 +267,7 @@ def test_observation_store_is_bounded_and_profile_scoped(tmp_path):
         ("hermes_context_contract.py", "openai"),
         ("hermes_context_contract.py", "openrouter"),
         ("hermes_branch_contract.py", "openai"),
+        ("hermes_message_branch_contract.py", "openai"),
     ],
 )
 def test_native_hermes_contract(tmp_path, contract, provider):

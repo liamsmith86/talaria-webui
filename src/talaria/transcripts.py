@@ -35,7 +35,7 @@ class TranscriptResponse(StreamingResponse):
             self.spool.close()
 
 
-async def message_page(client, sid, offset=0, *, order="latest", limit=100):
+async def message_page(client, sid, offset=0, *, order="latest", limit=100, include_compacted=True):
     while True:
         try:
             result = await client.request(
@@ -45,7 +45,7 @@ async def message_page(client, sid, offset=0, *, order="latest", limit=100):
                     "offset": offset,
                     "limit": limit,
                     "order": order,
-                    "include_compacted": "true",
+                    "include_compacted": "true" if include_compacted else "false",
                 },
             )
             break
