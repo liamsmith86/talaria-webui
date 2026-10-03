@@ -38,6 +38,8 @@
   "Cannot reach Hermes. Check the connection and try again.": "Hermesに接続できません。接続を確認して再試行してください。",
   "Channels": "チャンネル",
   "Check again": "再確認",
+  "Check complete. Talaria plugin is connected.": "確認が完了しました。Talariaプラグインは接続されています。",
+  "Check complete. Talaria plugin was not detected.": "確認が完了しました。Talariaプラグインは検出されませんでした。",
   "Check for updates": "更新を確認",
   "Checking for updates…": "更新を確認中…",
   "Checking the session…": "セッションを確認中…",

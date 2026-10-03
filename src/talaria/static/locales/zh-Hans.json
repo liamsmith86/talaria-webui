@@ -38,6 +38,8 @@
   "Cannot reach Hermes. Check the connection and try again.": "无法连接 Hermes。请检查连接后重试。",
   "Channels": "渠道",
   "Check again": "重新检查",
+  "Check complete. Talaria plugin is connected.": "检查完成。Talaria 插件已连接。",
+  "Check complete. Talaria plugin was not detected.": "检查完成。未检测到 Talaria 插件。",
   "Check for updates": "检查更新",
   "Checking for updates…": "正在检查更新…",
   "Checking the session…": "正在检查会话…",

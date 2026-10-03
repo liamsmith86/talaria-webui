@@ -1,5 +1,6 @@
 import re
 
+import pytest
 from playwright.sync_api import expect
 
 from .test_browser import screenshot
@@ -38,6 +39,44 @@ def test_agent_settings_and_extended_access(page, live_app, tmp_path):
     page.get_by_role("button", name="Close dialog").click()
     expect(page.get_by_text("Connected to Hermes", exact=True)).to_be_visible()
     assert not errors
+
+
+@pytest.mark.clock
+@pytest.mark.parametrize("connected", [False, True])
+def test_extended_access_check_confirms_unchanged_result_and_clears_it_on_failure(
+    page, live_app, connected
+):
+    live_app[1].extension = {} if connected else None
+    page.get_by_role("button", name="Settings").click()
+    page.get_by_role("tab", name="Connection", exact=True).click()
+    expect(
+        page.get_by_text(
+            "Connected · Talaria plugin" if connected else "Talaria plugin not detected", exact=True
+        )
+    ).to_be_visible()
+    result = page.get_by_role("status").filter(has_text="Check complete.")
+    expect(result).to_have_count(0)
+    button = page.get_by_role("button", name="Check again", exact=True)
+    button.click()
+    expect(button).to_be_enabled()
+    expect(result).to_have_text(
+        "Check complete. Talaria plugin is connected."
+        if connected
+        else "Check complete. Talaria plugin was not detected."
+    )
+    page.clock.fast_forward(10000)
+    expect(result).to_be_visible()
+
+    page.route(
+        "**/api/capabilities",
+        lambda route: route.fulfill(
+            status=503, json={"error": "Could not check the Hermes connection."}
+        ),
+    )
+    button.click()
+    expect(page.get_by_role("alert")).to_have_text("Could not check the Hermes connection.")
+    expect(result).to_have_count(0)
+    expect(button).to_be_enabled()
 
 
 def test_models_are_scoped_to_each_session(page, live_app):

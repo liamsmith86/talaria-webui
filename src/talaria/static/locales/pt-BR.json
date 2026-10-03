@@ -38,6 +38,8 @@
   "Cannot reach Hermes. Check the connection and try again.": "Não foi possível conectar ao Hermes. Verifique a conexão e tente novamente.",
   "Channels": "Canais",
   "Check again": "Verificar novamente",
+  "Check complete. Talaria plugin is connected.": "Verificação concluída. O plugin Talaria está conectado.",
+  "Check complete. Talaria plugin was not detected.": "Verificação concluída. O plugin Talaria não foi detectado.",
   "Check for updates": "Verificar atualizações",
   "Checking for updates…": "Verificando atualizações…",
   "Checking the session…": "Verificando a sessão…",
