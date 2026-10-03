@@ -25,11 +25,11 @@
     }
   },
   "dompurify": {
-    "version": "3.4.15",
-    "tarball": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.15.tgz",
-    "integrity": "sha512-EUBjM+B+lkDE41iE82DDSCfkoPGfXx8IxFxPMjNzm/Uk4xDet77rTN9wqlxlVg71kK7XGuUMv6wUxJUwwv+Xyw==",
+    "version": "3.4.16",
+    "tarball": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.16.tgz",
+    "integrity": "sha512-sqo+pNp3qRhCIpbgRi1y8Tgk27Bo2Ry7w0dC1NBeNTdZChWjz9Xb/KOoZbRP/R6pQZ80Qw8YhXw13hWWBbMRnQ==",
     "files": {
-      "purify.js": "e7d8182ea0aae9daa46c3294a486067b3f4461bd18f8ca76e499c623e9bda6e3"
+      "purify.js": "c44274a7959cfdd4da871fa78a5d5fbbef55db68d118c5c0833bc4b5cf9633ad"
     }
   },
   "@fontsource-variable/inter": {
