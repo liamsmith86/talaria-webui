@@ -1,133 +1,72 @@
 # talaria-webui
 
-An optional API extension for [Talaria WebUI](../../../README.md). It adds profile
-instructions and prefill, response and context details, history search, session
-controls, and interactive run events to an existing Hermes gateway.
+An optional plugin for [Talaria WebUI](../../../README.md). It adds response and
+context details, profile instructions and prefill, history search, session
+controls, and live approval and clarification prompts to Hermes's API.
 
-This directory is the complete plugin. The web application, installer, and
-standalone updater live outside it and are not installed by the plugin catalog.
-The plugin has no Desktop renderer code and does not replace a bundled Hermes
-plugin. Talaria is an independent MIT-licensed project maintained by
-[Liam Smith](https://github.com/liamsmith86).
+## Install
 
-![Talaria desktop chat](../../../.github/assets/demo-desktop.gif)
+Requires Hermes **0.21.5 or later**, Python 3.12+, and Hermes's API server with an
+API key. Follow the [plugin installation instructions](../../../README.md#hermes-plugin).
 
-![Talaria mobile chat](../../../.github/assets/demo-mobile.gif)
+Enable the plugin in each profile you want to use. For a gateway serving several
+profiles, also enable it in the primary profile. Restart the gateway after
+active work finishes. If an agent is installing it through that gateway, restart
+from a separate terminal after the installation session ends.
 
-## Installation and updates
+For installations from the Hermes catalog, update with
+`hermes plugins update talaria-webui`. Catalog versions are pinned to a full
+commit SHA and reviewed by Hermes maintainers. The plugin has no self-updater;
+Talaria's standalone updater also leaves Hermes-managed plugin installations
+alone.
 
-Requires Hermes **0.21.5 or later**, Python 3.12+, and the enabled Hermes API
-server. Hermes release `v2026.9.24` ships SemVer `0.21.5`; the manifest uses the
-SemVer, not the dated release tag. Linux, macOS, and Linux under WSL2 are tested.
-An API client still needs its configured Hermes API key.
+## Data and permissions
 
-For a catalog release, install the reviewed entry by name:
+- **Profile data:** Reads the enabled profile's configuration, session history
+  and search index, model inventory, `IDENTITY.md`, `SOUL.md`, and configured
+  instructions and prefill. A configured prefill file can be outside the profile
+  directory. Instructions and prefill are sent to the configured model;
+  status responses omit their contents and file paths.
+- **Session changes:** Authenticated actions can branch, rewind or compress API
+  sessions. Search includes other sessions visible within the authenticated
+  profile. Session changes use Hermes's storage and active-session protections.
+- **Local storage:** Keeps up to 10,000 response metadata records in
+  `$HERMES_HOME/talaria/observations.db`: identifiers, model names, token counts,
+  timings and completion status. These records contain no message bodies or
+  credentials. Disabling the plugin leaves this file in place.
+- **Network:** Chat and compression use Hermes's configured providers; model
+  inventory refreshes use its provider and catalog sources. These requests may
+  incur provider charges. The plugin adds no analytics or telemetry.
+- **Credentials:** Authentication stays with Hermes. The plugin stores no
+  separate credentials and does not read other applications' login files or
+  manage their OAuth tokens.
+- **Execution:** Runs inside the existing gateway, including background jobs for
+  manual commands. It starts no shell subprocesses or separate daemon. Agent
+  tools can run commands under Hermes's approval policy. Clarification prompts
+  use Hermes's timeouts and cancellation.
 
-```sh
-hermes plugins install talaria-webui --enable
-```
+## Integration and validation
 
-That command requires the `talaria-webui` entry to have been accepted into the Hermes
-catalog. For source installation before admission, use the
-[repository instructions](../../../README.md#hermes-plugin).
+The plugin registers an `api_server` platform handler and the three hooks listed
+in [plugin.yaml](plugin.yaml). It registers no tools or middleware and does not
+replace Hermes core methods. Manual `/compress` calls Hermes's own compression
+implementation.
 
-Enable the plugin separately in each profile that should expose its routes. For
-a multiplexed gateway, install and enable it in the primary profile as well.
-Restart the gateway when no active work needs it; never restart the gateway
-hosting the session performing the installation.
+Its only additional Python dependency is `aiohttp>=3.9,<4`, resolved within
+Hermes's dependency constraints. Catalog CI checks a 14-day dependency release
+cutoff separately; this does not change Hermes's install-time dependency policy.
 
-Catalog updates use:
-
-```sh
-hermes plugins update talaria-webui
-```
-
-The catalog entry pins a full 40-character commit. Updates require another
-maintainer-reviewed catalog PR, with the plugin version and screenshot pins
-updated together. The plugin does not check for, download, or replace its own
-code. Talaria's separate standalone installer and updater refuse to overwrite a
-plugin managed by Hermes, including a catalog-pinned installation.
-
-## Hermes integration
-
-The manifest declares every registered hook:
-
-| Surface | Use |
-| --- | --- |
-| `register_platform_handler("api_server", ...)` | Add `/talaria/v1/*` and `/p/{profile}/talaria/v1/*` routes to the existing aiohttp application. |
-| `pre_api_request` | Collect model settings and timing metadata. |
-| `post_api_request` | Observe model, token usage, timing, and completion metadata. |
-| `on_session_end` | Associate observations with the saved assistant message. |
-
-There are no registered tools, middleware, CLI commands, provider plugins, environment
-requirements, or privileged capability requests. The `api_server` factory is
-also disclosed here because the catalog capability block has no field for it.
-
-Routes use Hermes's authentication and native session/run operations. A
-per-request adapter view forwards to the existing adapter; it never replaces
-methods on Hermes classes, modules, or live agents. Compression uses Hermes's
-shared manual-compression implementation. Unsupported optional operations are
-reported as unavailable. Native contract tests cover the release baseline and a
-current upstream revision.
-
-Formatting follows Hermes and the user's configuration. The plugin adds no
-formatting instructions and has no full-prompt debug logger. Manual `/compress`
-uses Hermes's argument parser, compression engine, result rendering, and native
-session leases. Hermes also retains control of automatic compression.
-
-## Data, network, and execution disclosures
-
-- **Profile reads:** Hermes configuration, session history and search indexes,
-  model inventory, `IDENTITY.md`/`SOUL.md` for the agent's display name, and the
-  profile's configured instructions and prefill. An explicitly configured
-  prefill file may be outside the Hermes profile directory. Instructions and
-  prefill go to the configured model; their contents and paths are not returned
-  by the capability/status endpoint.
-- **Session changes:** Authenticated user actions can branch or rewind API
-  sessions and manually compress their history. Hermes owns persistence,
-  idempotency, active-turn leases, and cancellation. Search can read other
-  visible sessions in the authenticated profile; edits are restricted to API
-  sessions.
-- **Local storage:** `$HERMES_HOME/talaria/observations.db` keeps up to 10,000
-  response metadata records for the enabled profile. These contain identifiers,
-  model names, token counts, timings, and completion status, not message bodies
-  or credentials. Disabling the plugin stops collection but does not delete
-  existing files.
-- **Network:** Chat and compression use Hermes's configured providers. Model
-  inventory refreshes use Hermes's normal provider/catalog sources. Those
-  operations can make network requests and incur provider charges. The plugin
-  has no independent analytics endpoint, telemetry exporter, or usage-reporting
-  service.
-- **Credentials:** Provider authentication stays with Hermes's configured
-  runtime. The plugin does not independently read browser profiles or another
-  CLI's login files, rotate another client's OAuth tokens, or impersonate a
-  vendor client. It stores no separate credentials.
-- **Execution:** The plugin starts no shell children, installer, listener, or
-  daemon. It adds routes to the existing gateway and runs at most four native
-  command jobs concurrently. Agent tools can execute commands according to
-  Hermes's configuration and approval policy. The plugin does not auto-approve
-  tools, disable guards, or enable YOLO mode. Clarification waits use Hermes's
-  timeout and stop handling; registration and observer hooks do not prompt or
-  launch interactive login flows.
-
-## Dependencies and validation
-
-The only additional Python dependency is `aiohttp>=3.9,<4`. Its floor covers the
-HTTP APIs used here and its upper bound excludes the next major release. Hermes
-resolves it under its core constraints. Development uses reviewed lockfiles.
-Catalog CI separately resolves the plugin requirements with an explicit 14-day
-release cutoff and saves the versions and hashes for review. Hermes admission
-then resolves under its own constraints and security exceptions; it does not
-inherit a plugin CI environment variable. No dependency is downloaded during
-plugin registration.
-
-From a checkout at the proposed catalog commit, run the admission command:
+From the repository root:
 
 ```sh
 hermes plugins validate src/talaria/hermes_plugin --install-deps
 ```
 
-Read both the checks and stderr: dependency preparation must succeed, even if
-the CLI exits zero. Warnings require review before submission. The repository's
-[catalog preparation command](../../../CONTRIBUTING.md#plugin-catalog) validates
-an exported commit and generates the entry with matching code and image pins.
+Check the report and any dependency errors printed to stderr. Our
+[catalog preparation command](../../../CONTRIBUTING.md#plugin-catalog) requires
+all admission checks to pass, a `safe` scan, successful dependency preparation
+and no warnings.
+
+This directory contains the plugin; the WebUI is installed separately. Talaria
+is an independent project maintained by [Liam Smith](https://github.com/liamsmith86)
+under the [MIT license](../../../LICENSE).
