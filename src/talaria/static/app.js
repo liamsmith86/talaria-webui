@@ -353,6 +353,7 @@ function App() {
     html`<${SessionDialog}
       mode=${app.modal.type}
       session=${app.modal.session}
+      message=${app.modal.message}
       onClose=${close}
     />`}
     ${modelOpen &&

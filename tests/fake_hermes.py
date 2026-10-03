@@ -1,6 +1,7 @@
 """Deterministic public-protocol peer for functional and visual tests."""
 
 import asyncio
+import copy
 import json
 import re
 import time
@@ -51,7 +52,7 @@ class FakeHermes:
             return JSONResponse(*self.discovery_overrides[path])
         plugin_fork = path.startswith("/talaria/v1/sessions/") and path.endswith("/fork")
         if plugin_fork:
-            if not (self.extension or {}).get("session_fork"):
+            if self.extension is None or not self.extension.get("session_fork", True):
                 return JSONResponse({"error": "Not installed"}, 404)
             path = path.replace("/talaria/v1/sessions/", "/api/sessions/", 1)
         if path == "/talaria/v1/runs":
@@ -250,6 +251,8 @@ class FakeHermes:
                 offset = int(request.query_params.get("offset", "0"))
                 limit = int(request.query_params.get("limit", "100"))
                 all_messages = self.messages[sid]
+                if request.query_params.get("include_compacted") == "false":
+                    all_messages = [row for row in all_messages if row.get("active", True)]
                 end = max(0, len(all_messages) - offset)
                 return JSONResponse(
                     {
@@ -279,7 +282,17 @@ class FakeHermes:
                     "parent_session_id": sid,
                     "model_config": {"_branched_from": sid} if plugin_fork else {},
                 }
-                self.messages[new_id] = list(self.messages[sid])
+                copied = copy.deepcopy(
+                    [row for row in self.messages[sid] if row.get("active", True)]
+                )
+                start = (
+                    max((row["id"] for rows in self.messages.values() for row in rows), default=0)
+                    + 1
+                )
+                self.messages[new_id] = [
+                    {**row, "id": start + index, "session_id": new_id}
+                    for index, row in enumerate(copied)
+                ]
                 if title in titles:
                     self.sessions[new_id]["title"] = None
                     return JSONResponse({"error": {"code": "invalid_title"}}, 400)

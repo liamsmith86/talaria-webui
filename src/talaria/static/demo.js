@@ -102,11 +102,14 @@ export async function enableDemo(signal, version, pluginVersion) {
     }
     if (method === "DELETE" && !action) { sessions.delete(session.id); return {}; }
     if (method === "POST" && action === "fork") {
+      const index = body.message_id === undefined ? session.messages.length - 1
+        : session.messages.findIndex((message) => message.id === body.message_id && message.role === "assistant");
+      if (index < 0 && body.message_id !== undefined) return missing();
       let title = body.title || session.title, number = 1;
       while ([...sessions.values()].some((item) => item.title === title)) title = `${body.title || session.title} #${++number}`;
       return summary(create({ ...session, id: randomId(), title, source: "api_server", pinned: false,
         parent_session_id: session.id, model_config: { _branched_from: session.id },
-        messages: structuredClone(session.messages) }));
+        messages: structuredClone(session.messages.slice(0, index + 1)) }));
     }
     if (method === "POST" && action === "rewind") {
       const index = session.messages.findIndex((message) => message.id === body.message_id);
@@ -176,7 +179,11 @@ export async function enableDemo(signal, version, pluginVersion) {
       const end = session.messages.length - Math.max(0, Number(url.searchParams.get("offset")) || 0);
       const limit = Math.max(1, Math.min(500, Number(url.searchParams.get("limit")) || 100));
       const data = end > 0 ? session.messages.slice(Math.max(0, end - limit), end) : [];
-      return { session_id: session.id, data: structuredClone(data), has_more: end > limit,
+      return { session_id: session.id, data: structuredClone(data).map((message) => {
+        const next = session.messages[session.messages.findIndex((row) => row.id === message.id) + 1];
+        return { ...message, branchable: message.role === "assistant" && !message.tool_calls?.length &&
+          (!next || next.role === "user") };
+      }), has_more: end > limit,
         next_offset: session.messages.length - end + data.length };
     }
     if (parts[2] === "export") return url.searchParams.get("format") === "json"

@@ -287,7 +287,14 @@ async def messages(request: Request):
         limit = max(1, min(int(request.query_params.get("limit", "100")), 500))
     except ValueError as exc:
         raise APIError("Invalid message page.", 400) from exc
-    return JSONResponse(await message_page(request.app.state.hermes, sid, offset, limit=limit))
+    page = await message_page(request.app.state.hermes, sid, offset, limit=limit)
+    if request.app.state.extensions.get("rewind"):
+        from .branching import mark_branch_points
+
+        page["data"] = await mark_branch_points(
+            request.app.state.hermes, page.get("session_id", sid), page["data"]
+        )
+    return JSONResponse(page)
 
 
 async def fork(request: Request):
@@ -298,6 +305,14 @@ async def fork(request: Request):
     # Omitted titles use Hermes's own lineage naming (including uniqueness).
     payload = {"title": text_field(data, "title", 160)} if "title" in data else {}
     client = request.app.state.hermes
+    if "message_id" in data:
+        from .branching import branch_from_response
+
+        mid = data["message_id"]
+        if type(mid) is not int or not 0 < mid < 2**63:
+            raise APIError("Choose a saved message.", 400)
+        result = await branch_from_response(client, sid, mid, payload)
+        return JSONResponse(result, status_code=201)
     try:
         result = await client.request("POST", f"{PREFIX}/sessions/{sid}/fork", json=payload)
     except APIError as exc:

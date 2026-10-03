@@ -21,7 +21,9 @@ import {
   openSession,
   chooseModel,
   chooseReasoning,
+  navigationVersion,
 } from "./store.js";
+import { running } from "./runs.js";
 import {
   sessionModel,
   sessionReasoning,
@@ -236,7 +238,7 @@ export function Connection({
     : html`<${Dialog} title=${initial ? t("Connect Hermes") : t("Connection")} onClose=${onClose}>${content}</${Dialog}>`;
 }
 
-export function SessionDialog({ mode, session, onClose }) {
+export function SessionDialog({ mode, session, message, onClose }) {
   const [title, setTitle] = useState(
     mode === "fork" ? "" : session.title || null,
   );
@@ -245,18 +247,32 @@ export function SessionDialog({ mode, session, onClose }) {
   const [error, setError] = useState("");
   async function submit(e) {
     e.preventDefault();
+    const generation = navigationVersion(), profile = state.profile?.id;
+    const model = sessionModel({ ...state, active: session.id });
+    const reasoning = sessionReasoning({ ...state, active: session.id });
+    const current = () => generation === navigationVersion() && profile === state.profile?.id;
     setBusy(true);
     setError("");
     try {
+      if (message && (state.active !== session.id || state.readOnlyParent ||
+        state.searchWindow || running(session.id)))
+        throw new Error(msg("The session is busy or has changed. Reopen this action when it finishes."));
       const base = `/sessions/${encodeURIComponent(session.id)}`;
       const result = await api(mode === "fork" ? `${base}/fork` : base, {
         method:
           mode === "delete" ? "DELETE" : mode === "fork" ? "POST" : "PATCH",
         body:
-          mode === "delete" || (mode === "fork" && !displayedTitle.trim())
+          mode === "delete"
             ? {}
-            : { title: displayedTitle },
+            : {
+              ...(mode !== "fork" || displayedTitle.trim() ? { title: displayedTitle } : {}),
+              ...(message ? { message_id: message.id } : {}),
+            },
       });
+      if (mode === "fork" && !current()) {
+        if (profile === state.profile?.id) await refreshSessions();
+        return;
+      }
       if (mode === "delete") {
         writeStorage(`draft.${session.id}`, "");
         pendingStorage(`draft.${session.id}`, null).catch(() => {});
@@ -264,14 +280,15 @@ export function SessionDialog({ mode, session, onClose }) {
         if (state.active === session.id) newConversation();
       }
       await refreshSessions();
+      if (mode === "fork" && !current()) return;
       onClose();
       if (mode === "fork") {
         chooseReasoning(
-          sessionReasoning({ ...state, active: session.id }),
+          reasoning,
           result.id || result.session_id || result.session?.id,
         );
         chooseModel(
-          sessionModel({ ...state, active: session.id }),
+          model,
           result.id || result.session_id || result.session?.id,
         );
         await openSession(result.id || result.session_id || result.session?.id);
@@ -284,13 +301,16 @@ export function SessionDialog({ mode, session, onClose }) {
             : t("Session renamed"),
       );
     } catch (e) {
+      if (mode === "fork" && !current()) return;
       setError(e.message);
+      if (mode === "fork") refreshSessions().catch(() => {});
     } finally {
       setBusy(false);
     }
   }
-  return html`<${Dialog} title=${t({ rename: msg("Rename session"), delete: msg("Delete session?"), fork: msg("Branch session") }[mode])} onClose=${onClose} dismissible=${!busy}>
+  return html`<${Dialog} title=${message ? t("Branch from here") : t({ rename: msg("Rename session"), delete: msg("Delete session?"), fork: msg("Branch session") }[mode])} onClose=${onClose} dismissible=${!busy}>
     <form onSubmit=${submit}>
+      ${message && html`<p class="dialog-intro">${t("Copy this conversation through this response.")}</p>`}
       ${mode === "delete" ? html`<p class="dialog-intro">${t("“{title}” will be permanently deleted from Hermes. This cannot be undone.", { title: displayedTitle })}</p>` : html`<label class="field">${t("Session name")}<input value=${displayedTitle} onInput=${(e) => setTitle(e.target.value)} placeholder=${mode === "fork" ? t("Automatic name from Hermes") : ""} maxlength="150" required=${mode !== "fork"} autofocus /></label>`}
       ${error && html`<div class="form-error" role="alert">${t(error)}</div>`}
       <div class="dialog-actions"><button type="button" class="button secondary" disabled=${busy} onClick=${onClose}>${t("Cancel")}</button><button disabled=${busy} class=${`button ${mode === "delete" ? "danger" : "primary"}`}>${busy ? t("Working…") : t({ rename: msg("Save name"), delete: msg("Delete session"), fork: msg("Create branch") }[mode])}</button></div>

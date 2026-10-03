@@ -174,6 +174,7 @@ function Message({
   images = [],
   record = null,
   canChange = false,
+  canBranch = false,
   parts = null,
   responseStatus = null,
   agentName = "Hermes",
@@ -298,6 +299,15 @@ function Message({
         label=${copied ? t("Copied") : t("Copy message")}
         onClick=${copy}
       />
+      ${canBranch && html`<${IconButton}
+        name="branch"
+        label=${t("Branch from here")}
+        onClick=${() => update({ modal: {
+          type: "fork",
+          session: { ...(state.sessionDetails || state.sessions.find((s) => s.id === state.active)), id: state.active },
+          message: record,
+        } })}
+      />`}
       ${canChange &&
       html`<${IconButton}
           name=${role === "user" ? "edit" : "refresh"}
@@ -610,6 +620,7 @@ export function Conversation({ app, command, onDismissCommand }) {
     !app.readOnlyParent && !app.searchWindow &&
     !running(app.active, app.lives) &&
     !live?.uncertain;
+  const canBranch = canChange && supports("session_fork");
   const showUser =
     live &&
     !live.persisted &&
@@ -654,10 +665,11 @@ export function Conversation({ app, command, onDismissCommand }) {
             matchId=${app.searchWindow}
             detailsEnabled=${!app.searchWindow}
             canChange=${canChange && typeof m.record?.id === "number"}
+            canBranch=${canBranch && m.role === "assistant" && m.record?.branchable === true}
             responseStatus=${m === savedTurn && !live.outcomeUnknown ? live.status : null}
           />`,
       ),
-    [items, messageKeys, canChange, app.loading, savedTurn, live?.status, live?.outcomeUnknown, agentName, app.searchWindow, locale, formatLocale],
+    [items, messageKeys, canChange, canBranch, app.loading, savedTurn, live?.status, live?.outcomeUnknown, agentName, app.searchWindow, locale, formatLocale],
   );
   async function loadEarlier() {
     if (olderBusy) return;
