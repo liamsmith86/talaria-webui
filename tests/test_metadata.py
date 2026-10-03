@@ -1,4 +1,3 @@
-import json
 import os
 
 import httpx
@@ -23,10 +22,7 @@ from .test_app import signed_in
 )
 def test_supported_identity_formats(tmp_path, content, name):
     (tmp_path / "SOUL.md").write_text(content)
-    details = files.inspect_home(str(tmp_path))
-    assert details.name == name
-    assert details.status == ("ready" if name else "no_name")
-    assert "Private instructions" not in json.dumps(details.public())
+    assert files.read_name(tmp_path) == name
 
 
 @pytest.mark.parametrize("kind", ["oversized", "binary", "directory", "symlink", "fifo"])
@@ -44,22 +40,19 @@ def test_unsupported_identity_files_fall_back(tmp_path, kind):
         path.symlink_to(target)
     else:
         os.mkfifo(path)
-    assert files.inspect_home(str(tmp_path)).name == ""
+    assert files.read_name(tmp_path) == ""
     (tmp_path / "SOUL.md").write_text("You are Juniper, an agent.")
-    assert files.inspect_home(str(tmp_path)).name == "Juniper"
+    assert files.read_name(tmp_path) == "Juniper"
 
 
 def test_unreadable_directory_is_optional(tmp_path, monkeypatch):
-    assert files.inspect_home("").status == "disabled"
-    assert files.inspect_home(str(tmp_path / "missing")).status == "not_found"
+    assert files.read_name(tmp_path / "missing") == ""
 
     def denied(path, limit):
         raise PermissionError("Private server details")
 
     monkeypatch.setattr(files, "read_text", denied)
-    details = files.inspect_home(str(tmp_path))
-    assert details.status == "unreadable" and not details.name
-    assert "Private server details" not in json.dumps(details.public())
+    assert files.read_name(tmp_path) == ""
 
 
 def test_extended_access_is_private_and_optional(live_app):

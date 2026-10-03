@@ -1,7 +1,6 @@
 """Native API + agent + persistence against a loopback-only model simulator."""
 
 import asyncio
-import importlib.util
 import json
 import os
 import socket
@@ -37,15 +36,12 @@ prefill = [
 ]
 
 
-def configure(prompt="PROFILE_INSTRUCTION", *, debug_requests=True, **extras):
+def configure(prompt="PROFILE_INSTRUCTION", **extras):
     # JSON is valid YAML; avoids any quoting interpolation in fixture prompts.
     (home / "config.yaml").write_text(
         json.dumps(
             {
-                "plugins": {
-                    "enabled": ["talaria"],
-                    "entries": {"talaria": {"settings": {"debug_requests": debug_requests}}},
-                },
+                "plugins": {"enabled": ["talaria-webui"]},
                 "model": {
                     "default": model_name,
                     "provider": provider_name,
@@ -132,16 +128,7 @@ async def main():
     planned_replies = []
     manager = get_plugin_manager()
     manager.discover_and_load()
-    # Named-profile hooks and the primary listener are separate module copies in
-    # multiplexed Hermes. Exercise that boundary through native hook workers too.
-    spec = importlib.util.spec_from_file_location(
-        "named_profile_request_log",
-        Path(__file__).parents[1] / "src/talaria/hermes_plugin/request_log.py",
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    with patch("talaria.hermes_plugin.bridge.RequestLog", module.RequestLog):
-        register(PluginContext(PluginManifest(name="talaria"), manager))
+    register(PluginContext(PluginManifest(name="talaria-webui"), manager))
 
     async def complete(request):
         payload = await request.json()
@@ -418,19 +405,7 @@ async def main():
                 assert "CONTEXT_TOOL_RESULT" in json.dumps(seen[-1])
                 saved = json.dumps(db.get_messages("context-test", include_inactive=True))
                 assert "PROFILE_INSTRUCTION" not in saved and "PREFILL_EXAMPLE" not in saved
-                log_path = home / "talaria/request-debug.jsonl"
-                captured = [json.loads(line) for line in log_path.read_text().splitlines()]
-                assert len(captured) == len(seen)
-                for recorded, sent in zip(captured, seen, strict=True):
-                    assert recorded["prompt_available"] is True
-                    assert recorded["messages"] == sent["messages"]
-                    assert prefill[1]["content"] in json.dumps(recorded)
-                    assert recorded["session_id"] == "context-test"
-                    assert recorded["api_request_id"] and recorded["turn_id"]
-                assert "fixture-key" not in log_path.read_text()
-                assert "fixture-only" not in log_path.read_text()
-                # The ordinary Hermes API can resume the same session, but must
-                # not inherit the Talaria diagnostic scope from its previous run.
+                # The ordinary Hermes API can still resume the same session.
                 response = await client.post(
                     "/v1/runs",
                     json={"session_id": "context-test", "input": "Other API client"},
@@ -442,11 +417,6 @@ async def main():
                 if other_task:
                     await asyncio.wait_for(other_task, 30)
                 assert adapter._run_statuses[other_run["run_id"]]["status"] == "completed"
-                assert len(log_path.read_text().splitlines()) == len(captured)
-                # Toggle without a reload/restart: the next real model call is unlogged.
-                configure(debug_requests=False)
-                await run("Logging disabled", "debug-off")
-                assert len(log_path.read_text().splitlines()) == len(captured)
                 from hermes_parity_contract import verify_parity
 
                 await verify_parity(run, db, seen, agents, configure, model_name, provider_name)

@@ -192,6 +192,38 @@ jobs:
           path: test-results/
           retention-days: 7
 
+  catalog:
+    name: Plugin catalog admission
+    needs: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      UV_EXCLUDE_NEWER: '14 days'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: NousResearch/hermes-agent
+          ref: 4ec2e50b3cff8c3a1cf43c8675fa2c25d07bde49
+          path: .local/hermes-catalog
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.12.9'
+          checksum: *uv-checksum
+          python-version: '3.14'
+      - name: Prepare the locked Hermes validator
+        run: uv sync --project .local/hermes-catalog --frozen --no-dev --extra sms --python "$UV_PYTHON"
+      - name: Validate the exact commit and prepare its catalog entry
+        run: .local/hermes-catalog/.venv/bin/python contrib/plugin_catalog.py --revision HEAD --output .local/plugin-catalog
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: plugin-catalog
+          path: .local/plugin-catalog/
+          retention-days: 7
+
   hermes:
     needs: lint
     if: inputs.full || inputs.hermes_latest || github.event_name == 'schedule'
@@ -259,7 +291,7 @@ jobs:
   required:
     name: ${{ inputs.full && 'Release validation' || 'Required checks' }}
     if: always()
-    needs: [lint, behavior, platforms, browsers, hermes, wsl]
+    needs: [lint, behavior, platforms, browsers, catalog, hermes, wsl]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -273,7 +305,7 @@ jobs:
           python3 - <<'PY'
           import json, os
           results = json.loads(os.environ['RESULTS'])
-          required = {'lint'}
+          required = {'lint', 'catalog'}
           if os.environ['FULL'] == 'true':
               required.update({'platforms', 'browsers', 'hermes', 'wsl'})
           if os.environ['PULL_REQUEST'] == 'true':

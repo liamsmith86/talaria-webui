@@ -4,7 +4,6 @@ import inspect
 import os
 import uuid
 from contextlib import contextmanager
-from functools import wraps
 
 
 class CommandError(ValueError):
@@ -13,18 +12,19 @@ class CommandError(ValueError):
 
 def supported(adapter, db):
     try:
+        from agent.conversation_compression_manual import compress_now, parse_compress_args
         from agent.turn_facade_lease import DurableTurnLease
-        from hermes_cli import partial_compress
         from run_agent import AIAgent
 
         inspect.signature(AIAgent._compress_context).bind(
-            None, [], None, force=True, defer_context_engine_notification=True
+            None, [], None, force=True, defer_context_engine_notification=True, verbatim_tail=[]
         )
         return all(
             callable(value)
             for value in (
                 DurableTurnLease,
-                partial_compress.extract_compress_flags,
+                compress_now,
+                parse_compress_args,
                 AIAgent._compress_context,
                 getattr(adapter, "_effective_session_runtime_request", None),
                 getattr(db, "try_acquire_session_turn_lease", None),
@@ -106,96 +106,31 @@ def compress(adapter, db, sid, args):
 
 
 def compress_history(agent, history, args):
-    from agent.model_metadata import estimate_request_tokens_rough
-    from hermes_cli.partial_compress import (
-        extract_compress_flags,
-        parse_partial_compress_args,
-        summarize_compress_preview,
-    )
-
-    if len(history) < 4:
-        return "Not enough history to compress (need at least four messages)."
-    raw, preview, aggressive = extract_compress_flags(args)
-    if aggressive:
-        raise CommandError("Hermes does not support --aggressive. Use /compress here [N].")
-    partial, keep, focus = parse_partial_compress_args(raw)
-    estimate = {
-        "system_prompt": getattr(agent, "_cached_system_prompt", "") or "",
-        "tools": getattr(agent, "tools", None) or None,
-    }
-    before = estimate_request_tokens_rough(history, **estimate)
-    if preview:
-        return "\n".join(summarize_compress_preview(history, partial, keep, focus, before)["lines"])
-    if getattr(agent, "api_mode", None) == "codex_app_server":
-        raise CommandError("Compress this model's live thread from its Hermes client.")
-    compressed = apply_compression(agent, history, partial, keep, focus, before)
-    from agent.manual_compression_feedback import summarize_manual_compression
-
-    report = summarize_manual_compression(
-        history,
-        compressed,
-        before,
-        estimate_request_tokens_rough(compressed, **estimate),
-        compression_state=agent.context_compressor,
-    )
-    return "\n".join(filter(None, (report["headline"], report["token_line"], report["note"])))
-
-
-def apply_compression(agent, history, partial, keep, focus, before):
     from agent.conversation_compression import finalize_context_engine_compression_notification
-    from agent.manual_compression_feedback import describe_compression_lock_skip
-
-    with partial_compressor(agent.context_compressor, partial, keep):
-        compressed, _ = agent._compress_context(
-            history,
-            None,
-            approx_tokens=before,
-            focus_topic=focus,
-            force=True,
-            defer_context_engine_notification=True,
-        )
-    skipped = getattr(agent, "_compression_skipped_due_to_lock", None)
-    if skipped is True or isinstance(skipped, str):
-        raise CommandError(describe_compression_lock_skip(skipped))
-    finalize_context_engine_compression_notification(agent, committed=True)
-    return compressed
-
-
-@contextmanager
-def partial_compressor(compressor, partial, keep):
-    """Rejoin BEFORE Hermes commits, so its native atomic write includes the tail.
-
-    Only this command's temporary compressor gets an adapted callable. The full
-    history still reaches Hermes's lease, watermark, anti-growth and commit logic.
-    Rejoining after _compress_context (as older CLI handlers do) loses the tail
-    when the core now commits in place rather than rotating the session.
-    """
-    from agent.context_compressor import _strip_persistence_markers
-    from hermes_cli.partial_compress import (
-        rejoin_compressed_head_and_tail,
-        split_history_for_partial_compress,
+    from agent.conversation_compression_manual import (
+        AGGRESSIVE_UNSUPPORTED,
+        MIN_MESSAGES,
+        compress_now,
+        parse_compress_args,
+        render_compress_result,
     )
 
-    if not partial:
-        yield
-        return
-    original = compressor.compress
-    previous = vars(compressor).get("compress")
-
-    @wraps(original)
-    def compress_with_tail(messages, **kwargs):
-        head, tail = split_history_for_partial_compress(messages, keep)
-        compressed = original(head, **kwargs)
-        preserved = [{**message, "_compaction_tail": True} for message in tail]
-        result = rejoin_compressed_head_and_tail(compressed, preserved)
-        _strip_persistence_markers(result)
-        return result
-
-    compressor.compress = compress_with_tail
-    try:
-        yield
-    finally:
-        if previous is None:
-            del compressor.compress
-        else:
-            compressor.compress = previous
+    if len(history) < MIN_MESSAGES:
+        return "Not enough history to compress (need at least four messages)."
+    request = parse_compress_args(args)
+    if request.aggressive:
+        raise CommandError(AGGRESSIVE_UNSUPPORTED)
+    if not request.preview and getattr(agent, "api_mode", None) == "codex_app_server":
+        raise CommandError("Compress this model's live thread from its Hermes client.")
+    prior_session = agent.session_id
+    result = compress_now(agent, history, request)
+    lines = render_compress_result(result)
+    if result.status == "lock_skipped":
+        raise CommandError("\n".join(lines))
+    if result.status == "compressed":
+        # Match Hermes's CLI: in-place compaction commits its tail atomically;
+        # a rotated continuation needs the returned transcript flushed as well.
+        if agent.session_id != prior_session:
+            agent._flush_messages_to_session_db(result.after_messages, None)
+        finalize_context_engine_compression_notification(agent, committed=True)
+    return "\n".join(lines)

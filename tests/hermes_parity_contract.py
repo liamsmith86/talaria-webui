@@ -5,13 +5,11 @@ from unittest.mock import patch
 
 from agent.prompt_builder import PLATFORM_HINTS
 
-from talaria.hermes_plugin.surface import HINT
-
 
 async def verify_parity(run, db, seen, agents, configure, model_name, provider_name):
-    original = db.get_session("context-test")["system_prompt"].replace(
-        HINT, PLATFORM_HINTS["api_server"]
-    )
+    original = db.get_session("context-test")["system_prompt"]
+    assert PLATFORM_HINTS["api_server"] in original
+    assert "You're responding in Talaria" not in original
     configure(
         agent={"system_prompt": "PROFILE_INSTRUCTION", "service_tier": "priority"},
         provider_routing={
@@ -67,15 +65,16 @@ async def verify_parity(run, db, seen, agents, configure, model_name, provider_n
     )
     assert seen[-1]["model"] == model_name
 
-    # Existing cached API prompts get the same renderer correction as new sessions.
-    db.create_session("legacy-hint", "api_server", model=model_name)
-    db.update_system_prompt("legacy-hint", original)
-    db.append_message("legacy-hint", "user", "Earlier turn")
-    db.append_message("legacy-hint", "assistant", "Earlier answer")
-    await run("Use this renderer", "legacy-hint", session_id="legacy-hint")
-    wire = json.dumps(seen[-1]["messages"])
-    assert HINT in wire and PLATFORM_HINTS["api_server"] not in wire
-    assert db.get_session("legacy-hint")["system_prompt"] == original
+    # Hermes owns formatting for new and resumed sessions; Talaria never rewrites it.
+    db.create_session("native-hint", "api_server", model=model_name)
+    db.update_system_prompt("native-hint", original)
+    db.append_message("native-hint", "user", "Earlier turn")
+    db.append_message("native-hint", "assistant", "Earlier answer")
+    await run("Keep the native renderer instructions", "native-hint", session_id="native-hint")
+    wire = json.dumps(seen[-1]["messages"], ensure_ascii=False)
+    assert PLATFORM_HINTS["api_server"] in wire
+    assert "You're responding in Talaria" not in wire
+    assert db.get_session("native-hint")["system_prompt"] == original
 
     configure(
         platform_hints={
@@ -84,8 +83,9 @@ async def verify_parity(run, db, seen, agents, configure, model_name, provider_n
     )
     db.create_session("custom-hint", "api_server")
     await run("Use the owner's hint", "custom-hint", session_id="custom-hint")
-    wire = json.dumps(seen[-1]["messages"])
-    assert "CUSTOM_PLATFORM_HINT" in wire and "CUSTOM_APPEND" in wire and HINT not in wire
+    wire = json.dumps(seen[-1]["messages"], ensure_ascii=False)
+    assert "CUSTOM_PLATFORM_HINT" in wire and "CUSTOM_APPEND" in wire
+    assert "You're responding in Talaria" not in wire
     await run("An older client still works", "older-client", live_interactions=False)
     assert agents[-1].reasoning_callback is None and agents[-1].clarify_callback is None
-    configure(debug_requests=False)
+    configure()

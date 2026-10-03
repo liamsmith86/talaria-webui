@@ -21,12 +21,6 @@ class BranchStore:
     def create_session(self, session_id, source, **kwargs):
         if kwargs.get("parent_session_id") != self.parent or session_id == self.parent:
             raise ValueError("Unexpected branch identity")
-        # Include Hermes's native lineage marker in the original INSERT, so even
-        # concurrent readers and failed copies never see a compression descendant.
-        kwargs["model_config"] = {
-            **(kwargs.get("model_config") or {}),
-            "_branched_from": self.parent,
-        }
         result = self.db.create_session(session_id, source, **kwargs)
         self.created = session_id
         return result

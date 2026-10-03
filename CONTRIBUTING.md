@@ -81,3 +81,44 @@ Update `pyproject.toml` and `src/talaria/__init__.py`, run `uv lock`, merge to `
 Successful releases publish `ghcr.io/liamsmith86/talaria-webui:VERSION`. Only the newest successful stable release advances `:latest` and the `stable` source branch. Installs and managed updates follow `stable`; `--branch main` opts into development builds. Existing installations retain their configured branch.
 
 Protect `stable` with the **Talaria stable release** status from GitHub Actions and disable force pushes/deletion. Rerun failed publication workflows after resolving the cause. The container package must be public. Releases verify anonymous image access before promoting the stable source; package visibility is managed separately in GitHub.
+
+## Plugin catalog
+
+The catalog package is `src/talaria/hermes_plugin`, named `talaria-webui`. Its
+`plugin.yaml` version is independent of the standalone WebUI version. Read the
+[Hermes admission rules](https://hermes-agent.nousresearch.com/docs/developer-guide/plugins/catalog-submission)
+and keep the [plugin disclosures](src/talaria/hermes_plugin/README.md) accurate
+when its behavior changes. Register new hooks or middleware in the manifest in
+the same change. Use request middleware and native operations; never replace
+methods on Hermes classes, modules, or live agent instances.
+
+The required **Plugin catalog admission** CI job uses a reviewed, full-SHA-pinned
+Hermes validator. To reproduce its environment locally:
+
+```sh
+git clone https://github.com/NousResearch/hermes-agent.git .local/hermes-catalog
+git -C .local/hermes-catalog checkout 4ec2e50b3cff8c3a1cf43c8675fa2c25d07bde49
+UV_EXCLUDE_NEWER="14 days" uv sync --project .local/hermes-catalog --frozen --no-dev --extra sms --python 3.14
+.local/hermes-catalog/.venv/bin/python contrib/plugin_catalog.py --revision HEAD --output .local/plugin-catalog
+```
+
+Commit the plugin changes first. The preparation command exports that exact
+commit, runs `hermes plugins validate <export>/src/talaria/hermes_plugin
+--install-deps --json` under an empty temporary `HERMES_HOME`, and checks the
+entry with Hermes's catalog schema validator. It rejects missing admission
+checks, warnings, a non-`safe` scanner verdict, and dependency-preparation
+errors even if Hermes returns zero. It separately resolves plugin requirements
+with `uv pip compile --exclude-newer "14 days"`; Hermes's resolver does not
+forward `UV_EXCLUDE_NEWER`. It generates `talaria-webui.yaml`, `validation.json`,
+`plugin-requirements.txt` (versions and hashes), and a reviewable `submission.md`
+without submitting them.
+The entry's commit, documentation URL, and gallery images all use the same
+40-character SHA; `version` is quoted and comes from that commit's manifest.
+
+The repository owner or a major contributor submits only `talaria-webui.yaml` to
+`NousResearch/hermes-agent` as `plugin-catalog/talaria-webui.yaml`, after the pinned
+commit is public and the validation and disclosures have been reviewed. Use
+the generated PR description and screenshots, then wait for catalog CI and
+human maintainer review. Each later update needs a new PR, a plugin version
+bump, new code/image pins, and review of the old-to-new commit range. No
+automatic catalog publishing or self-updating plugin code is permitted.

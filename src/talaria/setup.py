@@ -39,7 +39,6 @@ from .installation import read_json
 from .setup_services import (
     describe,
     install_service,
-    migrate_service,
     passwordless_sudo,
     preflight,
     prepare_account,
@@ -288,7 +287,7 @@ def restart_setup_hermes(home, python, *, owner=None, plugin_enabled=False):
     if hermes_restart_pending(home) and plugin_enabled:
         from .plugin_updates import restart_and_verify
 
-        restart_and_verify(home, home / "plugins/talaria", None, owner=owner)
+        restart_and_verify(home, home / "plugins/talaria-webui", None, owner=owner)
     else:
         restart_gateway(home, owner=owner)
     if hermes_restart_pending(home):
@@ -509,7 +508,6 @@ def update_existing(root, args, stack):
     command = argparse.Namespace(command="update", check=False, expect=args.expect)
     if not manage(command, root):
         deployment.update(expect=args.expect)
-    migrate_service(deployment)
     print(f"Config: {config['config']}")
     print_management_commands(root)
     if args.plugin and not args.skip_hermes and not config.get("hermes_plugin"):

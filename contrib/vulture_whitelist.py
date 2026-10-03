@@ -11,5 +11,6 @@ development_app  # noqa: B018 -- Vulture whitelist reference, not executable cod
 hermes_agent = SimpleNamespace()
 hermes_agent._session_db_created  # noqa: B018
 hermes_agent._end_session_on_close  # noqa: B018
+hermes_agent._cached_system_prompt  # noqa: B018
 hermes_agent._active_session_turn_lease_holder  # noqa: B018
 hermes_agent._active_session_turn_lease_ttl_seconds  # noqa: B018

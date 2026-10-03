@@ -84,7 +84,7 @@ def test_private_bootstrap_installs_and_verifies_as_owner(isolated_owner, monkey
     verified = []
 
     def verify(candidate, target, command, *, owner):
-        assert candidate == home and target == home / "plugins/talaria"
+        assert candidate == home and target == home / "plugins/talaria-webui"
         with (
             pytest.raises(DeploymentError, match="Another update"),
             locked(home / "plugins/.talaria-maintenance"),
@@ -124,7 +124,7 @@ def test_owner_worker_keeps_lock_through_failed_restart_and_recovery(isolated_ow
         plugin_updates.run_as_owner(home, source)
     assert "PRIVATE" not in str(error.value)
     assert calls == [fingerprint(source), old]
-    assert fingerprint(home / "plugins/talaria") == old
+    assert fingerprint(home / "plugins/talaria-webui") == old
     assert not (home / "plugins/.talaria-maintenance/restart-required").exists()
 
 
@@ -160,10 +160,10 @@ def test_parent_interruption_releases_lock_and_keeps_backup(isolated_owner, monk
         plugin_updates.run_as_owner(home, source)
     maintenance = home / "plugins/.talaria-maintenance"
     with locked(maintenance):
-        backup = maintenance / "backups/talaria"
+        backup = maintenance / "backups/talaria-webui"
         # EOF can let the worker restore before SIGTERM arrives; either outcome
         # retains the old version and leaves the restart marker for recovery.
-        assert fingerprint(backup if backup.exists() else home / "plugins/talaria") == old
+        assert fingerprint(backup if backup.exists() else home / "plugins/talaria-webui") == old
         assert (maintenance / "restart-required").exists()
 
 

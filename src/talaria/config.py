@@ -115,7 +115,6 @@ def save_data(path: Path, data: dict) -> None:
 
 def load(path: Path) -> Settings:
     data = json.loads(path.read_text()) if path.exists() else {}
-    data.pop("hermes_home", None)  # Retired in favor of the authenticated Hermes plugin.
     settings = Settings(**data)
     if not settings.signing_key:
         settings.signing_key = secrets.token_hex(32)

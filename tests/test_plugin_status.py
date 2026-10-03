@@ -35,7 +35,7 @@ def test_release_comparison_is_bounded_and_does_not_infer_downgrades(data, statu
 
 def test_local_detection_compares_files_not_just_the_version(tmp_path):
     assert plugin_status.installed_status(tmp_path)["status"] == "missing"
-    target = tmp_path / "plugins/talaria"
+    target = tmp_path / "plugins/talaria-webui"
     shutil.copytree(Path(plugin_status.__file__).with_name("hermes_plugin"), target)
     assert plugin_status.installed_status(tmp_path)["status"] == "current"
     with (target / "bridge.py").open("a") as file:

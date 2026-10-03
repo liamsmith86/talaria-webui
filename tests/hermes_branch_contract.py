@@ -17,7 +17,7 @@ from talaria.hermes_plugin.bridge import wire
 
 home = Path(sys.argv[1])
 assert home.is_dir() and str(home).startswith("/tmp/")
-(home / "config.yaml").write_text(json.dumps({"plugins": {"enabled": ["talaria"]}}))
+(home / "config.yaml").write_text(json.dumps({"plugins": {"enabled": ["talaria-webui"]}}))
 
 
 async def main():
