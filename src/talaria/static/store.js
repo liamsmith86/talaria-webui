@@ -115,7 +115,7 @@ export async function initialize(signal = new AbortController().signal) {
     const data = await api("/bootstrap", options());
     signal.throwIfAborted();
     if (data.environment === "demo")
-      await (await import("./demo.js")).enableDemo(signal, data.version);
+      await (await import("./demo.js")).enableDemo(signal, data.version, data.plugin_version);
     document.title =
       data.environment === "development" ? "Talaria · Dev" : "Talaria";
     setCSRF(data.csrf || "");
@@ -157,6 +157,9 @@ export async function refreshProfiles() {
 export async function connect(configured = true) {
   // Connection edits can replace Hermes while its previous discovery is pending.
   modelsPending = null;
+  readinessPending = null;
+  readinessRequest++;
+  agentInfoRequest++;
   if (!configured) {
     update({ connected: false, modal: "connection" });
     return;
@@ -211,28 +214,42 @@ export function refreshModels(force = false) {
   return request.promise;
 }
 let readinessPending;
+let readinessRequest = 0;
+let agentInfoRequest = 0;
 export function refreshReadiness() {
   if (readinessPending) return readinessPending;
-  readinessPending = api("/readiness")
-    .then((readiness) => update({ readiness }))
-    .catch((e) =>
-      update({
+  const request = ++readinessRequest;
+  const pending = api("/readiness")
+    .then((readiness) => {
+      if (request === readinessRequest) update({ readiness });
+    })
+    .catch((e) => {
+      if (request === readinessRequest) update({
         readiness: { status: "unavailable", issues: [], message: e.message },
-      }),
-    )
+      });
+    })
     .finally(() => {
-      readinessPending = null;
+      if (readinessPending === pending) readinessPending = null;
     });
-  return readinessPending;
+  readinessPending = pending;
+  return pending;
 }
 export async function refreshAgentInfo() {
-  const info = await api("/agent");
-  update({
-    agentInfo: info,
-    caps: { ...state.caps, talaria_extensions: info.extended_access || {} },
-    readiness: info.readiness || state.readiness,
-    agent: { name: info.name, name_source: info.name_source },
-  });
+  const request = ++agentInfoRequest;
+  // Agent details also report health; both endpoints share the latest check.
+  const healthRequest = ++readinessRequest;
+  try {
+    const info = await api("/agent");
+    if (request !== agentInfoRequest) return;
+    update({
+      agentInfo: info,
+      caps: { ...state.caps, talaria_extensions: info.extended_access || {} },
+      readiness: healthRequest === readinessRequest ? info.readiness || state.readiness : state.readiness,
+      agent: { name: info.name, name_source: info.name_source },
+    });
+  } catch (error) {
+    if (request === agentInfoRequest) throw error;
+  }
 }
 export function chooseModel(model, id = state.active) {
   if (id)

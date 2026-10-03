@@ -13,6 +13,7 @@ from starlette.routing import Mount, Route
 from . import __version__
 from .app import STATIC, Assets, SecurityHeaders, health, index, robots
 from .config import Settings, validate_public_url
+from .hermes_plugin.release import PLUGIN_VERSION
 from .proxy import PublicPath
 
 
@@ -32,6 +33,7 @@ def create_demo(*, public_url=""):
         return JSONResponse(
             {
                 "version": __version__,
+                "plugin_version": PLUGIN_VERSION,
                 "environment": "demo",
                 "authenticated": True,
                 "connected": True,

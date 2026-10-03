@@ -139,6 +139,58 @@ def test_reopening_uses_cooldown_but_manual_check_is_immediate(page, update_ui):
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
 
 
+@pytest.mark.parametrize("trigger", ["automatic", "manual"])
+def test_update_check_never_claims_to_install_an_update(page, update_ui, trigger):
+    info, calls = update_ui
+    finishing_polls = []
+    updates = []
+
+    def check(route):
+        body = route.request.post_data_json
+        calls.append(body)
+        info["update"].update(available=False, latest_commit=A)
+        info["operation"] = {**body, "action": "check", "status": "finishing", "phase": "completed"}
+        route.fulfill(json=info["operation"])
+
+    def poll(route):
+        route.fulfill(json=info)
+        if info["operation"].get("status") == "finishing":
+            finishing_polls.append(info["operation"]["id"])
+            info["operation"]["status"] = "completed"
+
+    page.route("**/api/installation/check", check)
+    page.route("**/api/installation", poll)
+    page.on(
+        "request",
+        lambda request: (
+            updates.append(request.url)
+            if request.url.endswith("/api/installation/update")
+            else None
+        ),
+    )
+    page.evaluate("""() => {
+        window.checkStatuses = [];
+        new MutationObserver(() => {
+            const status = document.querySelector('.installation-status');
+            if (status) window.checkStatuses.push(status.textContent);
+        }).observe(document.body, {subtree: true, childList: true, characterData: true});
+    }""")
+    if trigger == "automatic":
+        page.clock.set_fixed_time(datetime.now(UTC) + timedelta(minutes=11))
+        page.get_by_role("tab", name="Talaria", exact=True).click()
+    else:
+        page.get_by_role("button", name="Check for updates", exact=True).click()
+
+    expect(page.locator(".installation-status")).to_have_text("Up to date")
+    expect(page.get_by_role("button", name="Check for updates", exact=True)).to_be_enabled()
+    statuses = page.evaluate("window.checkStatuses")
+    assert "Checking for updates…" in statuses
+    assert "Updating Talaria…" not in statuses
+    assert finishing_polls == [calls[-1]["id"]]
+    assert len(calls) == 2
+    assert not updates
+
+
 def test_connection_can_sync_linked_plugin_without_a_talaria_update(page, update_ui):
     info, checks = update_ui
     info["updates_local_plugin"] = True

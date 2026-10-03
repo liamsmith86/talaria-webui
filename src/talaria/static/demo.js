@@ -5,18 +5,18 @@ import { plainContent } from "./content.js";
 import { rememberSession, selectedSession } from "./session-navigation.js";
 import { msg } from "./i18n.js";
 
-const model = "claude-sonnet-4-6", provider = "anthropic";
+const model = "gpt-6.1-sol", provider = "openai";
 const profile = { id: "default", label: "Hermes", profile: "default", server_url: "http://127.0.0.1:8642" };
-const extensions = { version: 1, rewind: true, commands: true, context_usage: true, response_details: true, history_search: true,
-  context_runs: true, release: { version: "1.4.0", status: "current" } };
 const readiness = { status: "ok", issues: [] };
 const summary = ({ messages, ...session }) => ({ ...session, message_count: messages.length });
 let enabled = false;
 
-export async function enableDemo(signal, version) {
+export async function enableDemo(signal, version, pluginVersion) {
   if (enabled) return;
   const samples = await api("/samples", { signal });
   signal.throwIfAborted();
+  const extensions = { version: 1, rewind: true, commands: true, context_usage: true, response_details: true, history_search: true,
+    context_runs: true, release: { version: pluginVersion, status: "current" } };
   const sessions = new Map(), runs = new Map(), jobs = new Map();
   let sequence = 1000;
   const row = (session, data) => ({ ...data, id: ++sequence, session_id: session.id, timestamp: Date.now() / 1000 });
@@ -38,7 +38,7 @@ export async function enableDemo(signal, version) {
       platforms: [{ name: "api_server", state: "connected" }, { name: "discord", state: "connected" }],
       extended_access: extensions, readiness },
     models: { model, provider, configured_reasoning: "high", providers: [
-      { id: provider, name: "Anthropic", authenticated: true, is_current: true, models: [model] },
+      { id: provider, name: "OpenAI", authenticated: true, is_current: true, models: [model] },
     ] },
     connection: { url: profile.server_url, profile: "default", key_set: true },
     commands: { commands: [

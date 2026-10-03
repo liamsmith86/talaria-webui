@@ -7,6 +7,7 @@ from playwright.sync_api import expect
 from starlette.responses import Response
 
 from talaria.demo import create_demo
+from talaria.hermes_plugin.release import PLUGIN_VERSION
 
 from .conftest import capture_browser_errors, serve
 
@@ -21,7 +22,8 @@ def test_demo_new_deployment_bypasses_cached_legacy_modules(browser, prefix):
         .read_text()
         .replace(
             '    if (data.environment === "demo")\n'
-            '      await (await import("./demo.js")).enableDemo(signal, data.version);\n',
+            '      await (await import("./demo.js")).enableDemo('
+            "signal, data.version, data.plugin_version);\n",
             "",
         )
     )
@@ -114,7 +116,7 @@ def test_demo_native_chat_streams_settles_and_stops_without_duplicate_turns(demo
     expect(page.locator(".message.user")).to_have_count(2)
     expect(content).to_contain_text("Can you show me another example?")
     page.get_by_role("button", name="Response details", exact=True).last.click()
-    expect(page.get_by_role("dialog")).to_contain_text("claude-sonnet-4-6")
+    expect(page.get_by_role("dialog")).to_contain_text("gpt-6.1-sol")
     expect(page.get_by_role("dialog")).not_to_contain_text("Scripted")
     page.get_by_role("button", name="Close dialog", exact=True).click()
     send(page, "One more please")
@@ -165,6 +167,7 @@ def test_demo_uses_real_readonly_settings_and_search(demo_page, width):
     expect(dialog.get_by_role("button", name="Save connection", exact=True)).to_be_disabled()
     expect(dialog.get_by_role("button", name="Test connection", exact=True)).to_be_disabled()
     expect(dialog).to_contain_text("Connected · Talaria plugin")
+    expect(dialog).to_contain_text(f"{PLUGIN_VERSION} · Matches this Talaria release")
     page.get_by_role("tab", name="Talaria", exact=True).click()
     expect(dialog).to_contain_text("Up to date")
     expect(dialog.get_by_role("button", name="Check for updates", exact=True)).to_be_disabled()

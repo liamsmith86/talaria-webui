@@ -16,6 +16,7 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
   const app = useStore();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [checked, setChecked] = useState(false);
   const available = app.caps.talaria_extensions?.version === 1;
   const inherited = app.caps.talaria_extensions?.context_runs;
   const context = app.caps.talaria_extensions?.profile_context || {};
@@ -24,9 +25,11 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
   async function refresh() {
     setBusy(true);
     setError("");
+    setChecked(false);
     try {
       const caps = await api("/capabilities");
       update({ caps, agent: caps.talaria_agent || state.agent });
+      setChecked(true);
       onSaved?.();
     } catch (e) {
       setError(e.message);
@@ -58,6 +61,9 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
     html`<p class="field-help">
       ${t("Install the plugin on your Hermes host, then restart its gateway.")}
     </p>`}
+    ${checked && html`<p class="field-help" role="status">${available
+      ? t("Check complete. Talaria plugin is connected.")
+      : t("Check complete. Talaria plugin was not detected.")}</p>`}
     ${error && html`<p class="form-error" role="alert">${t(error)}</p>`}
     <div class="dialog-actions">
       ${needsInstall && html`<a class="button secondary"

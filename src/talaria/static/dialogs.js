@@ -97,7 +97,8 @@ export function Connection({
   const [keyFromEnv, setKeyFromEnv] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [tested, setTested] = useState(false);
+  const [tested, setTested] = useState(null);
+  const [loaded, setLoaded] = useState(creating);
   useEffect(() => {
     if (creating) {
       setUrl((current) => state.profile?.server_url || state.profiles[0]?.server_url || current);
@@ -109,14 +110,15 @@ export function Connection({
         setProfile(d.profile || "default");
         setKeySet(d.key_set);
         setKeyFromEnv(d.key_from_env === true);
+        setLoaded(true);
       })
       .catch((e) => setError(e.message));
   }, [creating]);
   async function submit(save) {
-    if (readOnly) return;
+    if (readOnly || !loaded || busy) return;
     setBusy(true);
     setError("");
-    setTested(false);
+    setTested(null);
     try {
       await api(
         save
@@ -135,7 +137,7 @@ export function Connection({
         if (!creating) await connect();
         onClose();
         toast(creating ? t("Profile added") : t("Connected to {name}", { name: state.agent.name }));
-      } else setTested(true);
+      } else setTested({ url, profile, key });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -163,9 +165,10 @@ export function Connection({
           type="url"
           value=${url}
           readonly=${readOnly || (keySet && !creating)}
+          disabled=${!loaded}
           onInput=${(e) => {
             setUrl(e.target.value);
-            setTested(false);
+            setTested(null);
           }}
           required
           spellcheck="false"
@@ -176,9 +179,10 @@ export function Connection({
           value=${profile}
           onInput=${(e) => {
             setProfile(e.target.value);
-            setTested(false);
+            setTested(null);
           }}
           readonly=${readOnly || (keySet && !creating)}
+          disabled=${!loaded}
           required
           spellcheck="false"
           maxlength="64"
@@ -192,10 +196,10 @@ export function Connection({
           type="password"
           value=${key}
           readonly=${readOnly}
-          disabled=${keyFromEnv}
+          disabled=${!loaded || keyFromEnv}
           onInput=${(e) => {
             setKey(e.target.value);
-            setTested(false);
+            setTested(null);
           }}
           placeholder=${keyFromEnv ? t("Managed by server environment") : keySet
             ? t("Leave blank to keep saved key")
@@ -207,8 +211,9 @@ export function Connection({
           : t("Your key is saved to {path}.", { path: creating || state.profile?.id !== "default"
             ? "~/.config/talaria/profiles.json" : "~/.config/talaria/config.json" })}
       </p>
+      ${!loaded && !error && html`<p class="field-help" role="status">${t("Loading…")}</p>`}
       ${error && html`<div class="form-error" role="alert">${t(error)}</div>`}
-      ${tested &&
+      ${tested?.url === url && tested?.profile === profile && tested?.key === key &&
       html`<div class="form-success" role="status">
         <${Icon} name="check" size=${16} /> ${t("Hermes connection verified.")}
       </div>`}
@@ -216,11 +221,11 @@ export function Connection({
         <button
           type="button"
           class="button secondary"
-          disabled=${readOnly || busy}
+          disabled=${readOnly || !loaded || busy}
           onClick=${() => submit(false)}
         >
           ${t("Test connection")}</button
-        ><button class="button primary" disabled=${readOnly || busy}>
+        ><button class="button primary" disabled=${readOnly || !loaded || busy}>
           ${busy ? t("Connecting…") : creating ? t("Add profile") : t("Save connection")}
         </button>
       </div>
