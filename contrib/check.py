@@ -43,7 +43,6 @@ PLATFORM_TESTS = [
     *INSTALL_TESTS,
     "tests/test_cli_shutdown.py",
     "tests/test_environment_key.py",
-    "tests/test_request_log.py",
     "tests/test_container_health.py",
 ]
 INSTALL_FILES = {

@@ -4,13 +4,11 @@ import asyncio
 import inspect
 import json
 import logging
-from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .files import read_text
-from .request_log import run_scope
 from .runtime import inherit_defaults, inherit_options, session_runtime
 
 log = logging.getLogger(__name__)
@@ -104,13 +102,6 @@ class ProfileRunAdapter:
 
     def __getattr__(self, name):
         return getattr(self._adapter, name)
-
-    @contextmanager
-    def _profile_scope(self, profile):
-        # Hermes enters this scope in both the event-loop task and its worker.
-        # Executor workers do not inherit the admission task's ContextVars.
-        with self._adapter._profile_scope(profile), run_scope():
-            yield
 
     def _make_run_event_callback(self, run_id, loop):
         from .live import LiveRun, supported

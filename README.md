@@ -85,7 +85,7 @@ Connect to your Hermes API in Settings.
 
 Talaria can also use an optional, but highly recommended, plugin that you install on your Hermes Agent to extend the native API capabilities and improve the amount of information we can display in the WebUI. As Hermes Agent developers continue to extend the capabilities of their native API we will update Talaria to use native routes.
 
-Read the [plugin's compatibility, data access, optional sensitive logging, and update policy](src/talaria/hermes_plugin/README.md) before enabling it.
+Read the [plugin's compatibility, data access, and update policy](src/talaria/hermes_plugin/README.md) before enabling it.
 
 Run on your Hermes host to install the stable source release at its full commit SHA:
 

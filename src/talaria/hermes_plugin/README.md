@@ -50,17 +50,16 @@ plugin managed by Hermes, including a catalog-pinned installation.
 
 ## Hermes integration
 
-The manifest declares every registered hook and middleware:
+The manifest declares every registered hook:
 
 | Surface | Use |
 | --- | --- |
 | `register_platform_handler("api_server", ...)` | Add `/talaria/v1/*` and `/p/{profile}/talaria/v1/*` routes to the existing aiohttp application. |
-| `pre_api_request` | Collect response metadata and, only when explicitly enabled, log Talaria model inputs. |
+| `pre_api_request` | Collect model settings and timing metadata. |
 | `post_api_request` | Observe model, token usage, timing, and completion metadata. |
 | `on_session_end` | Associate observations with the saved assistant message. |
-| `llm_request` middleware | Describe Talaria's Markdown renderer in the outgoing request while preserving profile instructions and stored history. |
 
-There are no registered tools, CLI commands, provider plugins, environment
+There are no registered tools, middleware, CLI commands, provider plugins, environment
 requirements, or privileged capability requests. The `api_server` factory is
 also disclosed here because the catalog capability block has no field for it.
 
@@ -70,6 +69,11 @@ methods on Hermes classes, modules, or live agents. Compression uses Hermes's
 shared manual-compression implementation. Unsupported optional operations are
 reported as unavailable. Native contract tests cover the release baseline and a
 current upstream revision.
+
+Formatting follows Hermes and the user's configuration. The plugin adds no
+formatting instructions and has no full-prompt debug logger. Manual `/compress`
+uses Hermes's argument parser, compression engine, result rendering, and native
+session leases. Hermes also retains control of automatic compression.
 
 ## Data, network, and execution disclosures
 
@@ -89,14 +93,6 @@ current upstream revision.
   model names, token counts, timings, and completion status, not message bodies
   or credentials. Disabling the plugin stops collection but does not delete
   existing files.
-- **Optional sensitive logs:** `debug_requests` defaults to `false`. Enabling
-  it writes full Talaria model inputs, including system instructions, messages,
-  and tool definitions, to `$HERMES_HOME/talaria/request-debug.jsonl`. Content
-  can contain personal information or secrets supplied in a conversation.
-  Files are owner-readable/writable only, rotate at 16 MiB with three backups,
-  and omit individual records over 8 MiB. API keys and authorization headers
-  are excluded from the parameter projection. Disable logging and remove these
-  files when they are no longer needed.
 - **Network:** Chat and compression use Hermes's configured providers. Model
   inventory refreshes use Hermes's normal provider/catalog sources. Those
   operations can make network requests and incur provider charges. The plugin
@@ -113,17 +109,6 @@ current upstream revision.
   tools, disable guards, or enable YOLO mode. Clarification waits use Hermes's
   timeout and stop handling; registration and observer hooks do not prompt or
   launch interactive login flows.
-
-To enable request logging deliberately, set this in the relevant Hermes
-profile's configuration, then follow Hermes's normal configuration reload flow:
-
-```yaml
-plugins:
-  entries:
-    talaria-webui:
-      settings:
-        debug_requests: true
-```
 
 ## Dependencies and validation
 

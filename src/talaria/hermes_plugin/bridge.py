@@ -8,8 +8,6 @@ import logging
 
 from .observations import Observations
 from .release import LOADED_REVISION, PLUGIN_VERSION
-from .request_log import RequestLog
-from .surface import shape_request
 
 log = logging.getLogger(__name__)
 PREFIX = "/talaria/v1"
@@ -158,9 +156,7 @@ def register(ctx):
 
     observations = Observations(get_hermes_home())
     ctx.register_platform_handler("api_server", wire)
-    ctx.register_middleware("llm_request", shape_request)
     ctx.register_hook("pre_api_request", observations.before)
-    ctx.register_hook("pre_api_request", RequestLog(ctx).before)
     ctx.register_hook("post_api_request", observations.after)
     ctx.register_hook("on_session_end", observations.end)
 
@@ -206,11 +202,11 @@ async def capabilities(adapter, db):
     from .activity import supported as activity_supported
     from .commands import available
     from .context import load_context, supports_context_runs
-    from .identity import inspect_home
+    from .identity import read_name
     from .live import supported as live_supported
     from .search import supported as search_supported
 
-    identity = await asyncio.to_thread(inspect_home, str(get_hermes_home()))
+    name = await asyncio.to_thread(read_name, get_hermes_home())
     context_runs = supports_context_runs(adapter)
     context = await asyncio.to_thread(load_context) if context_runs else None
     return web.json_response(
@@ -228,7 +224,7 @@ async def capabilities(adapter, db):
             "rewind": supports_rewind(db),
             "history_search": search_supported(db, adapter),
             "session_activity": activity_supported(adapter),
-            "agent": {"name": identity.name},
+            "agent": {"name": name},
         }
     )
 

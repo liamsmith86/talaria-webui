@@ -173,8 +173,8 @@ standalone installer, and updater are outside the catalog package.
 Pin: `{entry["sha"]}`. The version and all gallery images refer to that tree.
 
 Surfaces: `register_platform_handler("api_server", ...)`, `pre_api_request`,
-`post_api_request`, `on_session_end`, and `llm_request` middleware. No tools,
-privileged capabilities, Desktop renderer code, or core-method replacements.
+`post_api_request`, and `on_session_end`. No tools, middleware, privileged
+capabilities, Desktop renderer code, or core-method replacements.
 
 Disclosures:
 - Reads the enabled Hermes profile's configuration, session database, model
@@ -183,8 +183,8 @@ Disclosures:
 - Authenticated actions can branch, rewind, or compress API-session history.
 - Chat/compression and inventory refreshes use Hermes's configured providers
   and catalog sources; provider charges can apply.
-- Stores bounded response metadata locally. Optional full-input debug logs
-  are disabled by default and can contain personal or sensitive chat content.
+- Stores bounded response metadata locally. The plugin has no full-prompt
+  debug logger and adds no formatting instructions to model requests.
 - Uses Hermes-owned authentication. No independent vendor-login reads, OAuth
   token rotation, stored credentials, analytics, or telemetry exporter.
 - Starts no shell children or separate daemon. Native command jobs run inside

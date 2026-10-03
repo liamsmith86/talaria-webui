@@ -30,7 +30,7 @@ async def verify_titles(run, db, configure, client, headers):
     await run("Keep my chosen title", "owner-title", session_id=sid)
     assert db.get_session_title(sid) == "Owner title"
     assert db.get_session_title_source(sid) == "user"
-    configure(debug_requests=False)
+    configure()
 
 
 def verify_views(home):

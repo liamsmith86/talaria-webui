@@ -74,4 +74,4 @@ async def verify_memory(run, db, seen, configure, home, adapter):
             assert await asyncio.to_thread(provider.written.wait, 5)
             assert provider.writes[-1][0:2] == ("memory-contract", prompt)
             assert provider.writes[-1][2]
-    configure(debug_requests=False)
+    configure()
