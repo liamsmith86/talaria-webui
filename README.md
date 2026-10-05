@@ -88,8 +88,7 @@ Talaria can also use an optional, but highly recommended, plugin that you instal
 To install the Talaria helper plugin on your Hermes agent, run the following command on your Hermes host:
 
 ```sh
-ref=$(git ls-remote --exit-code https://github.com/liamsmith86/talaria-webui.git refs/heads/stable) &&
-hermes plugins install liamsmith86/talaria-webui/src/talaria/hermes_plugin --enable --ref "${ref%%[[:space:]]*}" &&
+hermes plugins install talaria-webui --enable &&
 hermes gateway restart
 ```
 
