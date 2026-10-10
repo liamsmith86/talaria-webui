@@ -62,7 +62,13 @@ def create_agent(adapter, session):
 def session_lease(agent, db, sid):
     from agent.turn_facade_lease import LEASE_TTL_SECONDS, DurableTurnLease
 
-    holder = f"pid={os.getpid()}:talaria-command={uuid.uuid4().hex}"
+    try:
+        from hermes_state_pidns import holder_namespace_token
+    except ImportError:
+        namespace = ""
+    else:
+        namespace = holder_namespace_token()
+    holder = f"pid={os.getpid()}{namespace}:talaria-command={uuid.uuid4().hex}"
     if not db.try_acquire_session_turn_lease(sid, holder, ttl_seconds=LEASE_TTL_SECONDS):
         raise CommandError("This session is busy. Wait for the response to finish.")
     lease = DurableTurnLease(agent, db, sid, holder)

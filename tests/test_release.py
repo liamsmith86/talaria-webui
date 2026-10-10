@@ -90,26 +90,17 @@ def test_release_requires_anonymous_image_access_before_promoting(tmp_path, regi
     assert not Path(config_path.read_text().strip()).exists()
 
 
-@pytest.mark.parametrize("git_exit,install_exit", [(0, 0), (2, 0), (128, 0), (0, 1)])
-def test_documented_plugin_install_requires_stable_pin_before_install_or_restart(
-    tmp_path, git_exit, install_exit
-):
+@pytest.mark.parametrize("install_exit", [0, 1])
+def test_documented_plugin_catalog_install_precedes_gateway_restart(tmp_path, install_exit):
     command = next(
         block.split("```", 1)[0]
         for block in (ROOT / "README.md").read_text().split("```sh\n")[1:]
         if "hermes plugins install" in block
     )
-    commit = "a" * 40
-    git = tmp_path / "git"
-    git.write_text(
-        '#!/bin/sh\n[ "$GIT_EXIT" = 0 ] || exit "$GIT_EXIT"\n'
-        f"printf '%s\\trefs/heads/stable\\n' {commit}\n"
-    )
     hermes = tmp_path / "hermes"
     hermes.write_text(
         '#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALLS"\n[ "$1" != plugins ] || exit "$INSTALL_EXIT"\n'
     )
-    git.chmod(0o755)
     hermes.chmod(0o755)
     calls = tmp_path / "calls"
     result = subprocess.run(
@@ -117,7 +108,6 @@ def test_documented_plugin_install_requires_stable_pin_before_install_or_restart
         env={
             **os.environ,
             "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
-            "GIT_EXIT": str(git_exit),
             "INSTALL_EXIT": str(install_exit),
             "CALLS": str(calls),
         },
@@ -125,13 +115,10 @@ def test_documented_plugin_install_requires_stable_pin_before_install_or_restart
         text=True,
         timeout=10,
     )
-    assert result.returncode == (git_exit or install_exit), result.stderr
+    assert result.returncode == install_exit, result.stderr
     recorded = calls.read_text().splitlines() if calls.exists() else []
-    if git_exit:
-        assert recorded == []
-    else:
-        assert recorded[0].endswith("--enable --ref " + commit)
-        assert recorded[1:] == ([] if install_exit else ["gateway restart"])
+    assert recorded[0] == "plugins install talaria-webui --enable"
+    assert recorded[1:] == ([] if install_exit else ["gateway restart"])
 
 
 @pytest.mark.parametrize("exit_code", [0, 7, 124, 137])

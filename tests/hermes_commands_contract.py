@@ -3,6 +3,8 @@
 import asyncio
 import inspect
 import json
+import subprocess
+import sys
 import threading
 import uuid
 from unittest.mock import patch
@@ -10,7 +12,33 @@ from unittest.mock import patch
 from agent.context_compressor import ContextCompressor
 
 
+def verify_lease_recovery(db):
+    """An abruptly stopped command must not block the next turn until its lease expires."""
+    sid = "compression-crash"
+    db.create_session(sid, "api_server")
+    db.append_message(sid, "user", "Preserve this synthetic transcript")
+    before = db.get_messages(sid)
+    script = """
+import os, sys
+from pathlib import Path
+from types import SimpleNamespace
+from hermes_state import SessionDB
+from talaria.hermes_plugin.compression import session_lease
+db = SessionDB(Path(sys.argv[1]))
+agent = SimpleNamespace(session_id=sys.argv[2], _touch_activity=lambda _: None)
+with session_lease(agent, db, sys.argv[2]):
+    os._exit(0)  # Simulate process loss before the command's finally can release its lease.
+"""
+    subprocess.run([sys.executable, "-c", script, str(db.db_path), sid], check=True, timeout=15)
+    assert db.try_acquire_session_turn_lease(sid, "recovered-command"), (
+        "A dead Talaria command still owns its unexpired native turn lease"
+    )
+    db.release_session_turn_lease(sid, "recovered-command")
+    assert db.get_messages(sid) == before
+
+
 async def verify_commands(client, db, model):
+    await asyncio.to_thread(verify_lease_recovery, db)
     headers = {"Authorization": "Bearer fixture-key"}
     assert (await client.get("/talaria/v1/commands")).status == 401
     response = await client.get("/talaria/v1/commands", headers=headers)
