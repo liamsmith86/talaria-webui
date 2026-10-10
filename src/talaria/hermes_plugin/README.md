@@ -9,6 +9,9 @@ controls, and live approval and clarification prompts to Hermes's API.
 Requires Hermes **0.21.5 or later**, Python 3.12+, and Hermes's API server with an
 API key. Follow the [plugin installation instructions](../../../README.md#hermes-plugin).
 
+Uses Hermes's default `plugins.isolation: in_process` mode. The optional `host`
+mode cannot register the live API adapter handlers this plugin requires.
+
 Enable the plugin in each profile you want to use. For a gateway serving several
 profiles, also enable it in the primary profile. Restart the gateway after
 active work finishes. If an agent is installing it through that gateway, restart

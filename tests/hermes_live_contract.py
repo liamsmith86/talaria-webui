@@ -60,7 +60,12 @@ def capture(home, name, events, messages):
             if event.get("event") != "talaria.status"
         ],
         "messages": [
-            {k: v for k, v in row.items() if k in {"role", "content", "tool_calls", "tool_call_id"}}
+            {
+                k: v
+                for k, v in row.items()
+                if k in {"role", "content", "tool_calls", "tool_call_id"}
+                or (k == "display_kind" and v == "hidden")
+            }
             for row in messages
         ],
     }
