@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 
 [options]
@@ -368,7 +368,7 @@ wheels = [
 
 [[package]]
 name = "talaria-webui"
-version = "0.3.15"
+version = "0.3.16"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
