@@ -174,6 +174,7 @@
   "Hermes is using this tool.": "Hermes 正在使用此工具。",
   "Hermes may adjust the level to match the model’s supported settings.": "Hermes 可能会根据模型支持的设置调整推理强度。",
   "Hermes profile": "Hermes 配置档案",
+  "Hermes reached its turn limit. Send another message to continue.": "Hermes 已达到轮次上限。发送另一条消息以继续。",
   "Hermes readiness": "Hermes 就绪状态",
   "Hermes received the image, but its transcript could not be linked to the original in this browser.": "Hermes 已收到图片，但无法将记录与此浏览器中的原图关联。",
   "Hermes reported a problem with its readiness checks.": "Hermes 的就绪检查出现问题。",

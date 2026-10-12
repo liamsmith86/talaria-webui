@@ -105,9 +105,15 @@ function canRetry(live) {
 }
 const receiptError =
   msg("The submission confirmation was lost. Check the session before sending another message.");
-function runError(status, error) {
-  return error || status === "failed"
-    ? errorMessage(error, msg("Hermes could not finish this response. Check the model/provider and try again."))
+function turnLimitReached(result) {
+  return result.completed === false && !result.error && !result.interrupted && !result.partial &&
+    typeof result.turn_exit_reason === "string" &&
+    result.turn_exit_reason.startsWith("max_iterations_reached(") &&
+    typeof result.output === "string" && !!result.output.trim();
+}
+function runError(status, result) {
+  return result.error || (status === "failed" && !turnLimitReached(result))
+    ? errorMessage(result.error, msg("Hermes could not finish this response. Check the model/provider and try again."))
     : null;
 }
 export const running = (sid, lives = state.lives) =>
@@ -299,7 +305,8 @@ export function applyEvent(live, event) {
         : tool,
     );
     next.usage = event.usage;
-    next.error = runError(next.status, event.error);
+    next.turnLimitReached = next.status === "failed" && turnLimitReached(event);
+    next.error = runError(next.status, event);
     next.approval = null;
     next.clarification = null;
     next.statusText = "";
@@ -547,6 +554,17 @@ export function subscribe(sid) {
 }
 
 export function responseSaved(history, live) {
+  // Hermes can persist its summary request as another user row. Its turn-limit
+  // handoff still belongs to this run: match the authoritative final output
+  // beyond the originating message boundary before checking the latest user.
+  if (live.turnLimitReached) {
+    const final = history.findLast((message) =>
+      message.role === "assistant" && message.display_kind !== "hidden");
+    const tail = responseParts(live).findLast((part) => part.kind === "text")?.text;
+    if (final && tail?.trim() && plainContent(final.content).trim() === tail.trim() &&
+      (typeof live.baseMessageId !== "number" || typeof final.id !== "number" ||
+        final.id > live.baseMessageId)) return true;
+  }
   const lastUser = history.findLastIndex((message) => message.role === "user");
   const user = history[lastUser];
   if (
@@ -748,7 +766,8 @@ async function recoverRuns() {
         status: status.status,
         approval: terminal.has(status.status) ? null : status.approval,
         clarification: terminal.has(status.status) ? null : status.clarification,
-        error: runError(status.status, status.error),
+        turnLimitReached: status.status === "failed" && turnLimitReached(status),
+        error: runError(status.status, status),
         usage: status.usage,
         pendingSteer: status.pending_steer,
         needsHistory:

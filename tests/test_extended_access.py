@@ -290,8 +290,9 @@ def test_native_hermes_contract(tmp_path, contract, provider):
     )
     assert result.returncode == 0, result.stdout + result.stderr
     if contract == "hermes_context_contract.py":
-        for name in ("completed", "tools", "interrupted", "failure"):
-            expected = list(Path(__file__).with_name("fixtures").glob(f"hermes-{name}*.json"))
+        for name in ("completed", "tools", "interrupted", "failure", "limit"):
+            prefix = "turn-limit" if name == "limit" else f"hermes-{name}"
+            expected = list(Path(__file__).with_name("fixtures").glob(f"{prefix}*.json"))
             filename = "stream.json" if name == "completed" else f"stream-{name}.json"
             captured = json.loads((tmp_path / filename).read_text())
             assert any(captured == json.loads(path.read_text()) for path in expected), name
