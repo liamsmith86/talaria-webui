@@ -34,9 +34,10 @@ async def verify_live(client, adapter, db, planned, seen, home):
                     db.get_messages(sid),
                 )
     await verify_failure(client, adapter, db, planned, home)
+    await verify_turn_limit(client, adapter, db, planned, home)
 
 
-def capture(home, name, events, messages):
+def capture(home, name, events, messages, extra_fields=()):
     """Keep synthetic contract fields; normalize only volatile IDs and elapsed time."""
     fields = {
         "event",
@@ -52,6 +53,7 @@ def capture(home, name, events, messages):
         "multi_select",
         "request_id",
         "error",
+        *extra_fields,
     }
     trace = {
         "events": [
@@ -105,6 +107,89 @@ async def verify_failure(client, adapter, db, planned, home):
         assert any(
             e.get("event") == "run.failed" and "Synthetic model unavailable" in e.get("error", "")
             for e in events
+        )
+    finally:
+        planned.clear()
+
+
+async def verify_turn_limit(client, adapter, db, planned, home):
+    sid = "turn-limit"
+    db.create_session(sid, "api_server")
+    planned.extend(
+        [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "Before the turn limit.",
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "limit-fixture",
+                            "type": "function",
+                            "function": {
+                                "name": "clarify",
+                                "arguments": json.dumps(
+                                    {"questions": [{"question": "Which environment?"}]}
+                                ),
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            },
+            {
+                "message": {"role": "assistant", "content": "Work remaining: verify the service."},
+                "finish_reason": "stop",
+            },
+        ]
+    )
+    headers = {"Authorization": "Bearer fixture-key", "Idempotency-Key": sid}
+    try:
+        with (
+            patch("gateway.run._current_max_iterations", return_value=1),
+            patch("tools.clarify_gateway.wait_for_response", return_value="Development"),
+        ):
+            response = await client.post(
+                "/talaria/v1/runs",
+                headers=headers,
+                json={
+                    "session_id": sid,
+                    "input": "Work until the turn limit",
+                    "live_interactions": True,
+                },
+            )
+            assert response.status == 202, await response.text()
+            rid = (await response.json())["run_id"]
+            task = adapter._active_run_tasks[rid]
+            stream = await client.get(f"/v1/runs/{rid}/events", headers=headers)
+            events = [
+                json.loads(line[6:])
+                for line in (await asyncio.wait_for(stream.text(), 30)).splitlines()
+                if line.startswith("data: ")
+            ]
+            await asyncio.wait_for(task, 30)
+        terminal = events[-1]
+        assert terminal["event"] == "run.failed", terminal
+        assert terminal["completed"] is False and terminal["partial"] is False, terminal
+        assert terminal["turn_exit_reason"] == "max_iterations_reached(1/1)", terminal
+        assert terminal["output"] == "Work remaining: verify the service." and not terminal.get(
+            "error"
+        )
+        status = await (await client.get(f"/v1/runs/{rid}", headers=headers)).json()
+        assert status["turn_exit_reason"] == terminal["turn_exit_reason"]
+        assert db.get_messages(sid)[-1]["content"] == terminal["output"]
+        response = await client.get(f"/api/sessions/{sid}/messages", headers=headers)
+        assert response.status == 200
+        messages = (await response.json())["data"]
+        users = [row for row in messages if row["role"] == "user"]
+        assert users[0]["content"] == "Work until the turn limit"
+        assert users[-1]["content"] != users[0]["content"]
+        capture(
+            home,
+            "limit",
+            events,
+            messages,
+            ("completed", "partial", "interrupted", "turn_exit_reason"),
         )
     finally:
         planned.clear()

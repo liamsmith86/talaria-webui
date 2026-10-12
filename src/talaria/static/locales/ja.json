@@ -174,6 +174,7 @@
   "Hermes is using this tool.": "Hermesはこのツールを使用しています。",
   "Hermes may adjust the level to match the model’s supported settings.": "Hermesはモデルが対応する設定に合わせて推論レベルを調整する場合があります。",
   "Hermes profile": "Hermesプロファイル",
+  "Hermes reached its turn limit. Send another message to continue.": "Hermesはターン数の上限に達しました。続けるには、もう一度メッセージを送信してください。",
   "Hermes readiness": "Hermesの準備状態",
   "Hermes received the image, but its transcript could not be linked to the original in this browser.": "Hermesは画像を受信しましたが、このブラウザー内の元画像と会話履歴を関連付けられませんでした。",
   "Hermes reported a problem with its readiness checks.": "Hermesの準備状態の確認で問題が報告されました。",

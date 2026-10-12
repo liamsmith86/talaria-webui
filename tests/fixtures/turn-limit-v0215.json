@@ -1,0 +1,86 @@
+{
+  "events": [
+    {
+      "event": "message.delta",
+      "delta": "Before the turn limit."
+    },
+    {
+      "event": "message.interim",
+      "text": "Before the turn limit.",
+      "already_streamed": true
+    },
+    {
+      "event": "tool.started",
+      "tool": "clarify",
+      "preview": null
+    },
+    {
+      "event": "talaria.clarification.request",
+      "request_id": "fixture-request",
+      "question": "Which environment?",
+      "choices": null,
+      "multi_select": false
+    },
+    {
+      "event": "talaria.clarification.resolved",
+      "request_id": "fixture-request"
+    },
+    {
+      "event": "tool.completed",
+      "tool": "clarify",
+      "error": false,
+      "preview": "{\"responses\": [{\"question\": \"Which environment?\", \"choices_offered\": null, \"user_response\": \"Development\"}]}"
+    },
+    {
+      "event": "run.failed",
+      "output": "Work remaining: verify the service.",
+      "completed": false,
+      "partial": false,
+      "interrupted": false,
+      "turn_exit_reason": "max_iterations_reached(1/1)"
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Work until the turn limit",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "Before the turn limit.",
+      "tool_call_id": null,
+      "tool_calls": [
+        {
+          "id": "limit-fixture",
+          "call_id": "limit-fixture",
+          "response_item_id": "fc_limit-fixture",
+          "type": "function",
+          "function": {
+            "name": "clarify",
+            "arguments": "{\"questions\": [{\"question\": \"Which environment?\"}]}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "{\"responses\": [{\"question\": \"Which environment?\", \"choices_offered\": null, \"user_response\": \"Development\"}]}",
+      "tool_call_id": "limit-fixture",
+      "tool_calls": null
+    },
+    {
+      "role": "user",
+      "content": "You've reached the maximum number of tool-calling iterations allowed. Please provide a final response summarizing what you've found and accomplished so far, without calling any more tools.",
+      "tool_call_id": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "Work remaining: verify the service.",
+      "tool_call_id": null,
+      "tool_calls": null
+    }
+  ]
+}

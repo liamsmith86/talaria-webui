@@ -684,13 +684,6 @@ export function Conversation({ app, command, onDismissCommand }) {
     }
   }
   const transcript = [...(history || [])];
-  if (command) {
-    const next = commandRunning(command) || command.afterId == null ? -1 : items.findIndex(
-      (item) => item.role === "user" && Number(item.record?.id) > command.afterId,
-    );
-    transcript.splice(next < 0 ? transcript.length : next, 0,
-      html`<${CommandCard} key=${`command:${command.id}`} activity=${command} onDismiss=${onDismissCommand} />`);
-  }
   if (showUser)
     transcript.push(html`<${Message}
       key=${`${liveKey}:user`}
@@ -714,6 +707,17 @@ export function Conversation({ app, command, onDismissCommand }) {
       reasoning=${live.reasoning}
       parts=${live.parts}
     />`);
+  if (command) {
+    const next = commandRunning(command) || command.afterId == null ? -1 : items.findIndex(
+      (item) => item.role === "user" && Number(item.record?.id) > command.afterId,
+    );
+    // A settled reply can still live outside history while reconciliation is
+    // pending. Keep its later command below it, and above a subsequent run.
+    const position = next >= 0 ? next : commandRunning(command) ||
+      (live?.id && command.afterRunId === live.id) ? transcript.length : (history || []).length;
+    transcript.splice(position, 0,
+      html`<${CommandCard} key=${`command:${command.id}`} activity=${command} onDismiss=${onDismissCommand} />`);
+  }
   return html`${app.findOpen &&
     html`<${ConversationFind}
       key=${app.active}
@@ -805,6 +809,10 @@ export function Conversation({ app, command, onDismissCommand }) {
           >
             ${live.retrying ? t("Recovering…") : t("Retry submission")}
           </button>`}
+        </div>`}
+        ${live?.turnLimitReached &&
+        html`<div class="run-notice" role="status">
+          ${t("Hermes reached its turn limit. Send another message to continue.")}
         </div>`}
         ${live?.status === "cancelled" &&
         html`<div class="run-notice">${t("You stopped this response.")}</div>`}

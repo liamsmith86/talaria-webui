@@ -2,10 +2,13 @@
 
 import json
 
+import pytest
 from playwright.sync_api import expect
 
+from .conftest import wait_for_store
 from .test_app import signed_in
 from .test_conversation_features import png
+from .test_reply_settlement import start_reply
 
 CATALOG = [
     {
@@ -44,6 +47,62 @@ def prepare(page, live_app):
         sid,
     )
     return sid
+
+
+@pytest.mark.parametrize("mobile", [False, True])
+def test_compress_feedback_follows_a_settled_reply_without_saved_history(page, live_app, mobile):
+    if mobile:
+        page.set_viewport_size({"width": 390, "height": 844})
+    prepare(page, live_app)
+    text = "\n\n".join(f"Work item {i}. " + "Completed sysadmin work. " * 8 for i in range(35))
+    start_reply(page, live_app, text)
+    # A terminal reply remains in the live cache if its native history cannot
+    # yet be reconciled. Commands must appear after that reply, just as they do
+    # after a reply already adopted into history.
+    live_app[1].messages["settling"] = []
+    page.evaluate(
+        """output => settlingSource.onmessage({data:JSON.stringify({
+          event:'run.failed', output, completed:false, partial:false,
+          turn_exit_reason:'max_iterations_reached(500/500)'
+        })})""",
+        text,
+    )
+    wait_for_store(page, "s => s.lives.settling.status === 'failed'")
+    page.route(
+        "**/api/commands",
+        lambda route: route.fulfill(
+            json={"commands": CATALOG} if route.request.method == "GET" else {"status": "running"}
+        ),
+    )
+    finished = False
+    page.route(
+        "**/api/commands/*",
+        lambda route: route.fulfill(
+            json={"status": "completed", "session_id": "settling", "text": "Compression complete"}
+            if finished
+            else {"status": "running"}
+        ),
+    )
+    composer = page.get_by_role("textbox", name="Message Hermes")
+    composer.fill("/compress ")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    card = page.get_by_role("region", name="/compress command")
+    expect(card).to_contain_text("Compressing context")
+    expect(card).to_be_in_viewport()
+    finished = True
+    expect(card).to_contain_text("Compression complete")
+    expect(card).to_be_in_viewport()
+    # Once a new run begins, the old command stays above that new turn.
+    page.evaluate("() => {window.EventSource = class {close() {}};}")
+    composer.fill("Next work item")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.locator(".message.user").last).to_contain_text("Next work item")
+    assert card.evaluate(
+        """el => {
+          const next = Array.from(document.querySelectorAll('.message.user')).at(-1);
+          return !!(el.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING);
+        }"""
+    )
 
 
 def test_command_picker_alias_and_result_do_not_become_messages(page, live_app):

@@ -85,7 +85,8 @@ export function useCommandActivity(app) {
 
   async function start(command, args, session, text) {
     if (starting.current || pendingRef.current) throw new Error(msg("Wait for the current command to finish."));
-    const job = { id: randomId(), session, command, args, started: Date.now(), afterId: state.history.at(-1)?.id || 0 };
+    const job = { id: randomId(), session, command, args, started: Date.now(),
+      afterId: state.history.at(-1)?.id || 0, afterRunId: state.lives[session]?.id };
     starting.current = true;
     setWaiting(false);
     setFeedback({ ...job, status: "starting" });
