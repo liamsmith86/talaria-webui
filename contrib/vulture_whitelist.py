@@ -14,3 +14,8 @@ hermes_agent._end_session_on_close  # noqa: B018
 hermes_agent._cached_system_prompt  # noqa: B018
 hermes_agent._active_session_turn_lease_holder  # noqa: B018
 hermes_agent._active_session_turn_lease_ttl_seconds  # noqa: B018
+
+# Installed by the plugin routing bridge; read by aiohttp's Application lifecycle.
+aiohttp_app = SimpleNamespace()
+aiohttp_app._router  # noqa: B018
+aiohttp_app._on_cleanup  # noqa: B018

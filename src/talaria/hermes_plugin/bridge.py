@@ -127,28 +127,32 @@ def wire(app, adapter, **kwargs):
         log.warning("Talaria routes unavailable: incompatible Hermes API adapter")
         return
 
+    from aiohttp import web
+
     from .commands import CommandJobs
+    from .routing import install
 
     commands = CommandJobs()
-    app.on_cleanup.append(commands.close)
+    routes = web.UrlDispatcher()
 
     async def dispatch_request(request):
         return await dispatch(request, adapter, commands)
 
     for prefix in (PREFIX, f"/p/{{profile}}{PREFIX}"):
-        app.router.add_get(f"{prefix}/capabilities", dispatch_request)
-        app.router.add_get(f"{prefix}/{{action:commands}}", dispatch_request)
-        app.router.add_post(f"{prefix}/{{action:commands}}", dispatch_request)
-        app.router.add_get(f"{prefix}/{{action:commands}}/{{command_id}}", dispatch_request)
-        app.router.add_get(f"{prefix}/{{action:models|search|activity}}", dispatch_request)
-        app.router.add_post(f"{prefix}/{{action:runs}}", dispatch_request)
-        app.router.add_post(f"{prefix}/runs/{{run_id}}/{{action:clarification}}", dispatch_request)
-        app.router.add_get(
+        routes.add_get(f"{prefix}/capabilities", dispatch_request)
+        routes.add_get(f"{prefix}/{{action:commands}}", dispatch_request)
+        routes.add_post(f"{prefix}/{{action:commands}}", dispatch_request)
+        routes.add_get(f"{prefix}/{{action:commands}}/{{command_id}}", dispatch_request)
+        routes.add_get(f"{prefix}/{{action:models|search|activity}}", dispatch_request)
+        routes.add_post(f"{prefix}/{{action:runs}}", dispatch_request)
+        routes.add_post(f"{prefix}/runs/{{run_id}}/{{action:clarification}}", dispatch_request)
+        routes.add_get(
             f"{prefix}/sessions/{{session_id}}/{{action:context|response|around}}", dispatch_request
         )
-        app.router.add_post(
+        routes.add_post(
             f"{prefix}/sessions/{{session_id}}/{{action:rewind|fork}}", dispatch_request
         )
+    install(app, routes, commands.close)
 
 
 def register(ctx):
