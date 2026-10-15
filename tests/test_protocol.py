@@ -8,6 +8,32 @@ from talaria.hermes import APIError, Hermes
 from talaria.relay import Channel, Relay
 
 
+@pytest.mark.parametrize("base", ["https://hermes.test", "https://hermes.test/proxy"])
+@pytest.mark.parametrize("profile", ["", "/p/default", "/p/research"])
+async def test_profile_extensions_use_plugin_namespace(base, profile):
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    client = Hermes(base + profile, "profile-key", transport=httpx.MockTransport(respond))
+    try:
+        await client.request("GET", "/v1/capabilities")
+        await client.request("POST", "/talaria/v1/commands", json={"command": "version"})
+        await client.request("GET", "/talaria/v1/search", params={"q": "a b"})
+    finally:
+        await client.close()
+    extension = "/talaria/v1"
+    if profile:
+        extension += "/profiles/" + profile.rsplit("/", 1)[-1]
+    assert str(calls[0].url) == base + profile + "/v1/capabilities"
+    assert str(calls[1].url) == base + extension + "/commands"
+    assert calls[1].content == b'{"command":"version"}'
+    assert str(calls[2].url) == base + extension + "/search?q=a+b"
+    assert all(request.headers["authorization"] == "Bearer profile-key" for request in calls)
+
+
 class Chunks(httpx.AsyncByteStream):
     def __init__(self, chunks):
         self.chunks = chunks

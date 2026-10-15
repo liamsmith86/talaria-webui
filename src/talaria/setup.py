@@ -319,15 +319,22 @@ def verify_hermes(settings):
 def verify_plugin(client, settings):
     import httpx
 
+    from .hermes import api_url
     from .plugin_status import release_status
 
     try:
         response = client.get(
-            settings.hermes_url + "/talaria/v1/capabilities",
+            api_url(settings.hermes_url, "/talaria/v1/capabilities"),
             headers={"Authorization": "Bearer " + settings.api_key},
         )
+        if response.status_code == 404:
+            return (
+                "connected; extended access unavailable; check that the plugin is installed "
+                "and enabled in the selected profile and the profile that starts the gateway, "
+                "then restart the gateway process after active work finishes"
+            )
         if response.status_code != 200:
-            return "connected"
+            return "connected; extended access unavailable"
         data = response.json()
     except (httpx.HTTPError, ValueError):
         return "connected; extended access unavailable"

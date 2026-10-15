@@ -98,9 +98,15 @@ def test_ambiguous_retry_consumes_only_its_original_attachments(
     wait_for_store(page, "s => s.lives['retry-draft']?.uncertain === true")
     attach(page, "newer.png")
     held = []
-    page.route("**/api/runs", lambda route: held.append(route), times=1)
+
+    def hold_retry(route):
+        held.append(route)
+        page.evaluate("window.talariaTestRetryHeld = true")
+
+    page.route("**/api/runs", hold_retry, times=1)
     page.evaluate("() => {window.EventSource = class {close() {}};}")
     page.get_by_role("button", name="Retry submission", exact=True).click()
+    page.wait_for_function("() => window.talariaTestRetryHeld === true")
     expect(page.get_by_role("button", name="Recovering…", exact=True)).to_be_disabled()
     assert len(held) == 1
     assert held[0].request.post_data_json == submitted[0]

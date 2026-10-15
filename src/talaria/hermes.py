@@ -3,6 +3,7 @@
 import json
 import math
 import re
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -11,6 +12,26 @@ MAX_EVENT = 2 * 1024 * 1024
 MAX_STREAMS = 32
 REQUEST_CONNECTIONS = 8
 IDENTIFIER = re.compile(r"[A-Za-z0-9_.:-]{1,256}\Z")
+PROFILE = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
+
+
+def split_url(url: str) -> tuple[str, str]:
+    parsed = urlsplit(url)
+    base, separator, name = parsed.path.rstrip("/").rpartition("/p/")
+    if separator and PROFILE.fullmatch(name):
+        return urlunsplit((parsed.scheme, parsed.netloc, base, "", "")), name
+    return url, "default"
+
+
+def api_url(url: str, path: str) -> str:
+    path = path.lstrip("/")
+    if path.startswith("talaria/v1/"):
+        base, profile = split_url(url)
+        if base != url:
+            # Hermes owns /p/<profile>/*; plugin routes have their own namespace.
+            url = base
+            path = f"talaria/v1/profiles/{profile}/" + path.removeprefix("talaria/v1/")
+    return url.rstrip("/") + "/" + path
 
 
 def decode_json(raw):
@@ -118,7 +139,9 @@ class Hermes:
 
     async def request(self, method: str, path: str, **kwargs):
         try:
-            async with self.client.stream(method, path.lstrip("/"), **kwargs) as response:
+            async with self.client.stream(
+                method, api_url(str(self.client.base_url), path), **kwargs
+            ) as response:
                 data = bytearray()
                 async for chunk in response.aiter_bytes():
                     data.extend(chunk)

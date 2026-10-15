@@ -121,6 +121,14 @@ def rewind(db, sid, data):
 
 
 def wire(app, adapter, **kwargs):
+    if app.get("talaria.webui.registered"):
+        return
+    if app.frozen or app.router.frozen or app.on_cleanup.frozen:
+        log.warning(
+            "Talaria API registration requires a gateway restart: the HTTP server is already "
+            "running. Restart the gateway process after active work finishes to activate it."
+        )
+        return
     if not callable(getattr(adapter, "_check_auth", None)) or not callable(
         getattr(adapter, "_ensure_session_db_async", None)
     ):
@@ -135,7 +143,9 @@ def wire(app, adapter, **kwargs):
     async def dispatch_request(request):
         return await dispatch(request, adapter, commands)
 
-    for prefix in (PREFIX, f"/p/{{profile}}{PREFIX}"):
+    # Keep the native `profile` parameter for Hermes's authentication and request scope.
+    # Its earlier /p/{profile}/* catch-all shadows plugin routes in that namespace.
+    for prefix in (PREFIX, f"{PREFIX}/profiles/{{profile}}", f"/p/{{profile}}{PREFIX}"):
         app.router.add_get(f"{prefix}/capabilities", dispatch_request)
         app.router.add_get(f"{prefix}/{{action:commands}}", dispatch_request)
         app.router.add_post(f"{prefix}/{{action:commands}}", dispatch_request)
@@ -149,6 +159,7 @@ def wire(app, adapter, **kwargs):
         app.router.add_post(
             f"{prefix}/sessions/{{session_id}}/{{action:rewind|fork}}", dispatch_request
         )
+    app["talaria.webui.registered"] = True
 
 
 def register(ctx):
