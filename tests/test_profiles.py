@@ -23,17 +23,20 @@ def research(live_app):
     second = FakeHermes(RESEARCH_KEY)
 
     async def routed(request):
-        scope = {**request.scope, "path": request.scope["path"].removeprefix("/p/research")}
+        path = request.scope["path"].removeprefix("/p/research")
+        path = path.replace("/talaria/v1/profiles/research/", "/talaria/v1/", 1)
+        scope = {**request.scope, "path": path}
         return await second.handle(Request(scope, request.receive))
 
-    live_app[1].app.router.routes.insert(
-        0,
-        Route(
-            "/p/research/{path:path}",
-            routed,
-            methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
-        ),
-    )
+    for prefix in ("/p/research", "/talaria/v1/profiles/research"):
+        live_app[1].app.router.routes.insert(
+            0,
+            Route(
+                prefix + "/{path:path}",
+                routed,
+                methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
+            ),
+        )
     with signed_in(live_app[0]) as client:
         response = client.post(
             "/api/profiles",

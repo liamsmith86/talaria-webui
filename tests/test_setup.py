@@ -781,7 +781,9 @@ def test_setup_refreshes_older_plugin_but_preserves_newer_version(
     assert fingerprint(target) == (LOADED_REVISION if version == "1.0.0" else before)
 
 
-@pytest.mark.parametrize("plugin", ["timeout", "html", {"version": 2}, {"version": True}, []])
+@pytest.mark.parametrize(
+    "plugin", ["timeout", "html", 404, 503, {"version": 2}, {"version": True}, []]
+)
 def test_plugin_failure_does_not_disguise_a_working_hermes_connection(monkeypatch, plugin):
     import httpx
 
@@ -794,6 +796,8 @@ def test_plugin_failure_does_not_disguise_a_working_hermes_connection(monkeypatc
             raise httpx.ReadTimeout("Plugin timed out")
         if plugin == "html":
             return httpx.Response(200, text="<html>Proxy error</html>")
+        if isinstance(plugin, int):
+            return httpx.Response(plugin)
         return httpx.Response(200, json=plugin)
 
     client = httpx.Client(transport=httpx.MockTransport(serve))
@@ -801,6 +805,35 @@ def test_plugin_failure_does_not_disguise_a_working_hermes_connection(monkeypatc
     result = wizard.verify_hermes(Settings(api_key="synthetic-key"))
     assert result.startswith("connected;")
     assert "extended access available" not in result
+    if plugin == 404:
+        assert "profile that starts the gateway" in result and "restart" in result
+
+
+def test_setup_verifies_extensions_for_the_selected_profile(monkeypatch):
+    import httpx
+
+    from talaria.config import Settings
+
+    paths = []
+
+    def serve(request):
+        paths.append(request.url.path)
+        if request.url.path == "/proxy/p/research/v1/capabilities":
+            return httpx.Response(200, json={"platform": "hermes-agent"})
+        if request.url.path == "/proxy/talaria/v1/profiles/research/capabilities":
+            return httpx.Response(200, json={"version": 1})
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(serve))
+    monkeypatch.setattr(httpx, "Client", lambda **kw: client)
+    result = wizard.verify_hermes(
+        Settings(hermes_url="http://hermes.test/proxy/p/research", api_key="synthetic-key")
+    )
+    assert "extended access available" in result
+    assert paths == [
+        "/proxy/p/research/v1/capabilities",
+        "/proxy/talaria/v1/profiles/research/capabilities",
+    ]
 
 
 def test_installer_refuses_ambiguous_installations(tmp_path, monkeypatch):

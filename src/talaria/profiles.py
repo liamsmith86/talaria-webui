@@ -9,27 +9,26 @@ import re
 import secrets
 from contextlib import contextmanager
 from dataclasses import replace
-from urllib.parse import urlsplit, urlunsplit
 
 from starlette._utils import get_route_path
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from . import auth, config
-from .hermes import MAX_STREAMS, APIError, Hermes, decode_json, object_result, valid_api_key
+from .hermes import (
+    MAX_STREAMS,
+    PROFILE,
+    APIError,
+    Hermes,
+    decode_json,
+    object_result,
+    split_url,
+    valid_api_key,
+)
 from .relay import Channel
 
-PROFILE = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 MAX_PROFILES = 8
 MAX_ACTIVE_RUNS = 16
-
-
-def split_url(url: str) -> tuple[str, str]:
-    parsed = urlsplit(url)
-    base, separator, name = parsed.path.rstrip("/").rpartition("/p/")
-    if separator and PROFILE.fullmatch(name):
-        return urlunsplit((parsed.scheme, parsed.netloc, base, "", "")), name
-    return url, "default"
 
 
 def connection_url(data: dict) -> str:

@@ -265,6 +265,7 @@ def test_observation_store_is_bounded_and_profile_scoped(tmp_path):
         ("hermes_contract.py", "openai"),
         ("hermes_restart_contract.py", "openai"),
         ("hermes_plugin_lifecycle_contract.py", "openai"),
+        ("hermes_gateway_startup_contract.py", "openai"),
         ("hermes_context_contract.py", "openai"),
         ("hermes_context_contract.py", "openrouter"),
         ("hermes_branch_contract.py", "openai"),
@@ -287,7 +288,7 @@ def test_native_hermes_contract(tmp_path, contract, provider):
         },
         capture_output=True,
         text=True,
-        timeout=90,
+        timeout=180 if contract == "hermes_gateway_startup_contract.py" else 90,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     if contract == "hermes_context_contract.py":

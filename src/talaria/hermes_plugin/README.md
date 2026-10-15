@@ -55,13 +55,6 @@ in [plugin.yaml](plugin.yaml). It registers no tools or middleware and does not
 replace Hermes core methods. Manual `/compress` calls Hermes's own compression
 implementation.
 
-Hermes can invoke the handler factory after aiohttp has frozen the application.
-The routing bridge prepares replacement route and cleanup registries before
-installing them synchronously on the gateway loop. This uses aiohttp's private
-application registry attributes because it has no public late-registration API.
-Native routes and cleanup callbacks are retained; Talaria's profile routes precede
-the shared ingress catch-all, and cleanup still drains active command jobs.
-
 Its only additional Python dependency is `aiohttp>=3.9,<4`, resolved within
 Hermes's dependency constraints. Catalog CI checks a 14-day dependency release
 cutoff separately; this does not change Hermes's install-time dependency policy.
