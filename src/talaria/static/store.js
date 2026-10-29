@@ -104,7 +104,7 @@ export function fail(error) {
       error: "",
     });
     refreshProfiles().catch(() => {});
-  } else
+  } else if (!error.shownInReply)
     update({
       error: error.message || msg("Something went wrong. Please try again."),
     });

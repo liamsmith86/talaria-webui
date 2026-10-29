@@ -497,6 +497,8 @@ export async function sendMessage(
     }
     publish(sid, failed);
     remember();
+    // The reply area shows this failure, with Retry when that is safe.
+    error.shownInReply = true;
     throw error;
   }
 }

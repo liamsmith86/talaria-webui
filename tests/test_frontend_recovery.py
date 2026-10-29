@@ -96,6 +96,8 @@ def test_ambiguous_retry_consumes_only_its_original_attachments(
     page.route("**/api/runs", ambiguous, times=1)
     page.get_by_role("button", name="Send message", exact=True).click()
     wait_for_store(page, "s => s.lives['retry-draft']?.uncertain === true")
+    # The reply area shows the failure before the composer accepts attachments again.
+    expect(page.get_by_role("button", name="Retry submission", exact=True)).to_be_visible()
     attach(page, "newer.png")
     held = []
 
@@ -142,6 +144,8 @@ def test_retry_finishing_during_attachment_preparation_keeps_the_new_draft(page,
     )
     page.get_by_role("button", name="Send message", exact=True).click()
     wait_for_store(page, "s => s.lives['retry-preparing']?.uncertain === true")
+    # The reply area shows the failure before the composer accepts attachments again.
+    expect(page.get_by_role("button", name="Retry submission", exact=True)).to_be_visible()
     page.evaluate("""() => {
       const decode = Image.prototype.decode;
       Image.prototype.decode = function() {
@@ -217,6 +221,8 @@ def test_incomplete_retry_acknowledgement_preserves_draft_and_receipt(page, live
     )
     page.get_by_role("button", name="Send message", exact=True).click()
     wait_for_store(page, "s => s.lives['retry-incomplete']?.uncertain === true")
+    # The reply area shows the failure before the composer accepts attachments again.
+    expect(page.get_by_role("button", name="Retry submission", exact=True)).to_be_visible()
     attach(page, "newer.png")
     snapshot = """async () => {
       const {state} = await import('/static/store.js');
