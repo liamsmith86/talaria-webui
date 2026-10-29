@@ -165,6 +165,34 @@ async def publish_pending(channel, status, previous):
             await channel.publish({**current, "event": requested})
         elif isinstance(prior, dict) and prior and not current:
             await channel.publish({"event": resolved, "request_id": prior.get("request_id")})
+    # Hermes's session authority lists open prompts instead, settled by prompt ID.
+    current, prior = pending_controls(status), pending_controls(previous)
+    for prompt_id, prompt in current.items():
+        if prompt != prior.get(prompt_id):
+            await channel.publish({**prompt, "event": f"{prompt['kind']}.request"})
+    for prompt_id, prompt in prior.items():
+        if prompt_id not in current:
+            generation = prompt.get("execution_generation")
+            await channel.publish(
+                {
+                    "event": f"{prompt['kind']}.settled",
+                    "prompt_id": prompt_id,
+                    "execution_generation": generation,
+                }
+            )
+
+
+def pending_controls(status):
+    controls = (status or {}).get("pending_controls")
+    if not isinstance(controls, list):
+        return {}
+    return {
+        prompt["prompt_id"]: prompt
+        for prompt in controls
+        if isinstance(prompt, dict)
+        and prompt.get("kind") in {"approval", "clarify"}
+        and isinstance(prompt.get("prompt_id"), str)
+    }
 
 
 def events_after(channel, cursor):

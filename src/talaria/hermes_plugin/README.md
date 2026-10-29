@@ -29,7 +29,9 @@ alone.
   and search index, model inventory, `IDENTITY.md`, `SOUL.md`, and configured
   instructions and prefill. A configured prefill file can be outside the profile
   directory. Instructions and prefill are sent to the configured model;
-  status responses omit their contents and file paths.
+  status responses omit their contents and file paths. On Hermes 0.22.1 and
+  later, instructions travel in the run request, which Hermes keeps with the
+  run in its session database.
 - **Session changes:** Authenticated actions can branch, rewind or compress API
   sessions. Search includes other sessions visible within the authenticated
   profile. Session changes use Hermes's storage and active-session protections.

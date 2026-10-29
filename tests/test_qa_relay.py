@@ -67,6 +67,43 @@ async def test_polling_clears_only_the_last_pending_approval(monkeypatch, replac
     assert events[-1]["event"] == "run.completed"
 
 
+async def test_polling_replays_and_settles_session_authority_prompts(monkeypatch):
+    question = {"kind": "clarify", "prompt_id": "question", "execution_generation": 2}
+    approval = {"kind": "approval", "prompt_id": "approval", "execution_generation": 2}
+    statuses = [
+        {"status": "running", "pending_controls": [question]},
+        {"status": "running", "pending_controls": [question]},
+        {"status": "waiting_for_approval", "pending_controls": [approval]},
+        {"status": "running", "pending_controls": []},
+        {"status": "completed"},
+    ]
+
+    class Upstream:
+        async def request(self, *args, **kwargs):
+            return statuses.pop(0)
+
+    async def no_delay(seconds):
+        pass
+
+    monkeypatch.setattr(relay, "asyncio", SimpleNamespace(sleep=no_delay))
+    channel = relay.Channel("authority-prompts")
+    await relay.Relay(Upstream()).poll(channel)
+    events = [json.loads(event) for _, event in channel.events]
+    assert [(event["event"], event.get("prompt_id")) for event in events] == [
+        ("clarify.request", "question"),
+        ("approval.request", "approval"),
+        ("clarify.settled", "question"),
+        ("approval.settled", "approval"),
+        ("run.completed", None),
+    ]
+    assert events[0] == {**question, "event": "clarify.request"}
+    assert events[3] == {
+        "event": "approval.settled",
+        "prompt_id": "approval",
+        "execution_generation": 2,
+    }
+
+
 async def test_many_reconnects_share_one_run_and_oversized_replay_keeps_terminal():
     import asyncio
 

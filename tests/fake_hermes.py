@@ -27,6 +27,8 @@ class FakeHermes:
         self.stops = 0
         self.approvals = 0
         self.approval_choices = ["once", "session", "deny"]
+        # Hermes 0.22.1+ session authority: prompts settle by prompt ID and generation.
+        self.native_controls = False
         self.default_model = "hermes-test"
         self.default_provider = "test"
         self.persist_image_originals = True
@@ -361,6 +363,26 @@ class FakeHermes:
                 self.stops += 1
                 run["status"] = "cancelled"
                 return JSONResponse({"status": "stopping"})
+            if path.endswith("/clarify") or (self.native_controls and path.endswith("/approval")):
+                field = "choice" if path.endswith("/approval") else "answer"
+                prompt = next(
+                    (
+                        p
+                        for p in run.get("pending_controls") or []
+                        if p["prompt_id"] == body.get("request_id")
+                    ),
+                    None,
+                )
+                if (
+                    set(body) != {"request_id", "execution_generation", field}
+                    or prompt is None
+                    or body["execution_generation"] != prompt["execution_generation"]
+                ):
+                    return JSONResponse({"error": {"code": "invalid_params"}}, 400)
+                run["pending_controls"] = []
+                if field == "answer":
+                    run.setdefault("answers", []).append(body["answer"])
+                    return JSONResponse({"status": "resolved", "prompt_id": prompt["prompt_id"]})
             if path.endswith("/approval"):
                 self.approvals += 1
                 run["approval_choice"] = body["choice"]
@@ -398,17 +420,20 @@ class FakeHermes:
         await asyncio.sleep(0.15)
         yield event("tool.completed", tool="read_file", duration=0.15)
         if approval:
-            run["approval"] = {
-                "request_id": "test-approval",
-                "command": "python -m pytest",
-                "choices": self.approval_choices,
-            }
+            prompt = {"command": "python -m pytest", "choices": self.approval_choices}
+            if self.native_controls:
+                prompt.update(kind="approval", prompt_id="test-approval", execution_generation=3)
+                run["pending_controls"] = [prompt]
+            else:
+                run["approval"] = prompt = {"request_id": "test-approval", **prompt}
             run["status"] = "waiting_for_approval"
-            yield event("approval.request", **run["approval"])
+            yield event("approval.request", **prompt)
             for _ in range(300):
                 if run["approved"] or run["status"] == "cancelled":
                     break
                 await asyncio.sleep(0.1)
+            if self.native_controls and run["approved"]:
+                yield event("approval.settled", prompt_id="test-approval", execution_generation=3)
         if "delegate" in run["input"].lower():
             child = "child-" + run["run_id"]
             self.sessions[child] = {

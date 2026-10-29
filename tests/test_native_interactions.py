@@ -47,7 +47,7 @@ def test_native_commentary_is_visible_once_and_preserved_before_the_answer(modul
     assert result["live"]["text"] == "Checking first.\n\nFinal answer."
 
 
-def question_stream(peer, *, multi=False):
+def question_stream(peer, *, multi=False, native=False):
     async def events(run):
         def frame(event, **fields):
             return "data: " + json.dumps({"event": event, **fields}) + "\n\n"
@@ -58,13 +58,19 @@ def question_stream(peer, *, multi=False):
         yield frame("message.delta", delta="Let me check which environment you want.")
         yield frame("tool.started", tool="clarify", tool_call_id="question-tool")
         prompt = {
-            "request_id": "question-one",
             "question": "Which environment should I use?",
             "choices": ["Development (Recommended)", "Production"],
             "multi_select": multi,
         }
-        run.update(status="waiting_for_input", clarification=prompt)
-        yield frame("talaria.clarification.request", **prompt)
+        if native:
+            # Hermes 0.22.1+ lists the prompt on the run instead of a Talaria status field.
+            prompt.update(kind="clarify", prompt_id="question-one", execution_generation=2)
+            run.update(pending_controls=[prompt])
+            yield frame("clarify.request", **prompt)
+        else:
+            prompt["request_id"] = "question-one"
+            run.update(status="waiting_for_input", clarification=prompt)
+            yield frame("talaria.clarification.request", **prompt)
         for _ in range(3000):
             if run.get("answers") or run["status"] == "cancelled":
                 break
@@ -74,7 +80,10 @@ def question_stream(peer, *, multi=False):
         if run["status"] == "cancelled":
             yield frame("run.cancelled")
             return
-        yield frame("talaria.clarification.resolved", request_id=prompt["request_id"])
+        if native:
+            yield frame("clarify.settled", prompt_id="question-one", execution_generation=2)
+        else:
+            yield frame("talaria.clarification.resolved", request_id=prompt["request_id"])
         yield frame("tool.completed", tool="clarify", tool_call_id="question-tool")
         yield frame("talaria.reasoning.delta", block_id="two", delta="Second reasoning block.")
         yield frame("message.delta", delta="Your answer was received.")
@@ -86,11 +95,15 @@ def question_stream(peer, *, multi=False):
     return events
 
 
-@pytest.mark.parametrize("width", [390, 1440])
-def test_question_choices_survive_reload_and_submit_once(page, live_app, monkeypatch, width):
+@pytest.mark.parametrize(
+    "width,native", [(390, False), (1440, False), (390, True)], ids=["390", "1440", "authority"]
+)
+def test_question_choices_survive_reload_and_submit_once(
+    page, live_app, monkeypatch, width, native
+):
     peer = live_app[1]
     peer.extension = {"live_interactions": True}
-    monkeypatch.setattr(peer, "events", question_stream(peer))
+    monkeypatch.setattr(peer, "events", question_stream(peer, native=native))
     page.set_viewport_size({"width": width, "height": 850})
     page.get_by_label("Message Hermes").fill("Ask me which environment")
     page.get_by_role("button", name="Send message", exact=True).click()
@@ -102,7 +115,8 @@ def test_question_choices_survive_reload_and_submit_once(page, live_app, monkeyp
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     directory = Path("test-results")
     directory.mkdir(exist_ok=True)
-    page.screenshot(path=str(directory / f"clarification-{width}.png"))
+    if not native:
+        page.screenshot(path=str(directory / f"clarification-{width}.png"))
     page.reload()
     expect(card).to_be_visible()
     button = card.get_by_role("button", name="Development (Recommended)", exact=True)
@@ -112,11 +126,12 @@ def test_question_choices_survive_reload_and_submit_once(page, live_app, monkeyp
     assert next(iter(peer.runs.values()))["answers"] == ["Development (Recommended)"]
 
 
+@pytest.mark.parametrize("native", [False, True], ids=["agent", "session-authority"])
 @pytest.mark.parametrize("mode", ["text", "multi", "composer", "skip", "stop"])
-def test_question_answer_modes(page, live_app, monkeypatch, mode):
+def test_question_answer_modes(page, live_app, monkeypatch, mode, native):
     peer = live_app[1]
     peer.extension = {"live_interactions": True}
-    monkeypatch.setattr(peer, "events", question_stream(peer, multi=mode == "multi"))
+    monkeypatch.setattr(peer, "events", question_stream(peer, multi=mode == "multi", native=native))
     page.get_by_label("Message Hermes").fill("Ask a question")
     page.get_by_role("button", name="Send message", exact=True).click()
     card = page.get_by_role("region", name="Question from your agent")
@@ -199,3 +214,28 @@ def test_invalid_answers_never_resolve_a_question(live_app):
         )
         assert response.status_code == 200
         assert peer.runs["question-run"]["answers"] == [""]
+
+
+def test_session_authority_answers_echo_the_prompt_generation(live_app):
+    url, peer, _ = live_app
+    question = {"kind": "clarify", "prompt_id": "question-id", "execution_generation": 4}
+    approval = {"kind": "approval", "prompt_id": "approval-id", "execution_generation": 4}
+    peer.native_controls = True
+    peer.runs["question-run"] = {"status": "running", "pending_controls": [question]}
+    peer.runs["approval-run"] = {"status": "waiting_for_approval", "pending_controls": [approval]}
+    with signed_in(url) as client:
+        for generation in (True, "4", -1, 4.5, None):
+            payload = {
+                "request_id": "question-id",
+                "answer": "",
+                "execution_generation": generation,
+            }
+            response = client.post("/api/runs/question-run/clarification", json=payload)
+            assert response.status_code == 400
+        assert peer.runs["question-run"]["pending_controls"] == [question]
+        payload = {"request_id": "question-id", "answer": "Production", "execution_generation": 4}
+        assert client.post("/api/runs/question-run/clarification", json=payload).status_code == 200
+        assert peer.runs["question-run"]["answers"] == ["Production"]
+        payload = {"choice": "once", "request_id": "approval-id", "execution_generation": 4}
+        assert client.post("/api/runs/approval-run/approval", json=payload).status_code == 200
+        assert peer.approvals == 1 and peer.runs["approval-run"]["approval_choice"] == "once"

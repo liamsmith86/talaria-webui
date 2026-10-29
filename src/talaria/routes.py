@@ -373,24 +373,34 @@ async def run(request: Request):
     return JSONResponse(await request.app.state.hermes.request("GET", f"/v1/runs/{rid}"))
 
 
+def prompt_answer(data, field, value):
+    """Hermes 0.22.1+ session authority settles prompts by ID and execution generation."""
+    generation = data["execution_generation"]
+    if type(generation) is not int or generation < 0:
+        raise APIError("Invalid session or run identifier.", 400, "invalid_id")
+    request_id = identifier(text_field(data, "request_id", 256))
+    return {"request_id": request_id, "execution_generation": generation, field: value}
+
+
 async def control(request: Request):
     rid, action = identifier(request.path_params["run_id"]), request.path_params["action"]
     data = await body(request)
+    native = "execution_generation" in data
     if action == "clarification":
         from .extensions import PREFIX
 
         if "answer" not in data:
             raise APIError("Provide an answer or explicitly skip the question.", 400)
-        return JSONResponse(
-            await request.app.state.hermes.request(
-                "POST",
-                f"{PREFIX}/runs/{rid}/clarification",
-                json={
-                    "request_id": identifier(text_field(data, "request_id", 256)),
-                    "answer": text_field(data, "answer", 16000),
-                },
-            )
-        )
+        answer = text_field(data, "answer", 16000)
+        if native:
+            path, payload = f"/v1/runs/{rid}/clarify", prompt_answer(data, "answer", answer)
+        else:
+            path = f"{PREFIX}/runs/{rid}/clarification"
+            payload = {
+                "request_id": identifier(text_field(data, "request_id", 256)),
+                "answer": answer,
+            }
+        return JSONResponse(await request.app.state.hermes.request("POST", path, json=payload))
     if action == "stop":
         payload = {}
     elif action == "steer":
@@ -401,8 +411,8 @@ async def control(request: Request):
         choice = data.get("choice")
         if not isinstance(choice, str) or choice not in {"once", "session", "always", "deny"}:
             raise APIError("Choose one of the available approval options.", 400)
-        payload = {"choice": choice}
-        if data.get("request_id"):
+        payload = prompt_answer(data, "choice", choice) if native else {"choice": choice}
+        if not native and data.get("request_id"):
             payload["request_id"] = text_field(data, "request_id", 256)
     else:
         raise APIError("Unknown action.", 404)
