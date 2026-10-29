@@ -20,6 +20,9 @@ def test_reloading_mid_reply_picks_it_back_up(chat, token):
     chat.page.reload()
     expect(chat.page.locator(".message.user")).to_have_count(1, timeout=30_000)
     expect(chat.stop).to_be_visible()
+    # Hermes has saved part of the turn; it still shows once.
+    expect(chat.page.locator(".message.assistant")).to_have_count(1)
+    expect(chat.page.locator(".tool-card")).to_have_count(1)
     chat.settle()
     assert value in chat.reply()
     expect(chat.page.locator(".message.assistant")).to_have_count(1)
@@ -44,3 +47,15 @@ def test_switching_sessions_mid_reply_keeps_both_conversations(chat, token):
     assert value in chat.reply()
     expect(chat.page.locator(".message.user")).to_have_count(1)
     expect(chat.page.locator(".message.assistant")).to_have_count(1)
+
+
+def test_another_device_follows_a_running_reply(chat, token, device):
+    value = slow_read(chat, token, "device.txt")
+    other = device(chat.page.url)
+    expect(other.stop).to_be_visible(timeout=30_000)
+    expect(other.page.locator(".message.assistant")).to_have_count(1)
+    expect(other.page.locator(".tool-card")).to_have_count(1)
+    other.settle()
+    assert value in other.reply()
+    chat.settle()
+    assert value in chat.reply()

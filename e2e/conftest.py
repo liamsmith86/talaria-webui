@@ -22,6 +22,7 @@ import subprocess
 import threading
 import time
 import urllib.request
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -108,10 +109,54 @@ class Gateway:
     url: str
     key: str
     workspace: Path
+    command: list
+    env: dict
+    log: Path
+    version: str
+    process: subprocess.Popen | None = None
+
+    def start(self):
+        with self.log.open("ab") as log:
+            self.process = subprocess.Popen(
+                self.command,
+                cwd=self.workspace,
+                env=self.env,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        plugin = None
+        for _ in range(180):
+            if self.process.poll() is not None:
+                break
+            try:
+                plugin = fetch(f"{self.url}/talaria/v1/capabilities", self.key)
+                break
+            except Exception:
+                time.sleep(1)
+        if self.process.poll() is not None or not plugin:
+            tail = self.log.read_text(errors="replace")[-4000:]
+            pytest.fail(f"Hermes gateway did not start:\n{tail}")
+        assert plugin.get("plugin_version") == self.version, plugin
+
+    def stop(self):
+        if self.process is None or self.process.poll() is not None:
+            return
+        os.killpg(self.process.pid, signal.SIGTERM)
+        try:
+            self.process.wait(30)
+        except subprocess.TimeoutExpired:
+            os.killpg(self.process.pid, signal.SIGKILL)
+            self.process.wait(10)
+
+    def restart(self):
+        self.stop()
+        self.start()
 
 
-@pytest.fixture(scope="session")
-def hermes(tmp_path_factory, artifacts):
+@contextmanager
+def gateway(tmp_path_factory, artifacts, **settings):
+    """A throwaway gateway with this checkout's plugin. Settings override its config."""
     home = tmp_path_factory.mktemp("hermes-home")
     workspace = tmp_path_factory.mktemp("workspace")
     port = free_port()
@@ -129,7 +174,7 @@ def hermes(tmp_path_factory, artifacts):
         "platform_toolsets": {"api_server": ["hermes-api-server", "clarify"]},
         # Ask in Talaria for every flagged command, instead of an auxiliary model.
         "approvals": {"mode": "manual"},
-    }
+    } | settings
     (home / "config.yaml").write_text(json.dumps(config, indent=2))
     env_file = home / ".env"
     env_file.write_text(
@@ -158,46 +203,32 @@ def hermes(tmp_path_factory, artifacts):
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
     }
-    log_path = artifacts / "gateway.log"
-    with log_path.open("wb") as log:
-        process = subprocess.Popen(
-            [
-                str(Path(HERMES) / "venv/bin/hermes"),
-                "gateway",
-                "run",
-                "--replace",
-                "--external-supervisor",
-            ],
-            cwd=workspace,
-            env=env,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-    url = f"http://127.0.0.1:{port}"
+    running = Gateway(
+        url=f"http://127.0.0.1:{port}",
+        key=key,
+        workspace=workspace,
+        command=[
+            str(Path(HERMES) / "venv/bin/hermes"),
+            "gateway",
+            "run",
+            "--replace",
+            "--external-supervisor",
+        ],
+        env=env,
+        log=artifacts / f"gateway-{os.getenv('PYTEST_XDIST_WORKER', 'main')}.log",
+        version=version,
+    )
     try:
-        for _ in range(180):
-            if process.poll() is not None:
-                break
-            try:
-                plugin = fetch(f"{url}/talaria/v1/capabilities", key)
-                break
-            except Exception:
-                time.sleep(1)
-        else:
-            plugin = None
-        if process.poll() is not None or not plugin:
-            tail = log_path.read_text(errors="replace")[-4000:]
-            pytest.fail(f"Hermes gateway did not start:\n{tail}")
-        assert plugin.get("plugin_version") == version, plugin
-        yield Gateway(url, key, workspace)
+        running.start()
+        yield running
     finally:
-        os.killpg(process.pid, signal.SIGTERM)
-        try:
-            process.wait(30)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait(10)
+        running.stop()
+
+
+@pytest.fixture(scope="session")
+def hermes(tmp_path_factory, artifacts):
+    with gateway(tmp_path_factory, artifacts) as running:
+        yield running
 
 
 @pytest.fixture
@@ -247,10 +278,12 @@ def browser():
 # durations or controls. A reload of the same session must show the same.
 SNAPSHOT = """() => {
   // Text content, so folded and expanded steps compare alike. Streamed tables
-  // have no whitespace between cells, which is invisible but not to textContent.
+  // and Markdown blocks may have no whitespace between cells or paragraphs,
+  // which is invisible but not to textContent.
   const text = (node) => {
     const copy = node.cloneNode(true);
-    copy.querySelectorAll("th, td").forEach((cell) => cell.append(" "));
+    copy.querySelectorAll("th, td, .markdown-block, p, li, h1, h2, h3, h4, h5, h6, pre, blockquote")
+      .forEach((block) => block.append(" "));
     return copy.textContent.replace(/\\s+/g, " ").trim();
   };
   const parts = ".user-content, .message-text, .activity > summary .tool-label, "
@@ -351,10 +384,7 @@ class Chat:
             raise AssertionError(f"The reloaded session differs from the settled view:\n{diff}")
 
 
-@pytest.fixture
-def chat(browser, talaria, request, artifacts):
-    size = request.node.get_closest_marker("viewport")
-    width, height = size.args if size else (1280, 900)
+def sign_in(browser, talaria, problems, width=1280, height=900):
     context = browser.new_context(
         viewport={"width": width, "height": height},
         accept_downloads=True,
@@ -363,7 +393,6 @@ def chat(browser, talaria, request, artifacts):
     )
     page = context.new_page()
     page.set_default_timeout(30_000)
-    problems = []
     page.on("pageerror", lambda error: problems.append(f"page error: {error}"))
     page.on("console", lambda m: m.type == "error" and problems.append(f"console: {m.text}"))
     page.on(
@@ -377,6 +406,15 @@ def chat(browser, talaria, request, artifacts):
     page.get_by_role("button", name="Sign in").click()
     session = Chat(page, talaria)
     session.store("s => !!s.defaultModel && s.readiness.status === 'ok'", 60_000)
+    return session
+
+
+@pytest.fixture
+def chat(browser, talaria, request, artifacts):
+    size = request.node.get_closest_marker("viewport")
+    problems = []
+    session = sign_in(browser, talaria, problems, *(size.args if size else ()))
+    page, context = session.page, session.page.context
     session.new_session()
     yield session
     name = request.node.name.replace("/", "_")
@@ -393,3 +431,24 @@ def chat(browser, talaria, request, artifacts):
         assert not problems, "\n".join(problems)
     finally:
         context.close()
+
+
+@pytest.fixture
+def device(browser, talaria, request, artifacts):
+    """Open a page in another browser with its own storage, like a phone next to a laptop."""
+    devices, problems = [], []
+
+    def open_device(url):
+        other = sign_in(browser, talaria, problems)
+        devices.append(other)
+        other.page.goto(url)
+        other.store("s => !!s.active && !s.loading", 60_000)
+        return other
+
+    yield open_device
+    call = getattr(request.node, "report_call", None)
+    for index, other in enumerate(devices):
+        if not call or not call.passed:
+            other.page.screenshot(path=artifacts / f"{request.node.name}-device{index}.png")
+        other.page.context.close()
+    assert not problems, "\n".join(problems)
