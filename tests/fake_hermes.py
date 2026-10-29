@@ -349,6 +349,7 @@ class FakeHermes:
                 "model": body.get("model"),
                 "provider": body.get("provider"),
                 "approved": False,
+                "created_at": time.time(),
             }
             messages = self.messages[body["session_id"]]
             stored = content
@@ -362,6 +363,7 @@ class FakeHermes:
                     "id": max((m.get("id", 0) for m in messages), default=0) + 1,
                     "role": "user",
                     "content": stored,
+                    "timestamp": time.time(),
                 }
             )
             queue = self.runs[rid]["_queue"] = asyncio.Queue()
@@ -425,6 +427,9 @@ class FakeHermes:
                 run["status"] = "running"
                 return JSONResponse({"ok": True})
             if path.endswith("/steer"):
+                if run["status"] != "running":
+                    # Hermes takes guidance only while the run is working.
+                    return JSONResponse({"error": {"code": "run_not_accepting_steer"}}, 409)
                 run["steer"] = body["input"]
                 return JSONResponse({"accepted": True})
             return JSONResponse({k: v for k, v in run.items() if not k.startswith("_")})
@@ -454,6 +459,15 @@ class FakeHermes:
         yield event("tool.started", tool="read_file", preview="Reading the project notes")
         await asyncio.sleep(0.15)
         yield event("tool.completed", tool="read_file", duration=0.15)
+        if "saved steps" in run["input"].lower():
+            # Hermes saves each step as it finishes, before the reply is done.
+            messages = self.messages[run["session_id"]]
+            first = max((m.get("id", 0) for m in messages), default=0) + 1
+            call = {"id": f"read-{first}", "function": {"name": "read_file", "arguments": "{}"}}
+            messages += [
+                {"id": first, "role": "assistant", "content": "", "tool_calls": [call]},
+                {"id": first + 1, "role": "tool", "tool_call_id": call["id"], "content": "Notes"},
+            ]
         if "lost in a restart" in run["input"].lower():
             # The gateway died mid-turn: the stream ends and the next owner reports it unknown.
             run.update(status="unknown", admission_id="lost-admission", execution_generation=2)

@@ -1,4 +1,4 @@
-import { api, RequestError, errorMessage, eventSource } from "./api.js";
+import { api, RequestError, errorMessage, eventSource, streamsUseConnections } from "./api.js";
 import { rememberSession } from "./session-navigation.js";
 import {
   state,
@@ -27,8 +27,12 @@ import { responseParts, appendText, finishText, interimText } from "./response-p
 import { msg } from "./i18n.js";
 
 const sources = new Map();
+// Runs waiting off screen, and where each run's stream stopped.
+const parkedRuns = new Set();
+const cursors = new Map();
+let parkedCheck = null;
 let recoveryRecords = {};
-let restoration;
+let restoration, recovered = false;
 // Hermes holds a turn lost in a restart as "unknown" until someone discards it.
 // Nothing more arrives for it, so the browser settles it as uncertain.
 const terminal = new Set(["completed", "failed", "cancelled", "interrupted", "unknown"]);
@@ -388,6 +392,9 @@ export async function sendMessage(
       await answerClarification(sid, live.clarification.request_id, text);
       return sid;
     }
+    // Hermes refuses guidance until the approval is answered.
+    if (live.approval)
+      throw new Error(msg("Answer the approval request before sending guidance."));
     await api(`/runs/${encodeURIComponent(live.id)}/steer`, {
       method: "POST",
       body: { input: text },
@@ -494,6 +501,8 @@ export async function sendMessage(
     }
     publish(sid, failed);
     remember();
+    // The reply area shows this failure, with Retry when that is safe.
+    error.shownInReply = true;
     throw error;
   }
 }
@@ -541,17 +550,37 @@ export async function retrySubmission(sid) {
   }
 }
 
-export function subscribe(sid) {
+// Over HTTP/1.1 a browser allows six connections to a server across all its
+// tabs, and each stream holds one. More streams would stall every other
+// request, so only the session on screen streams. Others are checked now and then.
+function onScreen(sid) {
+  return !streamsUseConnections() ||
+    (sid === state.active && document.visibilityState === "visible");
+}
+
+export function subscribe(sid, finishing = false) {
   sources.get(sid)?.close();
   sources.delete(sid);
+  parkedRuns.delete(sid);
   const live = state.lives[sid];
   if (!live?.id || terminal.has(live.status)) return;
-  const source = eventSource(`/runs/${encodeURIComponent(live.id)}/events`);
+  if (!finishing && !onScreen(sid)) {
+    parkedRuns.add(sid);
+    checkParkedLater();
+    return;
+  }
+  const cursor = cursors.get(sid);
+  const after = cursor?.id === live.id ? `?after=${cursor.after}` : "";
+  const source = eventSource(`/runs/${encodeURIComponent(live.id)}/events${after}`);
+  source.finishing = finishing;
   sources.set(sid, source);
   const current = () =>
     sources.get(sid) === source && state.lives[sid]?.id === live.id;
   source.onmessage = (message) => {
     if (!current()) return;
+    const seen = Number(message.lastEventId);
+    if (message.lastEventId && Number.isSafeInteger(seen))
+      cursors.set(sid, { id: live.id, after: seen });
     let event;
     try {
       event = JSON.parse(message.data);
@@ -580,6 +609,7 @@ export function subscribe(sid) {
     if (terminal.has(next.status)) {
       source.close();
       sources.delete(sid);
+      cursors.delete(sid);
       remember();
       settle(sid, next).catch(fail);
     }
@@ -591,6 +621,56 @@ export function subscribe(sid) {
     if (current() && !terminal.has(state.lives[sid].status))
       publish(sid, { ...state.lives[sid], reconnecting: true });
   };
+}
+
+// Stream the session that came on screen and park the ones that left it.
+export function refreshStreams() {
+  for (const [sid, source] of sources)
+    if (!source.finishing && !onScreen(sid)) {
+      source.close();
+      sources.delete(sid);
+      parkedRuns.add(sid);
+    }
+  if (parkedRuns.has(state.active) && onScreen(state.active)) subscribe(state.active);
+  checkParkedLater();
+}
+
+function parked(sid) {
+  const live = state.lives[sid];
+  return parkedRuns.has(sid) && !!live?.id && !terminal.has(live.status) && !sources.has(sid);
+}
+
+function checkParkedLater() {
+  for (const sid of parkedRuns) if (!parked(sid)) parkedRuns.delete(sid);
+  if (!parkedCheck && parkedRuns.size) parkedCheck = setTimeout(checkParked, 4000);
+}
+
+async function checkParked() {
+  try {
+    for (const sid of [...parkedRuns]) {
+      const live = state.lives[sid];
+      if (!parked(sid)) continue;
+      let status;
+      try {
+        status = await api(`/runs/${encodeURIComponent(live.id)}`);
+      } catch (error) {
+        // The stream reports a run Hermes no longer has.
+        if (error.status === 404 && parked(sid) && state.lives[sid].id === live.id)
+          subscribe(sid, true);
+        continue;
+      }
+      const current = state.lives[sid];
+      if (current?.id !== live.id || !parked(sid) || typeof status?.status !== "string")
+        continue;
+      // A finished run's stream delivers the rest of its events, then closes.
+      if (terminal.has(status.status)) subscribe(sid, true);
+      else if (status.status !== current.status && current.status !== "stopping")
+        publish(sid, { ...current, status: status.status });
+    }
+  } finally {
+    parkedCheck = null;
+    checkParkedLater();
+  }
 }
 
 export function responseSaved(history, live) {
@@ -712,10 +792,70 @@ async function settle(sid, live) {
     toast(msg("Some guidance arrived after the response. It is available below."));
 }
 
+// Hermes saves a turn's prompt as it starts. Until then, or once the turn has
+// a final reply, the open history holds no running turn to follow.
+function runningPrompt(history, run) {
+  const index = history.findLastIndex(userMessage);
+  const prompt = history[index];
+  if (!prompt || !(Number(prompt.timestamp) >= run.created_at - 5)) return -1;
+  const finished = history.slice(index + 1).some((row) => row?.role === "session_meta" ||
+    (row?.role === "assistant" && !row.tool_calls?.length && plainContent(row.content).trim()));
+  return finished ? -1 : index;
+}
+
+function storedRun(sid) {
+  try {
+    return JSON.parse(readStorage("runs", "{}"))?.[sid] || null;
+  } catch {
+    return null;
+  }
+}
+
+// Follow a reply that another device or tab is running in the open session.
+export function followRun(sid, run) {
+  const live = state.lives[sid];
+  if (sid !== state.active || running(sid) || live?.uncertain || live?.id === run?.run_id ||
+      !["running", "waiting_for_approval", "waiting_for_input"].includes(run?.status) ||
+      typeof run.run_id !== "string" || !Number.isFinite(run.created_at) ||
+      Object.hasOwn(recoveryRecords, sid)) return false;
+  // Another tab of this browser stored the run's own record. This tab's
+  // recovery reconnects its own runs and restores their images.
+  const stored = storedRun(sid);
+  let origin;
+  if (stored?.id === run.run_id) {
+    if (!recovered || stored.imageReceipt) return false;
+    origin = stored;
+  } else {
+    const history = state.history;
+    const index = runningPrompt(history, run);
+    if (index < 0) return false;
+    const previous = history.slice(0, index).findLast(userMessage);
+    const before = history[index - 1]?.id;
+    origin = {
+      userText: withoutImagePlaceholders(plainContent(history[index].content)),
+      baseUserId: previous ? previous.id : null,
+      baseMessageId: typeof before === "number" ? before : 0,
+    };
+  }
+  publish(sid, {
+    ...origin,
+    id: run.run_id,
+    text: "",
+    tools: [],
+    status: run.status,
+    createdAt: run.created_at * 1000,
+    needsHistory: true,
+  });
+  remember();
+  subscribe(sid);
+  return true;
+}
+
 export function restoreRuns() {
   if (!restoration)
     restoration = recoverRuns().finally(() => {
       restoration = null;
+      recovered = true;
     });
   return restoration;
 }

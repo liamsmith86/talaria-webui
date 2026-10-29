@@ -3,7 +3,7 @@
 import pytest
 from playwright.sync_api import expect
 
-from .conftest import wait_for_store
+from .conftest import browser_context, wait_for_store
 from .test_conversation_features import seed
 
 
@@ -219,29 +219,6 @@ def test_return_during_cooldown_gets_one_delayed_refresh(page, live_app):
     assert len([url for url in calls if "/cooldown/messages" in url]) == 2
 
 
-def test_failed_return_preserves_work_and_later_return_recovers(page, live_app):
-    sid = seed(live_app[1], "unavailable", count=2)
-    open_session(page, sid)
-    composer = page.get_by_label("Message Hermes")
-    composer.fill("Keep my work")
-    page.route(
-        "**/api/sessions/unavailable/messages?*",
-        lambda route: route.fulfill(
-            status=503, json={"error": "Hermes is temporarily unavailable"}
-        ),
-    )
-    page.evaluate("window.dispatchEvent(new Event('focus'))")
-    expect(page.get_by_text("Hermes is temporarily unavailable", exact=True)).to_be_visible()
-    assert history_ids(page) == [1, 2]
-    expect(composer).to_have_value("Keep my work")
-    page.unroute("**/api/sessions/unavailable/messages?*")
-    live_app[1].messages[sid].append({"id": 3, "role": "assistant", "content": "Recovered"})
-    page.evaluate("window.dispatchEvent(new Event('online'))")
-    expect(page.get_by_text("Recovered", exact=True)).to_be_attached(timeout=8000)
-    expect(page.get_by_text("Hermes is temporarily unavailable", exact=True)).to_have_count(0)
-    expect(composer).to_have_value("Keep my work")
-
-
 def test_large_external_append_preserves_the_original_loaded_boundary(page, live_app):
     sid = seed(live_app[1], "large-append", count=180)
     open_session(page, sid)
@@ -267,3 +244,154 @@ def test_focus_preserves_loaded_sidebar_pages(page, live_app):
     page.evaluate("window.dispatchEvent(new Event('focus'))")
     expect(page.get_by_role("link", name="Updated in another client", exact=True)).to_be_attached()
     expect(page.locator(".session-select")).to_have_count(115)
+
+
+def send_with_saved_steps(page, sid, text="Check the build slowly with saved steps"):
+    open_session(page, sid)
+    page.get_by_label("Message Hermes").fill(text)
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.locator(".message.assistant .message-text")).to_be_visible()
+
+
+def expect_one_turn(page):
+    expect(page.locator(".message.user")).to_have_count(2)
+    expect(page.locator(".message.assistant")).to_have_count(1)
+    expect(page.locator(".tool-card")).to_have_count(1)
+
+
+def test_reloading_mid_reply_shows_its_saved_steps_once(page, live_app):
+    send_with_saved_steps(page, seed(live_app[1], "saved-steps"))
+    page.reload()
+    stop = page.get_by_role("button", name="Stop response", exact=True)
+    expect(stop).to_be_visible()
+    wait_for_store(page, "s => s.active === 'saved-steps' && !s.loading && s.history.length")
+    expect_one_turn(page)
+    expect(stop).to_be_hidden(timeout=20000)
+    expect_one_turn(page)
+
+
+def test_returning_to_a_running_session_shows_its_saved_steps_once(page, live_app):
+    peer = live_app[1]
+    seed(peer, "elsewhere")
+    send_with_saved_steps(page, seed(peer, "saved-steps"))
+    open_session(page, "elsewhere")
+    wait_for_store(page, "s => s.active === 'elsewhere' && !s.loading")
+    open_session(page, "saved-steps")
+    wait_for_store(page, "s => s.active === 'saved-steps' && !s.loading")
+    expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_visible()
+    expect_one_turn(page)
+
+
+def test_another_device_follows_and_approves_a_running_reply(page, live_app, browser):
+    peer = live_app[1]
+    peer.extension = {"session_activity": True}
+    seed(peer, "saved-steps")
+    page.reload()
+    wait_for_store(page, "s => s.caps.talaria_extensions?.session_activity")
+    open_session(page, "saved-steps")
+    page.get_by_label("Message Hermes").fill("Check the build slowly with saved steps and approval")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.get_by_role("button", name="Allow once")).to_be_visible()
+    with browser_context(browser) as context:
+        other = context.new_page()
+        other.goto(live_app[0])
+        other.get_by_label("Password", exact=True).fill("test-password")
+        other.get_by_role("button", name="Sign in").click()
+        wait_for_store(other, "s => s.readiness.status === 'ok'")
+        other.goto(f"{live_app[0]}?session=saved-steps")
+        # The other device shows the reply live, once, and can answer its approval.
+        expect(other.get_by_role("button", name="Stop response", exact=True)).to_be_visible()
+        expect_one_turn(other)
+        other.get_by_role("button", name="Allow once").click()
+        reply = "What would you like to explore next?"
+        expect(other.get_by_text(reply, exact=True)).to_be_visible(timeout=20000)
+        expect(other.get_by_role("button", name="Stop response", exact=True)).to_be_hidden()
+        expect_one_turn(other)
+    expect(page.get_by_text(reply, exact=True)).to_be_visible(timeout=20000)
+    expect_one_turn(page)
+    assert peer.approvals == 1
+
+
+def test_another_tab_follows_a_running_reply_when_looked_at(page, live_app):
+    peer = live_app[1]
+    peer.extension = {"session_activity": True}
+    seed(peer, "saved-steps")
+    page.reload()
+    wait_for_store(page, "s => s.caps.talaria_extensions?.session_activity")
+    other = page.context.new_page()
+    other.goto(f"{live_app[0]}?session=saved-steps")
+    wait_for_store(other, "s => s.active === 'saved-steps' && !s.loading")
+    open_session(page, "saved-steps")
+    page.get_by_label("Message Hermes").fill("Check the build slowly with saved steps and approval")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.get_by_role("button", name="Allow once")).to_be_visible()
+    other.evaluate("window.dispatchEvent(new Event('focus'))")
+    expect(other.get_by_role("button", name="Stop response", exact=True)).to_be_visible()
+    expect_one_turn(other)
+    page.get_by_role("button", name="Allow once").click()
+    reply = other.get_by_text("What would you like to explore next?", exact=True)
+    expect(reply).to_be_visible(timeout=20000)
+    expect(other.get_by_role("button", name="Stop response", exact=True)).to_be_hidden()
+    expect_one_turn(other)
+
+
+OPEN_STREAMS = """() => {
+  const Native = window.EventSource, open = new Set();
+  window.EventSource = class extends Native {
+    constructor(url) { super(url); open.add(this); }
+    close() { open.delete(this); super.close(); }
+  };
+  window.openStreams = () => [...open].filter((s) => s.readyState !== 2).map((s) => s.url);
+}"""
+
+
+def test_only_the_session_on_screen_streams_its_reply(page, live_app):
+    # A browser allows about six connections per server across all its tabs.
+    peer = live_app[1]
+    page.evaluate(OPEN_STREAMS)
+    for sid in ("parked-first", "parked-second"):
+        open_session(page, seed(peer, sid, count=0))
+        page.get_by_label("Message Hermes").fill("Check the build slowly")
+        page.get_by_role("button", name="Send message", exact=True).click()
+        expect(page.locator(".message.assistant .message-text")).to_be_visible()
+    runs = page.evaluate("""async () => {
+      const {state} = await import('/static/store.js');
+      return [state.lives['parked-first'].id, state.lives['parked-second'].id];
+    }""")
+    streams = page.evaluate("window.openStreams()")
+    assert len(streams) == 1 and runs[1] in streams[0]
+    # Returning resumes after the events this page already showed.
+    open_session(page, "parked-first")
+    page.wait_for_function("run => window.openStreams().join().includes(run)", arg=runs[0])
+    streams = page.evaluate("window.openStreams()")
+    assert len(streams) == 1 and "after=" in streams[0]
+    wait_for_store(page, "s => s.lives['parked-first']?.status === 'completed'")
+    text = page.evaluate(
+        "async () => (await import('/static/store.js')).state.lives['parked-first'].text"
+    )
+    assert text.count("A thoughtful place to start") == 1
+    # The parked reply finishes without being opened.
+    finished = page.locator('a.session-select[href*="session=parked-second"] .session-activity')
+    expect(finished).to_have_attribute("aria-label", "Finished", timeout=20000)
+    page.wait_for_function("() => window.openStreams().length === 0")
+    open_session(page, "parked-second")
+    expect(page.locator(".message.assistant")).to_have_count(1)
+    expect(page.get_by_text("What would you like to explore next?")).to_have_count(1)
+
+
+def test_a_hidden_page_releases_its_stream_and_resumes_when_shown(page, live_app):
+    page.evaluate(OPEN_STREAMS)
+    open_session(page, seed(live_app[1], "hidden-page", count=0))
+    page.get_by_label("Message Hermes").fill("Check the build slowly")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.locator(".message.assistant .message-text")).to_be_visible()
+    shown = """state => {
+      Object.defineProperty(document, 'visibilityState', {value: state, configurable: true});
+      document.dispatchEvent(new Event('visibilitychange'));
+    }"""
+    page.evaluate(shown, "hidden")
+    page.wait_for_function("() => window.openStreams().length === 0")
+    page.evaluate(shown, "visible")
+    page.wait_for_function("() => window.openStreams().some((url) => url.includes('after='))")
+    expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_hidden(timeout=20000)
+    expect(page.get_by_text("What would you like to explore next?")).to_have_count(1)

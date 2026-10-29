@@ -3,8 +3,9 @@ import {
   refreshSessionDetails, navigationVersion, navigationSignal, fail, update, beforeHistoryUpdate,
 } from "./store.js";
 import { selectedSession, selectedMessage } from "./session-navigation.js";
-import { running } from "./runs.js";
+import { followRun, refreshStreams, running } from "./runs.js";
 import { plainContent } from "./content.js";
+import { api } from "./api.js";
 
 const BACKGROUND_WAIT = 30 * 60 * 1000;
 
@@ -106,13 +107,42 @@ export function observePage() {
     if (!stopped && state.active && pendingDelegation(state.history))
       waiting = setTimeout(schedule, 10000);
   }
-  const unwatch = beforeHistoryUpdate(() => queueMicrotask(awaitBackground));
+  // Another device or tab may be answering here. Its reply streams here too.
+  let checking = false, recheck = false;
+  async function followElsewhere() {
+    const id = state.active;
+    if (stopped || !id || state.loading || state.searchWindow || running(id) ||
+        !state.caps.talaria_extensions?.session_activity) return;
+    if (checking) {
+      recheck = true;
+      return;
+    }
+    checking = true;
+    try {
+      const run = (await api("/activity")).data?.find((item) => item?.session_id === id);
+      if (run && !stopped && state.active === id && !state.loading) followRun(id, run);
+    } catch {
+      /* The next refresh checks again. */
+    } finally {
+      checking = false;
+      if (recheck) {
+        recheck = false;
+        followElsewhere();
+      }
+    }
+  }
+  const unwatch = beforeHistoryUpdate(() => queueMicrotask(() => {
+    refreshStreams();
+    awaitBackground();
+    followElsewhere();
+  }));
   const restored = (event) => { if (event.persisted) schedule(); };
   window.addEventListener("popstate", navigate);
   window.addEventListener("pageshow", restored);
   window.addEventListener("focus", schedule);
   window.addEventListener("online", schedule);
   document.addEventListener("visibilitychange", schedule);
+  document.addEventListener("visibilitychange", refreshStreams);
   return () => {
     stopped = true;
     clearTimeout(timer);
@@ -124,5 +154,6 @@ export function observePage() {
     window.removeEventListener("focus", schedule);
     window.removeEventListener("online", schedule);
     document.removeEventListener("visibilitychange", schedule);
+    document.removeEventListener("visibilitychange", refreshStreams);
   };
 }

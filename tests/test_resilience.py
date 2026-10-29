@@ -67,6 +67,21 @@ def test_stop_and_steer(page, live_app):
     assert next(iter(live_app[1].runs.values()))["steer"] == "Focus on readability"
 
 
+def test_unreachable_hermes_is_reported_once_beside_the_message(page, live_app):
+    unreachable = {"error": "Cannot reach Hermes. Check the connection and try again."}
+    page.route("**/api/runs", lambda route: route.fulfill(status=502, json=unreachable), times=1)
+    page.get_by_label("Message Hermes").fill("Reply after the outage")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    retry = page.get_by_role("button", name="Retry submission", exact=True)
+    expect(retry).to_be_visible()
+    expect(page.get_by_text(unreachable["error"])).to_have_count(1)
+    retry.click()
+    expect(page.locator(".message.assistant .message-text")).to_be_visible()
+    expect(page.get_by_text(unreachable["error"])).to_have_count(0)
+    expect(page.locator(".error-banner")).to_have_count(0)
+    assert len(live_app[1].runs) == 1
+
+
 def test_turn_lost_in_a_hermes_restart_waits_for_a_discard(page, live_app):
     page.get_by_label("Message Hermes").fill("Lost in a restart")
     page.get_by_role("button", name="Send message", exact=True).click()

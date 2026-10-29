@@ -447,8 +447,10 @@ async def discard(request: Request):
 
 async def events(request: Request):
     rid = identifier(request.path_params["run_id"])
+    # A browser reconnecting sends Last-Event-ID; a page resuming a parked run sends after.
+    resume = request.headers.get("last-event-id") or request.query_params.get("after") or "0"
     try:
-        cursor = max(0, int(request.headers.get("last-event-id", "0")))
+        cursor = max(0, int(resume))
     except ValueError as exc:
         raise APIError("Invalid event cursor.", 400) from exc
     state = request.app.state

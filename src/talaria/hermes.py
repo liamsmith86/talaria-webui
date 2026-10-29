@@ -113,6 +113,8 @@ def response_error(status: int, body: dict | None = None) -> APIError:
     code = code.get("code") if isinstance(code, dict) else None
     if code == "invalid_title":
         return APIError("That session name is already in use or is not valid.", status, code)
+    if code == "run_not_accepting_steer":
+        return APIError("Hermes takes guidance only while it is working.", status, code)
     if code == "permission_denied" and status == 409:
         # Hermes 0.22.1+ refuses API turns in sessions another surface owns.
         return APIError(

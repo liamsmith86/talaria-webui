@@ -47,6 +47,14 @@ def test_approval_and_reconnect(page, live_app, native):
     screenshot(page, "approval")
     page.reload()
     expect(page.get_by_role("button", name="Allow once")).to_be_visible()
+    # Hermes takes guidance only once the approval is answered; keep the draft.
+    box = page.get_by_label("Message Hermes")
+    expect(box).to_have_attribute("placeholder", "Answer the approval request to continue…")
+    box.fill("Use the quick tests")
+    page.get_by_role("button", name="Send guidance", exact=True).click()
+    expect(page.get_by_text("Answer the approval request before sending guidance.")).to_be_visible()
+    expect(box).to_have_value("Use the quick tests")
+    box.fill("")
     page.get_by_role("button", name="Allow once").click()
     expect(page.get_by_role("heading", name="A thoughtful place to start")).to_be_visible()
     assert live_app[1].approvals == 1
