@@ -22,10 +22,13 @@ export function useHistoryAnchor(root, session, history, following) {
     // A single reply can span many screens. Anchor its visible blocks as well
     // as its article, so omitted transient reasoning or corrected earlier
     // content does not move the prose the reader is currently looking at.
+    // Select only rendered, non-nested blocks: the search needs document order
+    // to follow vertical position, and folded group steps have no layout.
     const nodes = messages.flatMap((message) => [
       ...visibleBoundary(message.querySelectorAll(
-        ".message-text .markdown-block > *, .tool-card, .reasoning > summary, " +
-        ".reasoning[open] .markdown-block > *, .user-content",
+        ".message-text .markdown-block > *, .tool-stack > .tool-card, .activity > summary, " +
+        ".activity[open] > .activity-steps > li, .message > .reasoning > summary, " +
+        ".message > .reasoning[open] .markdown-block > *, .user-content",
       ), top),
       message,
     ]);

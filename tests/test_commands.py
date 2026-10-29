@@ -414,6 +414,71 @@ def test_compression_refresh_keeps_chat_visible_until_new_history_arrives(page, 
     assert not peer.runs
 
 
+def test_in_place_compaction_keeps_the_result_below_the_latest_turn(page, live_app):
+    sid = prepare(page, live_app)
+    peer = live_app[1]
+    peer.messages[sid] = [
+        {"id": 1, "role": "user", "content": "First question"},
+        {"id": 2, "role": "assistant", "content": "First answer"},
+        {"id": 3, "role": "user", "content": "Second question"},
+        {"id": 4, "role": "assistant", "content": "Second answer"},
+    ]
+    page.evaluate("async sid => (await import('/static/store.js')).openSession(sid)", sid)
+    finished = False
+    page.route("**/api/commands", lambda route: route.fulfill(json={"status": "running"}))
+    page.route(
+        "**/api/commands/*",
+        lambda route: route.fulfill(
+            json={
+                "status": "completed" if finished else "running",
+                "session_id": sid,
+                "changed": True,
+                "text": "Compressed: 4 → 3 messages",
+            }
+        ),
+    )
+    page.get_by_role("textbox", name="Message Hermes").fill("/compress ")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    card = page.locator(".command-card")
+    expect(card).to_contain_text("Compressing context…")
+    # Hermes archives every row and re-inserts the ones it keeps with new IDs,
+    # in their original display places; the hidden summary row closes the list.
+    peer.messages[sid] = [
+        {"id": 5, "role": "user", "content": "First question"},
+        {"id": 2, "role": "assistant", "content": "First answer"},
+        {"id": 7, "role": "user", "content": "Second question"},
+        {"id": 8, "role": "assistant", "content": "Second answer"},
+        {"id": 6, "role": "assistant", "content": "[CONTEXT COMPACTION]", "display_kind": "hidden"},
+    ]
+    finished = True
+    expect(card).to_contain_text("Context compressed")
+
+    def layout():
+        return card.evaluate(
+            """el => [...el.parentElement.children]
+              .filter(c => c.matches('.message,.command-card'))
+              .map(c => c === el ? 'card'
+                : c.querySelector('.user-content,.message-text')?.innerText.trim())"""
+        )
+
+    assert layout() == [
+        "First question",
+        "First answer",
+        "Second question",
+        "Second answer",
+        "card",
+    ]
+    peer.messages[sid].extend(
+        [
+            {"id": 9, "role": "user", "content": "Third question"},
+            {"id": 10, "role": "assistant", "content": "Third answer"},
+        ]
+    )
+    page.evaluate("async sid => (await import('/static/store.js')).refreshHistory(sid)", sid)
+    expect(page.get_by_text("Third answer", exact=True)).to_be_visible()
+    assert layout()[3:] == ["Second answer", "card", "Third question", "Third answer"]
+
+
 def test_compaction_continuation_preserves_unsent_draft(page, live_app):
     sid = prepare(page, live_app)
     with signed_in(live_app[0]) as client:

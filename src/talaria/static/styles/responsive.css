@@ -3,6 +3,11 @@
     transform: rotate(360deg);
   }
 }
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
 @keyframes breathe {
   50% {
     opacity: 0.4;
@@ -245,18 +250,10 @@
   .message-byline {
     font-size: 11px;
   }
-  .tool-card summary {
-    padding: 10px;
-    gap: 8px;
-  }
-  .tool-label {
-    font-size: 11px;
-  }
-  .tool-label small {
-    font-size: 10px;
-  }
-  .tool-content pre {
-    font-size: 11px;
+  .tool-content,
+  .reasoning > .markdown,
+  .notice > details > .markdown {
+    margin-inline-start: 0;
   }
   .error-banner,
   .connection-banner {

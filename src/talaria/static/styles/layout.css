@@ -368,5 +368,5 @@ kbd {
 .history-search .sidebar-empty:empty { display: none; }
 .session-activity { display: inline-flex; flex: none; color: var(--muted); }
 .session-activity.needs-input { color: var(--accent); }
-.tool-card.search-tool-match { border-color: var(--accent); }
+.tool-card.search-tool-match > summary { background: var(--accent-soft); }
 .message.search-match { outline: 2px solid var(--accent); outline-offset: 6px; border-radius: 8px; }

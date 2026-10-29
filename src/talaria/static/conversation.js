@@ -13,8 +13,16 @@ import {
 import { CommandCard, commandRunning } from "./command-activity.js";
 import { Clarification } from "./clarification.js";
 import { Markdown } from "./markdown.js";
-import { ToolCode } from "./tool-code.js";
-import { ToolResult } from "./tool-result.js";
+import {
+  ActivityGroup,
+  AgentCard,
+  Notice,
+  ThoughtRow,
+  ToolRow,
+  activityRuns,
+  describeCall,
+  terminalExit,
+} from "./tool-activity.js";
 import { approve, discardRun, retrySubmission, running } from "./runs.js";
 import {
   state,
@@ -22,10 +30,9 @@ import {
   fail,
   supports,
   loadOlderMessages,
-  openSession,
   update,
 } from "./store.js";
-import { plainContent, duration, money, numberValue } from "./content.js";
+import { isNotice, plainContent, userMessage } from "./content.js";
 import {
   currentImageMessage,
   messageImages,
@@ -37,132 +44,6 @@ import { responseParts } from "./response-parts.js";
 import { useReplyJump, useScrollControls, scrollBehavior } from "./reply-jump.js";
 import { useHistoryAnchor } from "./history-anchor.js";
 import { t, msg, useLanguage } from "./i18n.js";
-
-const toolStatuses = {
-  running: msg("Running"),
-  completed: msg("Completed"),
-  finished: msg("Finished"),
-  failed: msg("Failed"),
-  error: msg("Error"),
-  cancelled: msg("Cancelled"),
-  interrupted: msg("Interrupted"),
-  timeout: msg("Timed out"),
-  timed_out: msg("Timed out"),
-  not_reported: msg("Not reported"),
-};
-
-function toolText(value, input = false) {
-  if (typeof value !== "string") return "";
-  try {
-    const parsed = JSON.parse(value);
-    if (!parsed || typeof parsed !== "object") return value;
-    const keys = input
-      ? ["command", "path", "query", "url"]
-      : ["output", "content", "text"];
-    for (const key of keys)
-      if (typeof parsed[key] === "string") return parsed[key];
-    return JSON.stringify(parsed, null, 2);
-  } catch {
-    return value;
-  }
-}
-
-function ToolCard({ tool, matched = false }) {
-  const [open, setOpen] = useState(false);
-  const isAgent = tool.kind === "agent";
-  const failed = [
-    "failed",
-    "error",
-    "cancelled",
-    "interrupted",
-    "timeout",
-    "timed_out",
-  ].includes(tool.status);
-  const preview = useMemo(
-    () => toolText(tool.preview, !isAgent),
-    [tool.preview, isAgent],
-  );
-  const icon = isAgent
-    ? "branch"
-    : /search|browse|web/.test(tool.name)
-      ? "globe"
-      : /file|read|write/.test(tool.name)
-        ? "file"
-        : "terminal";
-  return html`<details
-    class=${`tool-card ${tool.status === "running" ? "working" : ""} ${matched ? "search-tool-match" : ""}`}
-    data-search-target=${matched ? "true" : undefined}
-    onToggle=${(event) => setOpen(event.currentTarget.open)}
-  >
-    <summary>
-      <span class="tool-icon"><${Icon} name=${icon} size=${17} /></span
-      ><span class="tool-label"
-        >${isAgent
-          ? t("Subagent")
-          : (tool.name || t("Tool")).replace(/_/g, " ")}${isAgent &&
-          html`<small>${tool.name || t("Delegated task")}</small>`}</span
-      ><span class="tool-status" title=${tool.status === "finished" ? t("Outcome not reported by Hermes") : undefined}
-        >${tool.status === "running"
-          ? html`<span class="spinner" />`
-          : html`<${Icon}
-              name=${failed ? "alert" : ["not_reported", "finished"].includes(tool.status) ? "info" : "check"}
-              size=${15}
-            />`}<span class="sr-only"
-          >${Object.hasOwn(toolStatuses, tool.status)
-            ? t(toolStatuses[tool.status])
-            : typeof tool.status === "string" ? tool.status.replace(/_/g, " ") : t("Finished")}</span
-        ></span
-      ><${Icon} name="chevron" size=${14} />
-    </summary>
-    <div class="tool-content">
-      ${preview
-        ? html`<${ToolCode} text=${preview} label=${t("Tool details")}
-            shell=${!isAgent && tool.name === "terminal"} enabled=${open} />`
-        : html`<p>
-            ${tool.status === "running"
-              ? t("Hermes is using this tool.")
-              : t("This tool has finished.")}
-          </p>`}
-      ${tool.output !== undefined &&
-      html`<small>${t("Result")}</small>
-        <${ToolResult} text=${tool.output}
-          enabled=${open && tool.status !== "running"} />`}
-      ${tool.duration !== undefined && html`<small>${duration(tool.duration)}</small>`}
-      ${isAgent &&
-      html`<div class="child-facts">
-        ${typeof tool.model === "string" &&
-        html`<span>${tool.model}</span>`}${duration(tool.duration_seconds) &&
-        html`<span>${duration(tool.duration_seconds)}</span>`}${numberValue(
-          tool.cost_usd,
-        ) !== null &&
-        html`<span title=${t("Cost reported by Hermes")}
-          >${money(tool.cost_usd)} USD</span
-        >`}
-      </div>`}
-      ${isAgent &&
-      typeof tool.child_session_id === "string" &&
-      html`<button
-        class="text-button child-link"
-        onClick=${() =>
-          openSession(tool.child_session_id, {
-            id: state.active,
-            title:
-              state.sessionDetails?.title ||
-              state.sessions.find((s) => s.id === state.active)?.title ||
-              t("Parent session"),
-          })}
-      >
-        ${t("Open child session")}<${Icon} name="link" size=${14} />
-      </button>`}
-      ${isAgent &&
-      tool.status !== "running" &&
-      !tool.child_session_id &&
-      html`<p class="field-help">
-        ${t("Hermes did not include a child transcript link.")}
-      </p>`}
-    </div>
-  </details>`;
-}
 
 function Message({
   role,
@@ -188,55 +69,99 @@ function Message({
   // Reconciliation adds a native record to the existing live message. Code
   // already shown must not return to deferred highlighting at that boundary.
   const deferHighlight = useRef(!!record).current;
-  const toolCards = useMemo(
+  // Steps the reader opened. A run that becomes a group mounts its steps
+  // again, so they reopen from here instead of collapsing mid-response.
+  const openSteps = useRef(new Set()).current;
+  const remember = (key) => (open) => (open ? openSteps.add(key) : openSteps.delete(key));
+  const toolRows = useMemo(
     () =>
       new Map(
-        tools.map((tool) => [
-          `${tool.kind === "agent"}:${tool.id}`,
-          html`<${ToolCard}
-            key=${`${tool.kind === "agent"}:${tool.id}`}
-            tool=${tool}
-            matched=${matchId && tool.messageIds?.some((id) => String(id) === String(matchId))}
-          />`,
-        ]),
+        tools.map((tool) => {
+          const key = `tool:${tool.kind === "agent"}:${tool.id}`;
+          return [key, { tool, node: tool.kind === "agent"
+            ? html`<${AgentCard} key=${key} tool=${tool} />`
+            : html`<${ToolRow}
+                key=${key}
+                tool=${tool}
+                matched=${matchId && tool.messageIds?.some((id) => String(id) === String(matchId))}
+                initiallyOpen=${openSteps.has(key)}
+                onToggle=${remember(key)}
+              />` }];
+        }),
       ),
     // Tool VNodes contain translated labels and locale-formatted durations/costs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tools, matchId, locale, formatLocale],
   );
+  const groups = useRef(new Map());
+  const allParts = parts || responseParts({ text, reasoning, tools });
   const partCounts = {};
-  function renderPart(part, index, all) {
+  // Native history can add or omit reasoning. Keep prose and tool identities
+  // independent of the number of preceding parts of another kind.
+  const entries = allParts.map((part, index) => {
     const position = partCounts[part.kind] || 0;
     partCounts[part.kind] = position + 1;
-    // Native history can add or omit reasoning. Keep prose and tool identities
-    // independent of the number of preceding parts of another kind.
     const key = part.kind === "tool"
       ? `tool:${!!part.agent}:${part.id}` : `${part.kind}:${position}`;
-    if (part.kind === "reasoning")
-      return html`<details class="reasoning" key=${key}>
-        <summary>${t("Thinking")}<${Icon} name="chevron" size=${14} /></summary>
-        <${Markdown} text=${part.text} streaming=${streaming && index === all.length - 1}
-          deferHighlight=${deferHighlight} />
-      </details>`;
-    if (part.kind === "tool")
-      return html`<div class="tool-stack" key=${key}>
-        ${toolCards.get(`${!!part.agent}:${part.id}`)}
-      </div>`;
-    if (part.kind === "images")
-      return html`<${Images} key=${key} images=${part.images} />`;
+    return { kind: part.kind, agent: part.agent, part, key,
+      tail: streaming && index === allParts.length - 1 };
+  });
+  function step(entry) {
+    if (entry.kind === "reasoning")
+      return html`<${ThoughtRow} key=${entry.key} text=${entry.part.text}
+        streaming=${entry.tail} deferHighlight=${deferHighlight}
+        initiallyOpen=${openSteps.has(entry.key)} onToggle=${remember(entry.key)} />`;
+    return toolRows.get(entry.key)?.node;
+  }
+  const nextGroups = new Map();
+  function group(run) {
+    // A group keeps its first tool's identity as later steps arrive.
+    const key = run.steps.find((entry) => entry.kind === "tool").key;
+    const working = run.steps.some((entry) =>
+      entry.tail || toolRows.get(entry.key)?.tool.status === "running");
+    // Text deltas re-render the reply. Reuse unchanged groups so Preact skips
+    // their steps instead of revisiting every tool.
+    const signature = run.steps.flatMap((entry) =>
+      [entry.key, entry.kind === "reasoning" ? entry.part.text : "", entry.tail]);
+    const previous = groups.current.get(key);
+    const groupKey = `group:${key}`;
+    // A new group opens if the reader had opened one of the steps it absorbs.
+    if (!previous && run.steps.some((entry) => openSteps.has(entry.key))) openSteps.add(groupKey);
+    const node = previous?.rows === toolRows && previous.working === working &&
+      previous.signature.length === signature.length &&
+      previous.signature.every((value, index) => value === signature[index])
+      ? previous.node
+      : html`<div class="tool-stack" key=${key}>
+          <${ActivityGroup} working=${working} initiallyOpen=${openSteps.has(groupKey)}
+            onToggle=${remember(groupKey)} steps=${run.steps.map((entry) => ({
+            key: entry.key, tool: toolRows.get(entry.key)?.tool, node: step(entry),
+          }))} />
+        </div>`;
+    nextGroups.set(key, { rows: toolRows, working, signature, node });
+    return node;
+  }
+  function renderPart(entry) {
+    if (entry.steps) return group(entry);
+    if (entry.kind === "reasoning") return step(entry);
+    if (entry.kind === "tool")
+      return html`<div class="tool-stack" key=${entry.key}>${step(entry)}</div>`;
+    if (entry.kind === "images")
+      return html`<${Images} key=${entry.key} images=${entry.part.images} />`;
     return (
-      part.text &&
-      html`<div class="message-text" key=${key}
-        data-search-target=${matchId && String(part.messageId) === String(matchId) ? "true" : undefined}>
+      entry.part.text &&
+      html`<div class="message-text" key=${entry.key}
+        data-search-target=${matchId && String(entry.part.messageId) === String(matchId) ? "true" : undefined}>
         <${Markdown}
-          text=${part.text}
-          streaming=${streaming && index === all.length - 1}
+          text=${entry.part.text}
+          streaming=${entry.tail}
           smooth=${true}
           deferHighlight=${deferHighlight}
         />
       </div>`
     );
   }
+  const content = role === "user" ? null : activityRuns(entries).map(renderPart);
+  groups.current = nextGroups;
   async function copy() {
     try {
       await navigator.clipboard.writeText(text);
@@ -268,7 +193,7 @@ function Message({
           >
             ${text}
           </div>`}`
-      : (parts || responseParts({ text, reasoning, tools })).map(renderPart)}
+      : content}
     ${streaming &&
     !text &&
     html`<div class="thinking" role="status">
@@ -410,7 +335,7 @@ function historyItems(history, live, excerpt = false) {
   const currentImage = currentImageMessage(history, live);
   const items = [];
   const calls = new Map();
-  const lastUser = history.findLastIndex((m) => m?.role === "user");
+  const lastUser = history.findLastIndex(userMessage);
   const currentChildren =
     withoutImagePlaceholders(plainContent(history[lastUser]?.content)) ===
     live?.userText
@@ -420,7 +345,7 @@ function historyItems(history, live, excerpt = false) {
   // IDs in older turns must not inherit the most recent run's outcome.
   const settledEnd = live?.persisted && live.savedMessageId != null
     ? history.findIndex((m) => m?.id === live.savedMessageId && m.role === "assistant") : -1;
-  const settledStart = history.findLastIndex((m, i) => i < settledEnd && m?.role === "user");
+  const settledStart = history.findLastIndex((m, i) => i < settledEnd && userMessage(m));
   const outcomes = new Map(settledStart >= 0 ? (live.tools || [])
     .filter((t) => t.kind !== "agent" && t.id != null &&
       !["running", "not_reported"].includes(t.status))
@@ -435,17 +360,24 @@ function historyItems(history, live, excerpt = false) {
         items.push(item);
         call = item.tools[0];
       }
-      if (call) {
+      if (call?.output !== undefined) {
+        // In-place compaction appends a pruned copy of an old result under the
+        // same call ID. The result displayed in place is the original.
+        call.messageIds.push(message.id);
+      } else if (call) {
         const output = plainContent(message.content);
         call.output = output;
         call.messageIds.push(message.id);
         const known = position > settledStart && position <= settledEnd ? outcomes.get(call.id) : null;
-        call.status = known?.status || "finished";
-        if (known?.duration !== undefined) call.duration = known.duration;
+        if (call.name === "terminal") call.exitCode = terminalExit(output);
+        call.status = known?.status ||
+          (call.exitCode != null ? (call.exitCode ? "failed" : "completed") : "finished");
+        if (known) Object.assign(call, { duration: known.duration, startedAt: known.startedAt,
+          endedAt: known.endedAt });
         if (call.name === "delegate_task" && output.length <= 250000) {
           try {
             const result = JSON.parse(output);
-            const args = JSON.parse(call.preview || "{}");
+            const args = JSON.parse(call.args || "{}");
             const entries = Array.isArray(result)
               ? result
               : result.results ||
@@ -470,7 +402,7 @@ function historyItems(history, live, excerpt = false) {
                     kind: "agent",
                     id: `${call.id}-${index}`,
                     name: typeof goal === "string" ? goal : "",
-                    preview: entry.summary,
+                    summary: entry.summary,
                     child_session_id:
                       entry.child_session_id || prior.child_session_id,
                     cost_usd:
@@ -484,18 +416,26 @@ function historyItems(history, live, excerpt = false) {
           }
         }
       }
+    } else if (isNotice(message)) {
+      items.push({ record: message, role: "notice", kind: message.display_kind,
+        text: plainContent(message.content), images: [], tools: [], reasoning: "",
+        time: message.timestamp, id: message.id || items.length });
     } else if (message.role === "user" || message.role === "assistant") {
-      const tools = (message.tool_calls || []).map((t, i) => ({
-        id: t.id || i,
-        name: t.function?.name || t.name,
-        preview:
-          typeof t.function?.arguments === "string"
-            ? t.function.arguments
-            : JSON.stringify(t.function?.arguments || {}),
-        status: "not_reported",
-        currentTurn: position > lastUser,
-        messageIds: [message.id],
-      }));
+      const tools = (message.tool_calls || []).map((t, i) => {
+        const name = t.function?.name || t.name;
+        const args = typeof t.function?.arguments === "string"
+          ? t.function.arguments
+          : JSON.stringify(t.function?.arguments || {});
+        return {
+          id: t.id || i,
+          name,
+          args,
+          ...describeCall(name, args),
+          status: "not_reported",
+          currentTurn: position > lastUser,
+          messageIds: [message.id],
+        };
+      });
       for (const tool of tools) calls.set(tool.id, tool);
       items.push({
         record: message,
@@ -529,7 +469,7 @@ function historyItems(history, live, excerpt = false) {
   // assistant turn with ordered parts, retaining the final row's native ID for
   // details and rewind actions. Never change the underlying transcript.
   for (const item of visible) {
-    if (item.role === "user") {
+    if (item.role !== "assistant") {
       turns.push(item);
       continue;
     }
@@ -555,7 +495,17 @@ function historyItems(history, live, excerpt = false) {
       previous.record = item.record;
     } else turns.push({ ...item, tools: [...item.tools], parts });
   }
-  return turns.filter((item) => item.role === "user" || item.parts.length);
+  return turns.filter((item) => item.role !== "assistant" || item.parts.length);
+}
+
+// In-place compaction re-inserts the rows it keeps with new IDs, so IDs do not
+// follow display order. Find the turn after the anchor row's display position.
+function nextTurnAfter(rows, items, afterId) {
+  const anchor = rows.findIndex((row) => row?.id === afterId);
+  if (anchor < 0)
+    return items.findIndex((item) => item.role === "user" && Number(item.record?.id) > afterId);
+  const later = new Set(rows.slice(anchor + 1));
+  return items.findIndex((item) => item.role === "user" && later.has(item.record));
 }
 
 export function Conversation({ app, command, onDismissCommand }) {
@@ -590,7 +540,10 @@ export function Conversation({ app, command, onDismissCommand }) {
   useLayoutEffect(() => {
     if (!app.searchWindow || app.loading) return;
     const tools = scroll.current?.querySelectorAll("[data-search-target]") || [];
-    for (const target of tools) if (target.tagName === "DETAILS") target.open = true;
+    // A matched step can be folded inside an activity group.
+    for (const target of tools)
+      for (let details = target.closest("details"); details; details = details.parentElement.closest("details"))
+        details.open = true;
     const target = tools[0] || scroll.current?.querySelector(".search-match");
     target?.scrollIntoView({ block: "center", behavior: "instant" });
   }, [app.searchWindow, app.loading, app.history]);
@@ -654,8 +607,10 @@ export function Conversation({ app, command, onDismissCommand }) {
     () =>
       !app.loading &&
       items.map(
-        (m) =>
-          html`<${Message}
+        (m) => m.role === "notice"
+          ? html`<${Notice} key=${messageKeys.get(m.id)} kind=${m.kind} text=${m.text} time=${m.time}
+              matched=${app.searchWindow && String(m.record.id) === String(app.searchWindow)} />`
+          : html`<${Message}
             key=${messageKeys.get(m.id)}
             ...${m}
             agentName=${agentName}
@@ -708,9 +663,8 @@ export function Conversation({ app, command, onDismissCommand }) {
       parts=${live.parts}
     />`);
   if (command) {
-    const next = commandRunning(command) || command.afterId == null ? -1 : items.findIndex(
-      (item) => item.role === "user" && Number(item.record?.id) > command.afterId,
-    );
+    const next = commandRunning(command) || command.afterId == null
+      ? -1 : nextTurnAfter(app.history, items, command.afterId);
     // A settled reply can still live outside history while reconciliation is
     // pending. Keep its later command below it, and above a subsequent run.
     const position = next >= 0 ? next : commandRunning(command) ||
@@ -783,7 +737,7 @@ export function Conversation({ app, command, onDismissCommand }) {
         >
           ${live.tools
             .filter((t) => t.kind === "agent")
-            .map((tool) => html`<${ToolCard} key=${tool.id} tool=${tool} />`)}
+            .map((tool) => html`<${AgentCard} key=${tool.id} tool=${tool} />`)}
         </div>`}
         ${live?.approval &&
         html`<${Approval}

@@ -20,6 +20,11 @@ export function plainContent(content) {
     .filter(Boolean)
     .join("\n");
 }
+// Hermes stores its own events (subagent results, finished background
+// processes, resumed turns, model changes) as user-role rows of these kinds.
+export const NOTICE_KINDS = ["async_delegation_complete", "process_complete", "auto_continue", "model_switch"];
+export const isNotice = (row) => row?.role === "user" && NOTICE_KINDS.includes(row.display_kind);
+export const userMessage = (row) => row?.role === "user" && !isNotice(row);
 export const numberValue = (v) =>
   typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
 export const count = (v) =>

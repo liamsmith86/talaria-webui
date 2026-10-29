@@ -267,6 +267,8 @@ def test_tool_only_completion_uses_the_same_reserved_footer(page, live_app):
     }""",
         calls,
     )
+    # Consecutive tools fold into one group; open it so the reply fills the view.
+    page.locator(".activity > summary").click()
     page.wait_for_function("""() => {
       const el=document.querySelector('.conversation-viewport');
       return el.scrollHeight>el.clientHeight && el.scrollHeight-el.scrollTop-el.clientHeight<3;

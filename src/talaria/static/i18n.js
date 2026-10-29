@@ -178,6 +178,7 @@ function formatter(type, options) {
 
 export const formatNumber = (value, options) => formatter("NumberFormat", options).format(value);
 export const formatDate = (value, options) => formatter("DateTimeFormat", options).format(value);
+export const formatList = (values) => formatter("ListFormat", { type: "conjunction" }).format(values);
 
 // Mark source labels stored in arrays/state; translate them only when rendered.
 export const msg = (source) => source;

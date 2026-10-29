@@ -2,7 +2,9 @@ import { html, useCallback, useEffect, useRef, useState, Icon, IconButton } from
 import { update } from "./store.js";
 import { t, formatNumber } from "./i18n.js";
 
-const searchable = ".message-text, .tool-content pre, .reasoning .markdown";
+// A row's subject is searched only when it is the call's sole copy of its input.
+const searchable = ".message-text, .tool-content pre, .tool-facts dd, .reasoning .markdown, " +
+  ".tool-label.findable .tool-subject, .notice .markdown";
 
 function matches(root, query, cache) {
   if (!query || !root) return [];

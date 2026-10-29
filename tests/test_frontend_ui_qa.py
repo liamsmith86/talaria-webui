@@ -104,7 +104,7 @@ def test_find_tracks_reasoning_and_tool_results_without_text_deltas(page, live_a
         """async sid => {
             const {state, update} = await import('/static/store.js');
             update({lives: {[sid]: {...state.lives[sid], reasoning:'Reasoning needle',
-                tools:[{id:'tool', name:'terminal', preview:'Tool needle', status:'completed'}]}}});
+                tools:[{id:'tool', name:'terminal', subject:'Tool needle', status:'completed'}]}}});
         }""",
         sid,
     )
@@ -190,8 +190,9 @@ def test_reasoning_only_history_remains_available(page, live_app):
         [{"id": 1, "role": "assistant", "content": "", "reasoning": "A retained thought"}],
     )
     expect(page.locator(".reasoning summary")).to_be_visible()
+    expect(page.locator(".reasoning summary")).to_have_text("Thought A retained thought")
     page.locator(".reasoning summary").click()
-    expect(page.get_by_text("A retained thought", exact=True)).to_be_visible()
+    expect(page.locator(".reasoning .markdown")).to_have_text("A retained thought")
 
 
 def test_jump_to_latest_stays_above_a_tall_composer(page, live_app):
@@ -258,7 +259,7 @@ def test_completed_tool_previews_are_not_reparsed_during_stream_updates(page, li
             }
         ],
     )
-    expect(page.locator(".tool-card .tool-label")).to_have_text("terminal")
+    expect(page.locator(".tool-card .tool-label")).to_have_text("Ran A stable historical command")
     expect(page.locator(".tool-content pre")).to_have_text("A stable historical command")
     result = page.evaluate(
         """async sid => {

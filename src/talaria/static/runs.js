@@ -22,7 +22,7 @@ import {
   placeholderCount,
   withoutImagePlaceholders,
 } from "./attachments.js";
-import { plainContent } from "./content.js";
+import { plainContent, userMessage } from "./content.js";
 import { responseParts, appendText, finishText, interimText } from "./response-parts.js";
 import { msg } from "./i18n.js";
 
@@ -38,7 +38,7 @@ function retainedSize(live) {
   // Only inspect settled candidates, never the active stream on each delta.
   const values = [live.text, live.reasoning, live.userText, live.pendingSteer,
     ...(live.parts || []).map((part) => part.text),
-    ...(live.tools || []).flatMap((tool) => [tool.preview, tool.output])];
+    ...(live.tools || []).flatMap((tool) => [tool.subject, tool.summary, tool.output])];
   return values.reduce((size, value) => size + (typeof value === "string" ? value.length * 2 : 0), 0);
 }
 function publish(sid, live) {
@@ -224,9 +224,10 @@ export function applyEvent(live, event) {
     const tool = {
       id: event.tool_call_id || `tool-${next.tools.length}`,
       name: event.tool || event.name,
-      preview: event.preview || "",
+      subject: event.preview || "",
       status: "running",
       kind: "tool",
+      startedAt: event.timestamp,
     };
     const index = next.tools.findIndex(
       (t) => t.kind !== "agent" && t.id === tool.id,
@@ -254,6 +255,7 @@ export function applyEvent(live, event) {
         ...next.tools[index],
         status: event.error ? "failed" : "completed",
         duration: event.duration,
+        endedAt: event.timestamp,
         ...(typeof event.preview === "string" ? { output: event.preview } : {}),
       };
   }
@@ -276,7 +278,7 @@ export function applyEvent(live, event) {
         event.preview ||
         next.tools[index]?.name ||
         "",
-      preview: event.summary || event.output_tail || "",
+      summary: event.summary || event.output_tail || "",
       status: type.endsWith("start") ? "running" : event.status || "completed",
     };
     for (const field of [
@@ -361,7 +363,7 @@ export async function sendMessage(
   // Capture the originating transcript before image storage or submission can
   // yield to navigation into another session.
   const history = sid ? state.history : [];
-  const previousUser = history.findLast((message) => message.role === "user");
+  const previousUser = history.findLast(userMessage);
   if (state.readOnlyParent)
     throw new Error(msg("Return to the parent session to continue."));
   if (Object.hasOwn(recoveryRecords, sid))
@@ -594,7 +596,7 @@ export function responseSaved(history, live) {
       (typeof live.baseMessageId !== "number" || typeof final.id !== "number" ||
         final.id > live.baseMessageId)) return true;
   }
-  const lastUser = history.findLastIndex((message) => message.role === "user");
+  const lastUser = history.findLastIndex(userMessage);
   const user = history[lastUser];
   if (
     user &&

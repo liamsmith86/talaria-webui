@@ -28,27 +28,53 @@ def rows(output, offset=0):
     ]
 
 
-def test_result_keeps_error_and_exit_metadata_and_neutral_saved_status(page, live_app):
+def test_result_shows_its_payload_with_error_and_exit_metadata_and_exit_status(page, live_app):
     peer = live_app[1]
     sid = seed(peer)
+    # (result, status, shown payload, sibling fields)
     values = [
-        {"output": "", "error": "Synthetic failure", "exit_code": 1},
-        {"output": "Partial output", "error": "Stopped early", "exit_code": 2},
-        {"output": "The word error does not mean failure", "exit_code": 0},
-        {"error": {"code": "unavailable"}, "output": "", "retryable": True},
+        (
+            {"output": "", "error": "Synthetic failure", "exit_code": 1},
+            "Failed",
+            "No output",
+            {"error": "Synthetic failure", "exit_code": "1"},
+        ),
+        (
+            {"output": "Partial output", "error": "Stopped early", "exit_code": 2},
+            "Failed",
+            "Partial output",
+            {"error": "Stopped early", "exit_code": "2"},
+        ),
+        (
+            {"output": "The word error does not mean failure", "exit_code": 0},
+            "Completed",
+            "The word error does not mean failure",
+            {"exit_code": "0"},
+        ),
+        (
+            {"error": {"code": "unavailable"}, "output": "", "retryable": True},
+            "Finished",
+            "No output",
+            {"error": '{"code":"unavailable"}', "retryable": "true"},
+        ),
     ]
     peer.messages[sid] = [
-        row for i, value in enumerate(values) for row in rows(json.dumps(value), i * 4)
+        row for i, (value, *_) in enumerate(values) for row in rows(json.dumps(value), i * 4)
     ]
     open_session(page, sid)
-    for card, value in zip(page.locator(".tool-card").all(), values, strict=True):
-        expect(card.locator(".tool-status")).to_have_text("Finished")
-        expect(card.locator(".tool-status")).to_have_attribute(
-            "title", "Outcome not reported by Hermes"
-        )
+    cards = page.locator(".tool-card").all()
+    for card, (_, status, payload, fields) in zip(cards, values, strict=True):
+        # Hermes treats a non-zero terminal exit as failure; other results have no outcome.
+        expect(card.locator(".tool-status")).to_have_text(status)
         card.locator("summary").click()
         result = card.get_by_role("region", name="Tool result", exact=True)
-        assert json.loads(result.text_content()) == value
+        expect(result).to_have_text(payload)
+        expect(card.locator(".tool-facts dt")).to_have_text(list(fields))
+        expect(card.locator(".tool-facts dd")).to_have_text(list(fields.values()))
+    expect(cards[0].locator(".tool-meta")).to_have_text("exit 1")
+    expect(cards[3].locator(".tool-status")).to_have_attribute(
+        "title", "Outcome not reported by Hermes"
+    )
 
 
 def test_failure_outcome_belongs_only_to_its_settled_native_turn(page, live_app):
@@ -150,9 +176,9 @@ def test_failed_tool_stream_settles_without_becoming_successful(page, live_app, 
     wait_for_store(page, "s => s.lives[s.active]?.persisted === true")
     expect(page.locator(".tool-status")).to_have_text("Failed")
     page.locator(".tool-card summary").click()
-    expect(page.get_by_role("region", name="Tool result")).to_contain_text("Synthetic failure")
+    expect(page.locator(".tool-facts")).to_contain_text("Synthetic failure")
     page.reload()
-    # The persisted native contract has no outcome field: do not invent success.
-    expect(page.locator(".tool-status")).to_have_text("Finished")
+    # The saved result has no outcome field; its exit code keeps the failure.
+    expect(page.locator(".tool-status")).to_have_text("Failed")
     page.locator(".tool-card summary").click()
-    expect(page.get_by_role("region", name="Tool result")).to_contain_text("Synthetic failure")
+    expect(page.locator(".tool-facts")).to_contain_text("Synthetic failure")

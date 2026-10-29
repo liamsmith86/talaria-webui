@@ -71,12 +71,37 @@ async def message_page(client, sid, offset=0, *, order="latest", limit=100, incl
     }
 
 
+# Hermes's own events, stored as user-role rows (static/content.js NOTICE_KINDS).
+NOTICE_KINDS = ("async_delegation_complete", "process_complete", "auto_continue", "model_switch")
+
+
+def readable(message, answered):
+    """Whether the Markdown transcript shows a row, as the conversation view does."""
+    role = message.get("role")
+    if message.get("display_kind") == "hidden" or role == "session_meta":
+        return False
+    calls = message.get("tool_calls")
+    for call in calls if isinstance(calls, list) else []:
+        if isinstance(call, dict) and isinstance(call.get("id"), str):
+            answered.discard(call["id"])
+    call_id = message.get("tool_call_id")
+    if role != "tool" or not isinstance(call_id, str):
+        return True
+    # In-place compaction re-appends a pruned copy of an old result under its call ID.
+    if call_id in answered:
+        return False
+    answered.add(call_id)
+    return True
+
+
 def markdown_message(message):
     role = message.get("role", "message")
     role = role if isinstance(role, str) else "message"
     label = {"user": "You", "assistant": "Hermes", "tool": "Tool", "system": "System"}.get(
         role, str(role).capitalize()
     )
+    if role == "user" and message.get("display_kind") in NOTICE_KINDS:
+        label = "Hermes notice"
     sections = [f"## {label}", content_text(message.get("content"))]
     reasoning = message.get("reasoning") or message.get("reasoning_content")
     if isinstance(reasoning, str) and reasoning:
@@ -190,13 +215,14 @@ async def write_transcript(request, client, sid, format_, write):
     else:
         write(f"# {title.replace(chr(10), ' ')}\n\nExported {stamp}\n\n")
     first = True
+    answered = set()
     while True:
         if await request.is_disconnected():
             raise asyncio.CancelledError
         for message in page["data"]:
             if format_ == "json":
                 write(("" if first else ",\n") + json.dumps(message, ensure_ascii=False, indent=2))
-            else:
+            elif readable(message, answered):
                 write(markdown_message(message))
             first = False
             # Formatting a large page must not monopolize the server

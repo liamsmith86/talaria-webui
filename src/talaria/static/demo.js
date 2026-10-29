@@ -4,6 +4,7 @@ import { randomId } from "./lib.js";
 import { plainContent } from "./content.js";
 import { rememberSession, selectedSession } from "./session-navigation.js";
 import { msg } from "./i18n.js";
+import { describeCall } from "./tool-activity.js";
 
 const model = "gpt-6.1-sol", provider = "openai";
 const profile = { id: "default", label: "Hermes", profile: "default", server_url: "http://127.0.0.1:8642" };
@@ -85,7 +86,8 @@ export async function enableDemo(signal, version, pluginVersion) {
           run.events.push({ event, delta: text.slice(i, i + 32), block_id: String(index) });
       }
       for (const call of message.tool_calls || []) run.events.push(
-        { event: "tool.started", tool_call_id: call.id, tool: call.function.name, preview: call.function.arguments },
+        { event: "tool.started", tool_call_id: call.id, tool: call.function.name,
+          preview: describeCall(call.function.name, call.function.arguments).subject },
         { event: "tool.completed", tool_call_id: call.id, duration: 0.6 },
       );
     }

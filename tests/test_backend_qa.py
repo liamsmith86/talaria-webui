@@ -500,11 +500,17 @@ async def test_export_tolerates_unknown_content_part_and_tool_shapes(backend):
             "role": [],
             "content": [{"type": {"future": True}}, {"text": "Saved text"}],
             "tool_calls": 7,
-        }
+        },
+        {
+            "role": "user",
+            "display_kind": ["future"],
+            "content": "Later text",
+            "tool_calls": [{"id": ["future"]}],
+        },
     ]
     response = await client.get("/api/sessions/example/export")
     assert response.status_code == 200
-    assert "Saved text" in response.text
+    assert "Saved text" in response.text and "Later text" in response.text
 
 
 async def test_read_timeout_recovers_without_stopping_or_restarting_the_run():
