@@ -3,7 +3,7 @@
 import pytest
 from playwright.sync_api import expect
 
-from .conftest import wait_for_store
+from .conftest import browser_context, wait_for_store
 from .test_conversation_features import seed
 
 
@@ -303,3 +303,56 @@ def test_returning_to_a_running_session_shows_its_saved_steps_once(page, live_ap
     wait_for_store(page, "s => s.active === 'saved-steps' && !s.loading")
     expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_visible()
     expect_one_turn(page)
+
+
+def test_another_device_follows_and_approves_a_running_reply(page, live_app, browser):
+    peer = live_app[1]
+    peer.extension = {"session_activity": True}
+    seed(peer, "saved-steps")
+    page.reload()
+    wait_for_store(page, "s => s.caps.talaria_extensions?.session_activity")
+    open_session(page, "saved-steps")
+    page.get_by_label("Message Hermes").fill("Check the build slowly with saved steps and approval")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.get_by_role("button", name="Allow once")).to_be_visible()
+    with browser_context(browser) as context:
+        other = context.new_page()
+        other.goto(live_app[0])
+        other.get_by_label("Password", exact=True).fill("test-password")
+        other.get_by_role("button", name="Sign in").click()
+        wait_for_store(other, "s => s.readiness.status === 'ok'")
+        other.goto(f"{live_app[0]}?session=saved-steps")
+        # The other device shows the reply live, once, and can answer its approval.
+        expect(other.get_by_role("button", name="Stop response", exact=True)).to_be_visible()
+        expect_one_turn(other)
+        other.get_by_role("button", name="Allow once").click()
+        reply = "What would you like to explore next?"
+        expect(other.get_by_text(reply, exact=True)).to_be_visible(timeout=20000)
+        expect(other.get_by_role("button", name="Stop response", exact=True)).to_be_hidden()
+        expect_one_turn(other)
+    expect(page.get_by_text(reply, exact=True)).to_be_visible(timeout=20000)
+    expect_one_turn(page)
+    assert peer.approvals == 1
+
+
+def test_another_tab_follows_a_running_reply_when_looked_at(page, live_app):
+    peer = live_app[1]
+    peer.extension = {"session_activity": True}
+    seed(peer, "saved-steps")
+    page.reload()
+    wait_for_store(page, "s => s.caps.talaria_extensions?.session_activity")
+    other = page.context.new_page()
+    other.goto(f"{live_app[0]}?session=saved-steps")
+    wait_for_store(other, "s => s.active === 'saved-steps' && !s.loading")
+    open_session(page, "saved-steps")
+    page.get_by_label("Message Hermes").fill("Check the build slowly with saved steps and approval")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.get_by_role("button", name="Allow once")).to_be_visible()
+    other.evaluate("window.dispatchEvent(new Event('focus'))")
+    expect(other.get_by_role("button", name="Stop response", exact=True)).to_be_visible()
+    expect_one_turn(other)
+    page.get_by_role("button", name="Allow once").click()
+    reply = other.get_by_text("What would you like to explore next?", exact=True)
+    expect(reply).to_be_visible(timeout=20000)
+    expect(other.get_by_role("button", name="Stop response", exact=True)).to_be_hidden()
+    expect_one_turn(other)

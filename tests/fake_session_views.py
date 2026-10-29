@@ -6,7 +6,19 @@ from starlette.responses import JSONResponse
 def respond(peer, request):
     path = request.url.path
     if path == "/talaria/v1/activity":
-        return JSONResponse({"data": [], "scope": "api_runs"})
+        # The latest run of each session, as the plugin projects Hermes's run registry.
+        states = {"queued", "running", "waiting_for_approval", "completed", "cancelled", "failed"}
+        latest = {
+            run["session_id"]: {
+                "session_id": run["session_id"],
+                "run_id": rid,
+                "status": run["status"],
+                "created_at": run["created_at"],
+            }
+            for rid, run in peer.runs.items()
+            if "created_at" in run and run["status"] in states
+        }
+        return JSONResponse({"data": list(latest.values()), "scope": "api_runs"})
     if path == "/talaria/v1/search":
         query = request.query_params.get("q", "").lower()
         offset = int(request.query_params.get("offset", "0"))

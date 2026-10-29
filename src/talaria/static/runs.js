@@ -28,7 +28,7 @@ import { msg } from "./i18n.js";
 
 const sources = new Map();
 let recoveryRecords = {};
-let restoration;
+let restoration, recovered = false;
 // Hermes holds a turn lost in a restart as "unknown" until someone discards it.
 // Nothing more arrives for it, so the browser settles it as uncertain.
 const terminal = new Set(["completed", "failed", "cancelled", "interrupted", "unknown"]);
@@ -712,10 +712,70 @@ async function settle(sid, live) {
     toast(msg("Some guidance arrived after the response. It is available below."));
 }
 
+// Hermes saves a turn's prompt as it starts. Until then, or once the turn has
+// a final reply, the open history holds no running turn to follow.
+function runningPrompt(history, run) {
+  const index = history.findLastIndex(userMessage);
+  const prompt = history[index];
+  if (!prompt || !(Number(prompt.timestamp) >= run.created_at - 5)) return -1;
+  const finished = history.slice(index + 1).some((row) => row?.role === "session_meta" ||
+    (row?.role === "assistant" && !row.tool_calls?.length && plainContent(row.content).trim()));
+  return finished ? -1 : index;
+}
+
+function storedRun(sid) {
+  try {
+    return JSON.parse(readStorage("runs", "{}"))?.[sid] || null;
+  } catch {
+    return null;
+  }
+}
+
+// Follow a reply that another device or tab is running in the open session.
+export function followRun(sid, run) {
+  const live = state.lives[sid];
+  if (sid !== state.active || running(sid) || live?.uncertain || live?.id === run?.run_id ||
+      !["running", "waiting_for_approval", "waiting_for_input"].includes(run?.status) ||
+      typeof run.run_id !== "string" || !Number.isFinite(run.created_at) ||
+      Object.hasOwn(recoveryRecords, sid)) return false;
+  // Another tab of this browser stored the run's own record. This tab's
+  // recovery reconnects its own runs and restores their images.
+  const stored = storedRun(sid);
+  let origin;
+  if (stored?.id === run.run_id) {
+    if (!recovered || stored.imageReceipt) return false;
+    origin = stored;
+  } else {
+    const history = state.history;
+    const index = runningPrompt(history, run);
+    if (index < 0) return false;
+    const previous = history.slice(0, index).findLast(userMessage);
+    const before = history[index - 1]?.id;
+    origin = {
+      userText: withoutImagePlaceholders(plainContent(history[index].content)),
+      baseUserId: previous ? previous.id : null,
+      baseMessageId: typeof before === "number" ? before : 0,
+    };
+  }
+  publish(sid, {
+    ...origin,
+    id: run.run_id,
+    text: "",
+    tools: [],
+    status: run.status,
+    createdAt: run.created_at * 1000,
+    needsHistory: true,
+  });
+  remember();
+  subscribe(sid);
+  return true;
+}
+
 export function restoreRuns() {
   if (!restoration)
     restoration = recoverRuns().finally(() => {
       restoration = null;
+      recovered = true;
     });
   return restoration;
 }
