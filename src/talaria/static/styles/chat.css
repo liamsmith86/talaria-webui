@@ -386,101 +386,227 @@
 .token.boolean {
   color: light-dark(#a26431, #e5b17b);
 }
-.tool-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  margin: 4px 0 16px;
+.message.assistant > .message-text {
+  margin: 12px 0;
+}
+/* Tool and reasoning activity: quiet one-line steps between the prose. */
+.tool-stack,
+.message > .reasoning {
+  margin: 2px 0;
   max-width: 100%;
+  min-width: 0;
 }
-.tool-card {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  overflow: hidden;
+.tool-card,
+.reasoning,
+.activity {
+  font-size: 12.5px;
+  color: var(--muted);
 }
-.tool-card summary {
+.tool-card > summary,
+.reasoning > summary,
+.activity > summary {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 11px 13px;
+  gap: 8px;
+  min-height: 30px;
+  /* Align icons with the prose while giving the whole row a hover target. */
+  margin: 0 -8px;
+  padding: 4px 8px;
+  border-radius: 8px;
   cursor: pointer;
   list-style: none;
 }
-.tool-card summary::-webkit-details-marker {
+.tool-card > summary::-webkit-details-marker,
+.reasoning > summary::-webkit-details-marker,
+.activity > summary::-webkit-details-marker {
   display: none;
 }
-.tool-card summary > svg:last-child {
-  color: var(--faint);
-  transition: transform 0.15s;
+.tool-card > summary:hover,
+.reasoning > summary:hover,
+.activity > summary:hover {
+  background: var(--surface-hover);
+  color: var(--text);
 }
-.tool-card[open] summary > svg:last-child {
-  transform: rotate(180deg);
+.tool-card > summary > svg:last-child,
+.reasoning > summary > svg:last-child,
+.activity > summary > svg:last-child {
+  flex: none;
+  color: var(--faint);
+  transform: rotate(-90deg);
+  transition: transform 0.15s, opacity 0.15s;
+}
+:is(.tool-card, .reasoning)[open] > summary > svg:last-child,
+.activity[open] > summary > svg:last-child {
+  transform: none;
+}
+@media (hover: hover) {
+  :is(.tool-card, .reasoning):not([open]) > summary:not(:hover, :focus-visible) > svg:last-child {
+    opacity: 0;
+  }
 }
 .tool-icon {
-  color: var(--muted);
-  padding: 5px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
   display: flex;
+  flex: none;
+  justify-content: center;
+  width: 16px;
+  color: var(--faint);
 }
 .tool-label {
-  font-size: 11px;
-  font-weight: 550;
+  display: flex;
+  align-items: baseline;
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  text-transform: capitalize;
 }
-.tool-label small {
-  display: block;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 400;
-  margin-top: 4px;
-  text-transform: none;
-  text-overflow: ellipsis;
+/* Only the subject shortens, wherever a translation places it. */
+.tool-verb {
+  flex: none;
+  white-space: pre;
+  font-weight: 550;
+}
+.tool-subject {
+  min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
+  font:
+    11.5px ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  color: var(--faint);
+}
+.reasoning .tool-subject {
+  font: inherit;
+}
+.tool-card.working .tool-verb,
+.reasoning.working .tool-verb,
+.activity.working > summary .tool-verb {
+  background: linear-gradient(90deg, var(--muted) 35%, var(--text) 50%, var(--muted) 65%) 0 0 / 200% 100%;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2s linear infinite;
+}
+.tool-meta {
+  flex: none;
+  font-size: 11px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
 }
 .tool-status {
-  color: var(--muted);
-  padding: 3px;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.tool-status.failed,
+.activity-failed {
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 550;
 }
 .tool-content {
-  border-top: 1px solid var(--line);
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 10px 24px;
+  min-width: 0;
 }
 .tool-content pre {
   margin: 0;
   max-height: 300px;
-  font-size: 10px;
+  padding: 12px 14px;
+  font-size: 10.5px;
 }
 .tool-content code {
   font: inherit;
 }
 .tool-content p,
 .tool-content small {
+  margin: 0;
   font-size: 11px;
   color: var(--muted);
 }
-.reasoning {
-  color: var(--muted);
-  font-size: 11px;
-  margin: 0 0 16px;
-}
-.reasoning summary {
+.tool-facts {
   display: flex;
-  gap: 7px;
-  align-items: center;
-  cursor: pointer;
-  margin-bottom: 8px;
-}
-.reasoning .markdown {
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
   font-size: 11px;
-  padding: 10px 14px;
+}
+.tool-facts > div {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+.tool-facts dt {
+  color: var(--faint);
+}
+.tool-facts dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.reasoning > .markdown {
+  margin: 4px 0 10px 24px;
+  padding: 0 0 0 12px;
   border-left: 2px solid var(--line);
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--muted);
+}
+.reasoning > .markdown :is(h1, h2, h3, h4) {
+  margin: 12px 0 6px;
+  font-size: 1em;
+  letter-spacing: 0;
+}
+.reasoning > .markdown p {
+  margin-bottom: 10px;
+}
+.activity > summary .tool-label {
+  font-weight: 550;
+}
+/* An expanded group is a timeline under its header icon. */
+.activity-steps {
+  list-style: none;
+  margin: 2px 0 6px 7px;
+  padding: 0 0 0 16px;
+  border-left: 1px solid var(--line);
+}
+.agent-card {
+  margin: 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.agent-card > summary {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 0;
+}
+.agent-card .tool-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text);
+  text-overflow: ellipsis;
+}
+.agent-card .tool-label small {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.agent-card .tool-content {
+  margin: 0;
+  padding: 12px;
+  border-top: 1px solid var(--line);
 }
 .thinking {
   /* Share the reserved action area, including replies that contain only tools. */

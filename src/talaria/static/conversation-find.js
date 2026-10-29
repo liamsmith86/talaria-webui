@@ -2,7 +2,7 @@ import { html, useCallback, useEffect, useRef, useState, Icon, IconButton } from
 import { update } from "./store.js";
 import { t, formatNumber } from "./i18n.js";
 
-const searchable = ".message-text, .tool-content pre, .reasoning .markdown";
+const searchable = ".message-text, .tool-content pre, .tool-facts dd, .reasoning .markdown";
 
 function matches(root, query, cache) {
   if (!query || !root) return [];

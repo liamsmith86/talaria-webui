@@ -18,7 +18,7 @@ def test_native_tool_result_preview_keeps_the_original_command(module_page):
         tool_call_id: 'a', preview: 'Wednesday', error: false});
       return live.tools[0];
     }""")
-    assert tool["preview"] == "date" and tool["output"] == "Wednesday"
+    assert tool["subject"] == "date" and tool["output"] == "Wednesday"
     assert tool["status"] == "completed"
 
 

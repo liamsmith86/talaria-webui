@@ -105,11 +105,13 @@ def test_tool_history_retains_command_and_readable_output(page, live_app):
     page.reload()
     page.get_by_role("link", name="A tool session", exact=True).click()
     card = page.locator(".tool-card")
-    expect(card.locator(".tool-label")).to_have_text("terminal")
+    expect(card.locator(".tool-label")).to_have_text("Ran printf hello")
+    expect(card.locator(".tool-status")).to_have_text("Completed")
     card.locator("summary").click()
     expect(card.get_by_role("region", name="Tool details")).to_have_text("printf hello")
-    result = card.get_by_role("region", name="Tool result")
-    assert json.loads(result.text_content()) == {"output": "hello", "exit_code": 0}
+    expect(card.get_by_role("region", name="Tool result")).to_have_text("hello")
+    expect(card.locator(".tool-facts dt")).to_have_text("exit_code")
+    expect(card.locator(".tool-facts dd")).to_have_text("0")
 
 
 def test_missing_required_capability_explains_unavailable_chat(page):

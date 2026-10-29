@@ -38,7 +38,7 @@ function retainedSize(live) {
   // Only inspect settled candidates, never the active stream on each delta.
   const values = [live.text, live.reasoning, live.userText, live.pendingSteer,
     ...(live.parts || []).map((part) => part.text),
-    ...(live.tools || []).flatMap((tool) => [tool.preview, tool.output])];
+    ...(live.tools || []).flatMap((tool) => [tool.subject, tool.summary, tool.output])];
   return values.reduce((size, value) => size + (typeof value === "string" ? value.length * 2 : 0), 0);
 }
 function publish(sid, live) {
@@ -224,7 +224,7 @@ export function applyEvent(live, event) {
     const tool = {
       id: event.tool_call_id || `tool-${next.tools.length}`,
       name: event.tool || event.name,
-      preview: event.preview || "",
+      subject: event.preview || "",
       status: "running",
       kind: "tool",
     };
@@ -276,7 +276,7 @@ export function applyEvent(live, event) {
         event.preview ||
         next.tools[index]?.name ||
         "",
-      preview: event.summary || event.output_tail || "",
+      summary: event.summary || event.output_tail || "",
       status: type.endsWith("start") ? "running" : event.status || "completed",
     };
     for (const field of [
