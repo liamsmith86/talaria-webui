@@ -67,6 +67,8 @@ async def active_messages(client, sid, *, earliest=None):
 def branch_points(messages):
     if any(not row["owned"] for row in messages):
         return set()  # Native fork cannot copy a different session's active ancestors.
+    # Hermes 0.22 records metadata rows after turns; it never renders or replays them.
+    messages = [row for row in messages if row["role"] != "session_meta"]
     points, user = set(), False
     for index, row in enumerate(messages):
         if row["role"] == "user":
@@ -117,6 +119,11 @@ async def branch_from_response(client, sid, mid, payload):
     # Preview validates that the original turn is still in editable API history.
     before = await preview(client, sid, mid)
     index = next(i for i, row in enumerate(original) if row["id"] == mid)
+    # The copy ends before the next turn; metadata rows after the response stay with it.
+    cut = next(
+        (i for i in range(index + 1, len(original)) if original[i]["role"] != "session_meta"),
+        len(original),
+    )
     result = object_result(
         await client.request(
             "POST",
@@ -133,27 +140,24 @@ async def branch_from_response(client, sid, mid, payload):
         copied = await active_messages(client, child_id)
         if digests(copied) != digests(original) or await preview(client, sid, mid) != before:
             raise APIError(CHANGED, 409)
-        if index + 1 < len(copied):
-            target = copied[index + 1]["id"]
+        if cut < len(copied):
+            target = copied[cut]["id"]
             check = await preview(client, child_id, target)
-            if (
-                check.get("target_id") != target
-                or check.get("message_count") != len(copied) - index - 1
-            ):
+            if check.get("target_id") != target or check.get("message_count") != len(copied) - cut:
                 raise APIError(UNAVAILABLE, 409)
             await client.request(
                 "POST",
                 f"{PREFIX}/sessions/{child_id}/rewind",
                 json={"message_id": target, "revision": check["revision"]},
             )
-        if digests(await active_messages(client, child_id)) != digests(original[: index + 1]):
+        if digests(await active_messages(client, child_id)) != digests(original[:cut]):
             raise APIError(UNAVAILABLE, 409)
         current = object_result(await client.request("GET", f"/api/sessions/{child_id}"))
         return object_result(current.get("session", current))
     except BaseException:
         try:
             remaining = await asyncio.shield(active_messages(client, child_id))
-            expected = copied[: index + 1]
+            expected = copied[:cut]
             # Rewind may retain a hidden compression handoff. Do not delete visible
             # work that another client added to the otherwise disposable copy.
             handoff = (

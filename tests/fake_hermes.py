@@ -119,6 +119,9 @@ class FakeHermes:
             index = next((i for i, row in enumerate(rows) if row["id"] == body["message_id"]), None)
             if index is None:
                 return JSONResponse({"error": "Not found"}, 409)
+            if rows[index]["role"] not in {"user", "assistant"}:
+                # The plugin refuses metadata and tool rows as rewind targets.
+                return JSONResponse({"error": "This message is no longer available."}, 400)
             index = next(i for i in range(index, -1, -1) if rows[i]["role"] == "user")
             revision = str([row["id"] for row in rows])
             if body.get("preview"):

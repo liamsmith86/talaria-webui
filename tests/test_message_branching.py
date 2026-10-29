@@ -48,6 +48,21 @@ async def test_branch_retains_the_complete_tool_turn_and_maps_copied_ids(backend
     assert peer.rewinds == 1
 
 
+async def test_branch_keeps_the_metadata_rows_of_its_response(backend):
+    client, _, peer = backend
+    seed_branch(peer)
+    # Hermes 0.22 records a session_meta row after each turn.
+    peer.messages["original"].insert(4, {"id": 20, "role": "session_meta", "content": ""})
+    peer.messages["original"].append({"id": 21, "role": "session_meta", "content": ""})
+    original = copy.deepcopy(peer.messages["original"])
+    response = await client.post("/api/sessions/original/fork", json={"message_id": 13})
+    assert response.status_code == 201, response.text
+    child = response.json()["id"]
+    assert [row["role"] for row in peer.messages[child]] == [row["role"] for row in original[:5]]
+    assert peer.messages["original"] == original
+    assert peer.rewinds == 1
+
+
 async def test_branch_at_latest_response_needs_no_rewind(backend):
     client, _, peer = backend
     seed_branch(peer)
@@ -84,6 +99,17 @@ async def test_branch_buttons_exclude_archived_history_and_tool_calls(backend):
     peer.messages["original"].insert(
         0, {"id": 1, "role": "assistant", "content": "Archived", "active": False}
     )
+    await client.get("/api/capabilities")
+    response = await client.get("/api/sessions/original/messages")
+    assert {row["id"] for row in response.json()["data"] if row.get("branchable")} == {13, 15}
+
+
+async def test_metadata_rows_after_a_turn_keep_its_reply_branchable(backend):
+    client, _, peer = backend
+    seed_branch(peer)
+    # Hermes 0.22 records a session_meta row after each turn.
+    peer.messages["original"].insert(4, {"id": 20, "role": "session_meta", "content": ""})
+    peer.messages["original"].append({"id": 21, "role": "session_meta", "content": ""})
     await client.get("/api/capabilities")
     response = await client.get("/api/sessions/original/messages")
     assert {row["id"] for row in response.json()["data"] if row.get("branchable")} == {13, 15}
