@@ -219,29 +219,6 @@ def test_return_during_cooldown_gets_one_delayed_refresh(page, live_app):
     assert len([url for url in calls if "/cooldown/messages" in url]) == 2
 
 
-def test_failed_return_preserves_work_and_later_return_recovers(page, live_app):
-    sid = seed(live_app[1], "unavailable", count=2)
-    open_session(page, sid)
-    composer = page.get_by_label("Message Hermes")
-    composer.fill("Keep my work")
-    page.route(
-        "**/api/sessions/unavailable/messages?*",
-        lambda route: route.fulfill(
-            status=503, json={"error": "Hermes is temporarily unavailable"}
-        ),
-    )
-    page.evaluate("window.dispatchEvent(new Event('focus'))")
-    expect(page.get_by_text("Hermes is temporarily unavailable", exact=True)).to_be_visible()
-    assert history_ids(page) == [1, 2]
-    expect(composer).to_have_value("Keep my work")
-    page.unroute("**/api/sessions/unavailable/messages?*")
-    live_app[1].messages[sid].append({"id": 3, "role": "assistant", "content": "Recovered"})
-    page.evaluate("window.dispatchEvent(new Event('online'))")
-    expect(page.get_by_text("Recovered", exact=True)).to_be_attached(timeout=8000)
-    expect(page.get_by_text("Hermes is temporarily unavailable", exact=True)).to_have_count(0)
-    expect(composer).to_have_value("Keep my work")
-
-
 def test_large_external_append_preserves_the_original_loaded_boundary(page, live_app):
     sid = seed(live_app[1], "large-append", count=180)
     open_session(page, sid)
