@@ -3,10 +3,12 @@ import { ToolCode } from "./tool-code.js";
 import { t } from "./i18n.js";
 
 const PREVIEW_LIMIT = 20000;
+// Hermes caps tool output near 50 KB, so parsing a result costs well under a
+// millisecond. Only unusually large payloads stay raw.
+const PARSE_LIMIT = 1000000;
 
 function resultText(text) {
-  // Do not parse large results merely to produce a bounded preview.
-  if (text.length > PREVIEW_LIMIT) return { body: text, facts: [] };
+  if (text.length > PARSE_LIMIT) return { body: text, facts: [] };
   try {
     const value = JSON.parse(text);
     if (!value || typeof value !== "object") return { body: text, facts: [] };
@@ -49,6 +51,6 @@ export function ToolResult({ text, enabled }) {
     </dl>`}
     ${shortened && html`<div class="tool-result-more">
       <small>${t("Preview shortened")}</small>
-      <button class="text-button" onClick=${() => download(text)}>${t("Download full result")}</button>
+      <button class="text-button" onClick=${() => download(body)}>${t("Download full result")}</button>
     </div>`}`;
 }

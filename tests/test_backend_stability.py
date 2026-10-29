@@ -126,6 +126,13 @@ async def test_markdown_export_shows_the_conversation_not_compaction_machinery(e
             "content": "[ASYNC DELEGATION BATCH COMPLETE]",
             "display_kind": "async_delegation_complete",
         },
+        {
+            "id": 13,
+            "role": "user",
+            "display_kind": "steer",
+            "content": "[OUT-OF-BAND USER MESSAGE — delivered once]\nAlso count to six.\n"
+            "[/OUT-OF-BAND USER MESSAGE]",
+        },
         # Some providers reuse call IDs in every turn.
         {"id": 11, "role": "assistant", "content": "", "tool_calls": [call]},
         {"id": 12, "role": "tool", "tool_call_id": "seq", "content": "4 5 6"},
@@ -137,6 +144,7 @@ async def test_markdown_export_shows_the_conversation_not_compaction_machinery(e
     assert "Old tool output cleared" not in body and "CONTEXT COMPACTION" not in body
     assert "Session_meta" not in body
     assert "## Hermes notice\n\n[ASYNC DELEGATION BATCH COMPLETE]" in body
+    assert "## Your guidance\n\nAlso count to six.\n" in body and "OUT-OF-BAND" not in body
     json_export = await client.get("/api/sessions/compacted/export?format=json")
     assert json_export.json()["messages"] == peer.rows["compacted"]
 

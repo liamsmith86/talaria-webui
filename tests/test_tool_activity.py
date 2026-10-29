@@ -1,9 +1,12 @@
 """Tool and reasoning activity reads as one-line steps, grouped between prose."""
 
 import json
+import time
 
 from playwright.sync_api import expect
 
+from .conftest import wait_for_store
+from .fake_hermes import STEER_OPEN
 from .test_conversation_features import seed
 from .test_session_continuity import open_session
 
@@ -396,3 +399,109 @@ def test_long_group_summaries_shorten_with_an_ellipsis(page, live_app):
         """el => [getComputedStyle(el).textOverflow, el.scrollWidth > el.clientWidth,
           el.getBoundingClientRect().right <= el.parentElement.getBoundingClientRect().right]"""
     ) == ["ellipsis", True, True]
+
+
+def steered_turn(peer):
+    sid = seed(peer, "steered")
+    peer.extension = {}
+    peer.sessions[sid]["source"] = "api_server"
+    peer.messages[sid] = [
+        {"id": 1, "role": "user", "content": "Check the build"},
+        {
+            "id": 2,
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [call("t1", "terminal", command="make")],
+        },
+        {"id": 3, **result("t1", {"output": "built", "exit_code": 0})},
+        {
+            "id": 4,
+            "role": "user",
+            "display_kind": "steer",
+            "content": f"{STEER_OPEN}\nAlso run the tests.\n[/OUT-OF-BAND USER MESSAGE]",
+        },
+        {"id": 5, "role": "assistant", "content": "Built and tested."},
+        {"id": 6, "role": "session_meta", "content": ""},
+    ]
+    return sid
+
+
+def test_guidance_shows_inside_the_reply_it_steered(page, live_app):
+    open_session(page, steered_turn(live_app[1]))
+    expect(page.locator(".message.user")).to_have_count(1)
+    reply = page.locator(".message.assistant")
+    expect(reply).to_have_count(1)
+    expect(reply.locator(".guidance")).to_have_text("Your guidance Also run the tests.")
+    expect(page.locator(".conversation-content")).not_to_contain_text("OUT-OF-BAND")
+    page.get_by_role("button", name="Find in session", exact=True).click()
+    page.get_by_label("Find text in session").fill("run the tests")
+    expect(page.locator(".find-count")).to_have_text("1 of 1")
+
+
+def test_regenerating_a_steered_reply_starts_from_its_prompt(page, live_app):
+    sid = steered_turn(live_app[1])
+    page.reload()
+    open_session(page, sid)
+    # Hermes counts guidance as a user turn; the reply's first row leads to the prompt.
+    page.get_by_role("button", name="Regenerate response", exact=True).click()
+    modal = "import('/static/store.js').then(s => s.state.modal?.message?.id)"
+    assert page.evaluate(modal) == 2
+    page.keyboard.press("Escape")
+    page.get_by_role("button", name="Delete turn", exact=True).last.click()
+    assert page.evaluate(modal) == 2
+
+
+def test_guidance_sent_while_working_stays_in_the_saved_reply(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "live-steer")
+    open_session(page, sid)
+    page.get_by_label("Message Hermes").fill("Check the build slowly")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.locator(".message.assistant .message-text")).to_be_visible()
+    page.get_by_label("Message Hermes").fill("Also run the tests.")
+    page.get_by_role("button", name="Send guidance", exact=True).click()
+    guidance = page.locator(".message.assistant .guidance")
+    expect(guidance).to_have_text("Your guidance Also run the tests.")
+    expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_hidden(timeout=20000)
+    # The saved rows replace the live reply once: no second prompt or reply.
+    wait_for_store(page, "s => s.lives[s.active]?.persisted")
+    expect(page.locator(".message.user")).to_have_count(2)
+    expect(page.locator(".message.assistant")).to_have_count(1)
+    expect(guidance).to_have_count(1)
+    page.reload()
+    expect(guidance).to_have_text("Your guidance Also run the tests.")
+    expect(page.locator(".message.user")).to_have_count(2)
+
+
+def test_a_background_result_appears_while_the_session_is_open(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "background")
+    dispatched = {"status": "dispatched", "mode": "background", "delegation_id": "deleg-1"}
+    peer.messages[sid] = [
+        {"id": 1, "role": "user", "content": "Ask a subagent"},
+        {
+            "id": 2,
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [call("d1", "delegate_task", goal="Check")],
+        },
+        {"id": 3, **result("d1", dispatched), "timestamp": time.time()},
+        {"id": 4, "role": "assistant", "content": "Dispatched; I will report back."},
+    ]
+    open_session(page, sid)
+    expect(page.locator(".message.assistant")).to_have_count(1)
+    # Hermes saves the result without a turn; nothing else prompts a refresh.
+    peer.messages[sid].append(
+        {
+            "id": 5,
+            "role": "user",
+            "display_kind": "async_delegation_complete",
+            "display_metadata": {"delegation_id": "deleg-1"},
+            "content": "[ASYNC DELEGATION BATCH COMPLETE] Checked.",
+        }
+    )
+    expect(page.locator(".message.notice")).to_be_visible(timeout=20000)
+    requests = []
+    page.on("request", lambda request: "/messages" in request.url and requests.append(request))
+    page.wait_for_timeout(12000)
+    assert not requests, "Polling continued after the result arrived"

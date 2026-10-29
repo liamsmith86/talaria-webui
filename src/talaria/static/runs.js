@@ -343,6 +343,10 @@ export function applyEvent(live, event) {
     next.statusText = "";
     next.reconnecting = false;
     next.pendingSteer = event.pending_steer;
+    // Guidance that arrived after the last step was never delivered.
+    if (typeof event.pending_steer === "string" && event.pending_steer)
+      next.parts = responseParts(next).filter((part) =>
+        part.kind !== "guidance" || !event.pending_steer.includes(part.text));
     next.needsHistory =
       !(typeof event.output === "string" && event.output) &&
       (live.needsHistory || event.needs_history);
@@ -388,6 +392,11 @@ export async function sendMessage(
       method: "POST",
       body: { input: text },
     });
+    // Hermes saves the guidance after the current step; show it there.
+    const current = state.lives[sid];
+    if (current?.id === live.id && running(sid))
+      publish(sid, { ...current,
+        parts: [...responseParts(current), { kind: "guidance", text: text.trim() }] });
     toast(msg("Guidance sent. Hermes will read it at the next tool boundary."));
     return sid;
   }

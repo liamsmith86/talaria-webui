@@ -106,6 +106,23 @@ def test_failure_outcome_belongs_only_to_its_settled_native_turn(page, live_app)
     expect(statuses).to_have_text(["Finished", "Finished", "Finished"])
 
 
+def test_long_command_output_previews_as_text(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer)
+    output = "\n".join(str(number) for number in range(1, 6001))
+    peer.messages[sid] = rows(json.dumps({"output": output, "exit_code": 0}))
+    open_session(page, sid)
+    card = page.locator(".tool-card")
+    card.locator("summary").click()
+    result = card.get_by_role("region", name="Tool result", exact=True)
+    assert result.evaluate("el => el.textContent").startswith("1\n2\n3\n")
+    expect(card.locator(".tool-facts")).to_contain_text("exit_code")
+    expect(card.get_by_text("Preview shortened", exact=True)).to_be_visible()
+    with page.expect_download() as downloaded:
+        card.get_by_role("button", name="Download full result", exact=True).click()
+    assert Path(downloaded.value.path()).read_text() == output
+
+
 def test_large_result_download_is_complete_literal_and_rendering_stays_bounded(page, live_app):
     peer = live_app[1]
     sid = seed(peer)

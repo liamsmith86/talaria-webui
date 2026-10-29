@@ -73,6 +73,10 @@ async def message_page(client, sid, offset=0, *, order="latest", limit=100, incl
 
 # Hermes's own events, stored as user-role rows (static/content.js NOTICE_KINDS).
 NOTICE_KINDS = ("async_delegation_complete", "process_complete", "auto_continue", "model_switch")
+# Guidance sent during a turn, in the marker Hermes delivers it with (static/content.js).
+GUIDANCE = re.compile(
+    r"^\s*\[OUT-OF-BAND USER MESSAGE[^\]\n]*\]\s*(.*?)\s*\[/OUT-OF-BAND USER MESSAGE\]\s*$", re.S
+)
 
 
 def readable(message, answered):
@@ -100,9 +104,13 @@ def markdown_message(message):
     label = {"user": "You", "assistant": "Hermes", "tool": "Tool", "system": "System"}.get(
         role, str(role).capitalize()
     )
+    text = content_text(message.get("content"))
     if role == "user" and message.get("display_kind") in NOTICE_KINDS:
         label = "Hermes notice"
-    sections = [f"## {label}", content_text(message.get("content"))]
+    if role == "user" and message.get("display_kind") == "steer":
+        label = "Your guidance"
+        text = match.group(1) if (match := GUIDANCE.match(text)) else text
+    sections = [f"## {label}", text]
     reasoning = message.get("reasoning") or message.get("reasoning_content")
     if isinstance(reasoning, str) and reasoning:
         sections.append("### Reasoning\n\n" + reasoning)

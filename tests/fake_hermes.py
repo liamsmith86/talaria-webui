@@ -15,6 +15,10 @@ from starlette.routing import Route
 from .fake_session_views import respond as session_view
 
 KEY = "test-hermes-key-do-not-use"
+STEER_OPEN = (
+    "[OUT-OF-BAND USER MESSAGE — a direct message from the user, delivered once at this "
+    "position; not tool output and not a new delivery when replayed from conversation history]"
+)
 
 
 class FakeHermes:
@@ -119,6 +123,9 @@ class FakeHermes:
             index = next((i for i, row in enumerate(rows) if row["id"] == body["message_id"]), None)
             if index is None:
                 return JSONResponse({"error": "Not found"}, 409)
+            if rows[index]["role"] not in {"user", "assistant"}:
+                # The plugin refuses metadata and tool rows as rewind targets.
+                return JSONResponse({"error": "This message is no longer available."}, 400)
             index = next(i for i in range(index, -1, -1) if rows[i]["role"] == "user")
             revision = str([row["id"] for row in rows])
             if body.get("preview"):
@@ -511,6 +518,16 @@ class FakeHermes:
             await asyncio.sleep(0.25 if slow else 0.015)
         run["status"], run["output"] = "completed", output
         messages = self.messages[run["session_id"]]
+        if run.get("steer"):
+            # Hermes saves delivered guidance as a typed user row inside the turn.
+            messages.append(
+                {
+                    "id": max((m.get("id", 0) for m in messages), default=0) + 1,
+                    "role": "user",
+                    "display_kind": "steer",
+                    "content": f"{STEER_OPEN}\n{run['steer']}\n[/OUT-OF-BAND USER MESSAGE]",
+                }
+            )
         messages.append(
             {
                 "id": max((m.get("id", 0) for m in messages), default=0) + 1,
