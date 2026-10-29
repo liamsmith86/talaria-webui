@@ -348,7 +348,11 @@ function historyItems(history, live, excerpt = false) {
         items.push(item);
         call = item.tools[0];
       }
-      if (call) {
+      if (call?.output !== undefined) {
+        // In-place compaction appends a pruned copy of an old result under the
+        // same call ID. The result displayed in place is the original.
+        call.messageIds.push(message.id);
+      } else if (call) {
         const output = plainContent(message.content);
         call.output = output;
         call.messageIds.push(message.id);
@@ -475,6 +479,16 @@ function historyItems(history, live, excerpt = false) {
     } else turns.push({ ...item, tools: [...item.tools], parts });
   }
   return turns.filter((item) => item.role === "user" || item.parts.length);
+}
+
+// In-place compaction re-inserts the rows it keeps with new IDs, so IDs do not
+// follow display order. Find the turn after the anchor row's display position.
+function nextTurnAfter(rows, items, afterId) {
+  const anchor = rows.findIndex((row) => row?.id === afterId);
+  if (anchor < 0)
+    return items.findIndex((item) => item.role === "user" && Number(item.record?.id) > afterId);
+  const later = new Set(rows.slice(anchor + 1));
+  return items.findIndex((item) => item.role === "user" && later.has(item.record));
 }
 
 export function Conversation({ app, command, onDismissCommand }) {
@@ -630,9 +644,8 @@ export function Conversation({ app, command, onDismissCommand }) {
       parts=${live.parts}
     />`);
   if (command) {
-    const next = commandRunning(command) || command.afterId == null ? -1 : items.findIndex(
-      (item) => item.role === "user" && Number(item.record?.id) > command.afterId,
-    );
+    const next = commandRunning(command) || command.afterId == null
+      ? -1 : nextTurnAfter(app.history, items, command.afterId);
     // A settled reply can still live outside history while reconciliation is
     // pending. Keep its later command below it, and above a subsequent run.
     const position = next >= 0 ? next : commandRunning(command) ||

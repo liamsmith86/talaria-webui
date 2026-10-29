@@ -161,3 +161,33 @@ def test_activity_labels_and_summaries_follow_the_language(page, live_app):
     group.locator("> summary").click()
     expect(group.locator(".reasoning summary")).to_have_text("Überlegung Planning the fix")
     expect(group.locator(".tool-meta").first).to_have_text("Exit-Code 1")
+
+
+def test_compaction_copy_does_not_replace_the_original_result(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "compacted")
+    peer.messages[sid] = [
+        {"id": 5, "role": "user", "content": "Count to three"},
+        {
+            "id": 6,
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [call("seq", "terminal", command="seq 1 3")],
+        },
+        {"id": 3, **result("seq", {"output": "1\n2\n3", "exit_code": 0})},
+        {"id": 4, "role": "assistant", "content": "Printed three lines."},
+        # In-place compaction re-appends the result it pruned under the same call ID.
+        {
+            "id": 7,
+            "role": "tool",
+            "tool_call_id": "seq",
+            "content": "[Old tool output cleared to save context space]",
+        },
+        {"id": 8, "role": "assistant", "content": "[CONTEXT COMPACTION]", "display_kind": "hidden"},
+    ]
+    open_session(page, sid)
+    row = page.locator(".tool-card")
+    expect(row).to_have_count(1)
+    expect(row.locator(".tool-status")).to_have_text("Completed")
+    row.locator("summary").click()
+    expect(row.get_by_role("region", name="Tool result")).to_have_text("1\n2\n3")
