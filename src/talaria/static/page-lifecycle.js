@@ -1,9 +1,47 @@
 import {
   state, openSession, newConversation, refreshSessions, refreshHistory,
-  refreshSessionDetails, navigationVersion, navigationSignal, fail, update,
+  refreshSessionDetails, navigationVersion, navigationSignal, fail, update, beforeHistoryUpdate,
 } from "./store.js";
 import { selectedSession, selectedMessage } from "./session-navigation.js";
 import { running } from "./runs.js";
+import { plainContent } from "./content.js";
+
+const BACKGROUND_WAIT = 30 * 60 * 1000;
+
+// Hermes saves a background subagent's result into an API session without
+// starting a turn. Whether a recent dispatch in this history still awaits it.
+export function pendingDelegation(history, now = Date.now()) {
+  const delivered = new Set();
+  let unnamed = 0;
+  for (const row of history) {
+    if (row?.display_kind !== "async_delegation_complete") continue;
+    const id = row.display_metadata?.delegation_id;
+    if (typeof id === "string" && id) delivered.add(id);
+    else unnamed++;
+  }
+  for (const row of [...history].reverse()) {
+    if (row?.role !== "tool") continue;
+    const text = plainContent(row.content);
+    if (!text.includes('"dispatched"')) continue;
+    let result;
+    try {
+      result = JSON.parse(text);
+    } catch {
+      continue;
+    }
+    if (result?.status !== "dispatched" || result.mode !== "background") continue;
+    const seconds = Number(row.timestamp);
+    if (!Number.isFinite(seconds) || now - seconds * 1000 > BACKGROUND_WAIT) return false;
+    const units = Array.isArray(result.units) ? result.units.map((unit) => unit?.delegation_id)
+      : [result.delegation_id];
+    for (const id of units) {
+      if (delivered.has(id)) continue;
+      if (unnamed > 0) unnamed--;
+      else return true;
+    }
+  }
+  return false;
+}
 
 export function observePage() {
   let timer, pending, stopped = false, queued = false, last = -Infinity, reported = "";
@@ -61,6 +99,14 @@ export function observePage() {
     if (id) openSession(id, null, true, selectedMessage());
     else newConversation(true);
   }
+  // Until a background result arrives, check the open session now and then.
+  let waiting;
+  function awaitBackground() {
+    clearTimeout(waiting);
+    if (!stopped && state.active && pendingDelegation(state.history))
+      waiting = setTimeout(schedule, 10000);
+  }
+  const unwatch = beforeHistoryUpdate(() => queueMicrotask(awaitBackground));
   const restored = (event) => { if (event.persisted) schedule(); };
   window.addEventListener("popstate", navigate);
   window.addEventListener("pageshow", restored);
@@ -70,6 +116,8 @@ export function observePage() {
   return () => {
     stopped = true;
     clearTimeout(timer);
+    clearTimeout(waiting);
+    unwatch();
     pending?.abort();
     window.removeEventListener("popstate", navigate);
     window.removeEventListener("pageshow", restored);

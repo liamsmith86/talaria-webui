@@ -1,6 +1,7 @@
 """Tool and reasoning activity reads as one-line steps, grouped between prose."""
 
 import json
+import time
 
 from playwright.sync_api import expect
 
@@ -470,3 +471,37 @@ def test_guidance_sent_while_working_stays_in_the_saved_reply(page, live_app):
     page.reload()
     expect(guidance).to_have_text("Your guidance Also run the tests.")
     expect(page.locator(".message.user")).to_have_count(2)
+
+
+def test_a_background_result_appears_while_the_session_is_open(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "background")
+    dispatched = {"status": "dispatched", "mode": "background", "delegation_id": "deleg-1"}
+    peer.messages[sid] = [
+        {"id": 1, "role": "user", "content": "Ask a subagent"},
+        {
+            "id": 2,
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [call("d1", "delegate_task", goal="Check")],
+        },
+        {"id": 3, **result("d1", dispatched), "timestamp": time.time()},
+        {"id": 4, "role": "assistant", "content": "Dispatched; I will report back."},
+    ]
+    open_session(page, sid)
+    expect(page.locator(".message.assistant")).to_have_count(1)
+    # Hermes saves the result without a turn; nothing else prompts a refresh.
+    peer.messages[sid].append(
+        {
+            "id": 5,
+            "role": "user",
+            "display_kind": "async_delegation_complete",
+            "display_metadata": {"delegation_id": "deleg-1"},
+            "content": "[ASYNC DELEGATION BATCH COMPLETE] Checked.",
+        }
+    )
+    expect(page.locator(".message.notice")).to_be_visible(timeout=20000)
+    requests = []
+    page.on("request", lambda request: "/messages" in request.url and requests.append(request))
+    page.wait_for_timeout(12000)
+    assert not requests, "Polling continued after the result arrived"
