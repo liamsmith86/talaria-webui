@@ -48,6 +48,30 @@ and `TALARIA_AXE_PATH` pointing to the verified axe-core script. The
 Hermes tests use temporary profiles and a local model simulator; keep production
 sessions and credentials out of tests.
 
+## End-to-end checks
+
+The `e2e` suite uses Talaria the way people do, against a real Hermes gateway
+and model: replies, tool steps, approvals, questions, stopping, guidance,
+editing, branching, sessions, reloads and phone layouts. Each test also checks
+that a reload shows the same conversation. It starts its own gateway with this
+checkout's plugin and a temporary profile, so it never touches your Hermes
+setup.
+
+```sh
+TALARIA_E2E_HERMES=/path/to/hermes-agent OPENROUTER_API_KEY=... \
+  uv run --locked pytest e2e -n 3
+```
+
+`TALARIA_E2E_HERMES` is a Hermes install with `venv/bin/hermes`. The default
+model is `z-ai/glm-5.3-flash` on OpenRouter; a full run costs a few US cents. Set
+`TALARIA_E2E_MODEL` to try another. Screenshots of failures and the gateway log
+go to `TALARIA_E2E_ARTIFACTS`, or a temporary folder.
+
+The model runs real commands in a temporary workspace with your permissions.
+Run the suite as a separate user that has no access to your files or other
+credentials. Model replies vary, so the suite is not part of CI or `check.py`;
+rerun a failure before investigating it.
+
 ## Translations
 
 Wrap English UI text with `t`, `rich`, `msg` or `n`, then extract it:
