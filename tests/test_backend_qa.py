@@ -74,6 +74,16 @@ async def test_session_authority_refusal_explains_how_to_continue(backend):
     assert not peer.runs
 
 
+@pytest.mark.parametrize("status", ["queued", "waiting_for_approval", "completed"])
+async def test_guidance_refused_by_hermes_says_why(backend, status):
+    client, _, peer = backend
+    peer.runs["waiting"] = {"run_id": "waiting", "session_id": "s", "status": status}
+    response = await client.post("/api/runs/waiting/steer", json={"input": "Use tabs"})
+    assert response.status_code == 409
+    assert response.json()["error"] == "Hermes takes guidance only while it is working."
+    assert "steer" not in peer.runs["waiting"]
+
+
 async def test_discarding_a_lost_turn_resolves_exactly_that_admission(backend):
     client, _, peer = backend
     peer.sessions["lost"] = {"id": "lost", "source": "api_server"}

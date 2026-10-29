@@ -427,6 +427,9 @@ class FakeHermes:
                 run["status"] = "running"
                 return JSONResponse({"ok": True})
             if path.endswith("/steer"):
+                if run["status"] != "running":
+                    # Hermes takes guidance only while the run is working.
+                    return JSONResponse({"error": {"code": "run_not_accepting_steer"}}, 409)
                 run["steer"] = body["input"]
                 return JSONResponse({"accepted": True})
             return JSONResponse({k: v for k, v in run.items() if not k.startswith("_")})

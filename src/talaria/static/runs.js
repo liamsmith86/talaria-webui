@@ -388,6 +388,9 @@ export async function sendMessage(
       await answerClarification(sid, live.clarification.request_id, text);
       return sid;
     }
+    // Hermes refuses guidance until the approval is answered.
+    if (live.approval)
+      throw new Error(msg("Answer the approval request before sending guidance."));
     await api(`/runs/${encodeURIComponent(live.id)}/steer`, {
       method: "POST",
       body: { input: text },
