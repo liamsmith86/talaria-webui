@@ -332,6 +332,34 @@ def test_image_draft_history_display_and_download(page, live_app):
     expect(page.locator(".attachment-chip")).to_have_count(0)
 
 
+@pytest.mark.parametrize(
+    ("text", "attached"),
+    [
+        ("Quarterly results\n" + "Revenue grew in every region. " * 170, False),
+        ("image.png", True),
+        ("https://example.test/chart.png", True),
+        ("", True),
+    ],
+)
+def test_pasting_text_with_a_picture_of_it_keeps_the_text(page, text, attached):
+    prevented = page.get_by_label("Message Hermes").evaluate(
+        """(el, [data, text]) => {
+      const transfer = new DataTransfer();
+      const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+      transfer.items.add(new File([bytes], 'image.png', {type: 'image/png'}));
+      if (text) transfer.setData('text/plain', text);
+      const event = new ClipboardEvent('paste', {
+        clipboardData: transfer, bubbles: true, cancelable: true});
+      Object.defineProperty(event, 'clipboardData', {value: transfer});
+      el.dispatchEvent(event);
+      return event.defaultPrevented;
+    }""",
+        [base64.b64encode(png()).decode(), text],
+    )
+    assert prevented is attached
+    expect(page.locator(".attachment-chip")).to_have_count(int(attached))
+
+
 @pytest.mark.parametrize("retained_by_hermes", [True, False])
 def test_pasted_images_recover_an_ambiguous_submission_without_duplication(
     page, live_app, retained_by_hermes

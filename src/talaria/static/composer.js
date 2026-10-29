@@ -23,6 +23,14 @@ import {
 import { sessionReasoning, sessionModel, reasoningLabel } from "./models.js";
 import { t, msg, formatNumber } from "./i18n.js";
 
+// Office, Numbers and LibreOffice put a picture of the selection beside its
+// text. Paste the text unless it only names the copied files or links to the image.
+function pastesText(data, files) {
+  const text = data?.getData("text/plain").trim() || "";
+  const rest = files.reduce((left, file) => left.replace(file.name, ""), text);
+  return !!rest.trim() && !/^https?:\/\/\S+$/.test(text);
+}
+
 export function Composer({
   app,
   model,
@@ -367,7 +375,7 @@ export function Composer({
         }}
         onPaste=${(e) => {
           const files = [...(e.clipboardData?.files || [])];
-          if (files.length) {
+          if (files.length && !pastesText(e.clipboardData, files)) {
             e.preventDefault();
             attach(files);
           }
