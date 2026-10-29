@@ -4,7 +4,7 @@ import { t, formatNumber } from "./i18n.js";
 
 // A row's subject is searched only when it is the call's sole copy of its input.
 const searchable = ".message-text, .tool-content pre, .tool-facts dd, .reasoning .markdown, " +
-  ".tool-label.findable .tool-subject, .notice .markdown";
+  ".tool-label.findable .tool-subject, .notice .markdown, .guidance-text";
 
 function matches(root, query, cache) {
   if (!query || !root) return [];

@@ -16,6 +16,7 @@ import { Markdown } from "./markdown.js";
 import {
   ActivityGroup,
   AgentCard,
+  GuidanceRow,
   Notice,
   ThoughtRow,
   ToolRow,
@@ -32,7 +33,7 @@ import {
   loadOlderMessages,
   update,
 } from "./store.js";
-import { isNotice, plainContent, userMessage } from "./content.js";
+import { guidanceText, isGuidance, isNotice, plainContent, userMessage } from "./content.js";
 import {
   currentImageMessage,
   messageImages,
@@ -54,6 +55,7 @@ function Message({
   reasoning = "",
   images = [],
   record = null,
+  turnRecord = null,
   canChange = false,
   canBranch = false,
   parts = null,
@@ -147,6 +149,9 @@ function Message({
       return html`<div class="tool-stack" key=${entry.key}>${step(entry)}</div>`;
     if (entry.kind === "images")
       return html`<${Images} key=${entry.key} images=${entry.part.images} />`;
+    if (entry.kind === "guidance")
+      return html`<${GuidanceRow} key=${entry.key} text=${entry.part.text}
+        matched=${matchId && String(entry.part.messageId) === String(matchId)} />`;
     return (
       entry.part.text &&
       html`<div class="message-text" key=${entry.key}
@@ -243,7 +248,7 @@ function Message({
                 type: "message-action",
                 action: role === "user" ? "edit" : "regenerate",
                 session: state.active,
-                message: record,
+                message: turnRecord || record,
               },
             })}
         />
@@ -256,7 +261,7 @@ function Message({
                 type: "message-action",
                 action: "delete",
                 session: state.active,
-                message: record,
+                message: turnRecord || record,
               },
             })}
         />`}`}
@@ -420,6 +425,10 @@ function historyItems(history, live, excerpt = false) {
       items.push({ record: message, role: "notice", kind: message.display_kind,
         text: plainContent(message.content), images: [], tools: [], reasoning: "",
         time: message.timestamp, id: message.id || items.length });
+    } else if (isGuidance(message)) {
+      items.push({ record: message, role: "assistant", guidance: guidanceText(message.content),
+        text: "", images: [], tools: [], reasoning: "", time: message.timestamp,
+        id: message.id || items.length });
     } else if (message.role === "user" || message.role === "assistant") {
       const tools = (message.tool_calls || []).map((t, i) => {
         const name = t.function?.name || t.name;
@@ -474,6 +483,7 @@ function historyItems(history, live, excerpt = false) {
       continue;
     }
     const parts = [
+      ...(item.guidance ? [{ kind: "guidance", text: item.guidance, messageId: item.record.id }] : []),
       ...(item.reasoning ? [{ kind: "reasoning", text: item.reasoning }] : []),
       ...(item.text ? [{ kind: "text", text: item.text, messageId: item.record.id }] : []),
       ...(item.images.length ? [{ kind: "images", images: item.images }] : []),
@@ -492,8 +502,10 @@ function historyItems(history, live, excerpt = false) {
       previous.reasoning = [previous.reasoning, item.reasoning]
         .filter(Boolean)
         .join("\n\n");
-      previous.record = item.record;
-    } else turns.push({ ...item, tools: [...item.tools], parts });
+      // Details and branching use the reply's final row. Hermes counts guidance
+      // as a user turn, so regenerate and delete use the turn's first row.
+      if (!item.guidance) previous.record = item.record;
+    } else turns.push({ ...item, tools: [...item.tools], parts, turnRecord: item.record });
   }
   return turns.filter((item) => item.role !== "assistant" || item.parts.length);
 }

@@ -24,7 +24,16 @@ export function plainContent(content) {
 // processes, resumed turns, model changes) as user-role rows of these kinds.
 export const NOTICE_KINDS = ["async_delegation_complete", "process_complete", "auto_continue", "model_switch"];
 export const isNotice = (row) => row?.role === "user" && NOTICE_KINDS.includes(row.display_kind);
-export const userMessage = (row) => row?.role === "user" && !isNotice(row);
+// Guidance sent while Hermes works is delivered inside that turn as a user row,
+// wrapped in a marker the model trusts. It is part of the reply, not a new turn.
+export const isGuidance = (row) => row?.role === "user" && row.display_kind === "steer";
+export const userMessage = (row) => row?.role === "user" && !isNotice(row) && !isGuidance(row);
+const guidanceMarker =
+  /^\s*\[OUT-OF-BAND USER MESSAGE[^\]\n]*\]\s*([\s\S]*?)\s*\[\/OUT-OF-BAND USER MESSAGE\]\s*$/;
+export const guidanceText = (content) => {
+  const text = plainContent(content);
+  return text.match(guidanceMarker)?.[1] ?? text.trim();
+};
 export const numberValue = (v) =>
   typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
 export const count = (v) =>

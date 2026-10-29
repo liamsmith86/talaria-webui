@@ -301,6 +301,14 @@ export function activityRuns(parts) {
   return segments.flatMap((item) => (item.steps && item.tools < 2 ? item.steps : [item]));
 }
 
+// Guidance the user sent while Hermes worked, where the model received it.
+export function GuidanceRow({ text, matched = false }) {
+  return html`<div class="guidance" data-search-target=${matched ? "true" : undefined}>
+    <span class="tool-icon"><${Icon} name="message" size=${14} /></span
+    ><p><span class="tool-verb">${t("Your guidance")}</span> <span class="guidance-text">${text}</span></p>
+  </div>`;
+}
+
 // Hermes's CLI replays its events (content.js NOTICE_KINDS) as one-line
 // notices, never as something the user wrote.
 const notices = {

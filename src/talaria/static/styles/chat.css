@@ -399,9 +399,30 @@
 .tool-card,
 .reasoning,
 .activity,
+.guidance,
 .notice > details {
   font-size: 12.5px;
   color: var(--muted);
+}
+/* Guidance is the reader's own words: shown in full, wrapping, beside the steps. */
+.guidance {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 2px -8px;
+  padding: 4px 8px;
+}
+.guidance > .tool-icon {
+  align-self: center;
+}
+.guidance > p {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.guidance-text {
+  color: var(--text);
 }
 .tool-card > summary,
 .reasoning > summary,
