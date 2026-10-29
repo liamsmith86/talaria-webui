@@ -1,11 +1,20 @@
-"""Keep native branch creation isolated even when its later title write fails."""
+"""Keep native branch creation isolated even when its later title write fails.
+
+Native forks end the original as "branched", which is right for the API's own
+sessions. A session owned by another surface (a CLI, messaging or scheduled
+session) is copied instead: ending it would make that surface start over.
+"""
 
 import asyncio
 
+# A branch ends only the API's own sessions, as native forks do.
+API_SOURCES = {"api_server"}
+
 
 class BranchStore:
-    def __init__(self, db, parent, *, owns_id):
+    def __init__(self, db, parent, *, owns_id, ends_parent=True):
         self.db, self.parent, self.owns_id = db, parent, owns_id
+        self.ends_parent = ends_parent
         self.created = None
         self.end = None
 
@@ -27,7 +36,7 @@ class BranchStore:
 
     def finish(self, succeeded):
         if succeeded:
-            if self.end:
+            if self.end and self.ends_parent:
                 self.db.end_session(*self.end)
         elif self.created and self.owns_id:
             # Never remove a caller-selected ID: native creation is an upsert.
@@ -55,10 +64,10 @@ async def fork_session(adapter, request, db, sid):
     data = await request.json()
     if not isinstance(data, dict):
         raise ValueError("Invalid branch request")
+    source = await asyncio.to_thread(db.get_session, sid) or {}  # Native answers a missing ID.
     try:
         title = data.get("title")
         if title is None:
-            source = await asyncio.to_thread(db.get_session, sid)
             title = await asyncio.to_thread(
                 db.get_next_title_in_lineage, source.get("title") or "fork"
             )
@@ -69,7 +78,12 @@ async def fork_session(adapter, request, db, sid):
         return web.json_response(
             {"error": {"code": "invalid_title", "message": str(exc)}}, status=400
         )
-    store = BranchStore(db, sid, owns_id=not (data.get("id") or data.get("session_id")))
+    store = BranchStore(
+        db,
+        sid,
+        owns_id=not (data.get("id") or data.get("session_id")),
+        ends_parent=source.get("source") in API_SOURCES,
+    )
     succeeded = False
     try:
         response = await handler(BranchAdapter(adapter, store), request)

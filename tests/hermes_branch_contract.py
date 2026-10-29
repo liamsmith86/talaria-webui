@@ -55,6 +55,8 @@ async def main():
                 assert history["session_id"] == sid, history["session_id"]
                 assert db.resolve_resume_session_id(fork["id"]) == fork["id"]
                 assert db.get_session_model_config_value(fork["id"], "_branched_from") == sid
+                # Another app's session is copied: ending it would make Discord start over.
+                assert db.get_session(sid)["end_reason"] is None
                 db.end_session(sid, "gateway_shutdown")
                 assert db.resolve_resume_session_id(sid) == sid
                 assert [m["content"] for m in db.get_messages(sid)] == [
@@ -77,6 +79,8 @@ async def main():
             fork = (await response.json())["session"]
             assert fork["title"] == f"Named original #{number}"
             assert db.resolve_resume_session_id("named-original") == "named-original"
+            # The API's own sessions keep native fork semantics.
+            assert db.get_session("named-original")["end_reason"] == "branched"
         # A rejected custom title must not create an unnamed, unmarked child.
         before = db._read_one("SELECT count(*) AS n FROM sessions")["n"]
         for title in ("Named original #2", "x" * 1000):
@@ -150,7 +154,7 @@ async def verify_failed_branches(client, adapter, db, headers):
     assert db.resolve_resume_session_id("racing-parent") == "racing-parent"
     assert adapter._session_db is db
     assert db.get_session_by_title == lookup and db.create_session == create
-    assert db.get_session("racing-parent")["end_reason"] == "branched"
+    assert db.get_session("racing-parent")["end_reason"] is None
 
 
 async def verify_failed_copy(client, db, headers):

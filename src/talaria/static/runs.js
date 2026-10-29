@@ -29,7 +29,9 @@ import { msg } from "./i18n.js";
 const sources = new Map();
 let recoveryRecords = {};
 let restoration;
-const terminal = new Set(["completed", "failed", "cancelled", "interrupted"]);
+// Hermes holds a turn lost in a restart as "unknown" until someone discards it.
+// Nothing more arrives for it, so the browser settles it as uncertain.
+const terminal = new Set(["completed", "failed", "cancelled", "interrupted", "unknown"]);
 const receiptKey = (sid, requestId) => `run.${sid}.${requestId}`;
 function retainedSize(live) {
   // Conservative UTF-16 payload estimate; shared strings may be counted twice.
@@ -309,9 +311,12 @@ export function applyEvent(live, event) {
     next.approval = null;
     next.status = "running";
   }
+  if (type === "run.queued")
+    next.statusText = msg("Waiting for an earlier response in this conversation.");
   if (type?.startsWith("run.") && terminal.has(type.slice(4))) {
     next.status = type.slice(4);
-    next.outcomeUnknown = event.outcome_unknown === true;
+    next.outcomeUnknown = event.outcome_unknown === true || next.status === "unknown";
+    if (next.status === "unknown") next.uncertain = true;
     if (typeof event.output === "string" && event.output) {
       next.parts = finishText(live, event.output);
       next.text = next.parts
@@ -793,6 +798,7 @@ async function recoverRuns() {
         clarification: terminal.has(status.status)
           ? null : status.clarification || pendingControl(status, "clarify"),
         turnLimitReached: status.status === "failed" && turnLimitReached(status),
+        ...(status.status === "unknown" ? { uncertain: true, outcomeUnknown: true } : {}),
         error: runError(status.status, status),
         usage: status.usage,
         pendingSteer: status.pending_steer,
@@ -844,6 +850,36 @@ export async function stopRun(sid) {
   });
   if (state.lives[sid]?.id === id && running(sid))
     publish(sid, { ...state.lives[sid], status: "stopping" });
+}
+
+// Hermes never runs a discarded turn again; queued turns behind it then continue.
+export async function discardRun(sid) {
+  const live = state.lives[sid];
+  if (live?.status !== "unknown" || live.discarding) return;
+  publish(sid, { ...live, discarding: true });
+  try {
+    const status = await api(`/runs/${encodeURIComponent(live.id)}/discard`, {
+      method: "POST",
+      body: {},
+    });
+    if (state.lives[sid]?.id !== live.id) return;
+    if (typeof status?.status !== "string" || !terminal.has(status.status) ||
+      status.status === "unknown")
+      throw new Error(msg("Hermes could not discard this response. Try again."));
+    const next = {
+      ...applyEvent(state.lives[sid], { ...status, event: `run.${status.status}`, needs_history: true }),
+      uncertain: false,
+      discarding: false,
+      discarded: true,
+    };
+    publish(sid, next);
+    remember();
+    await settle(sid, next);
+  } catch (error) {
+    if (state.lives[sid]?.id === live.id)
+      publish(sid, { ...state.lives[sid], discarding: false });
+    throw error;
+  }
 }
 
 export async function approve(sid, choice) {

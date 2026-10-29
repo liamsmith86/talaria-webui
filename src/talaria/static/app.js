@@ -23,6 +23,8 @@ import {
   refreshModels,
   openSession,
   state,
+  externalSource,
+  canBranch,
 } from "./store.js";
 import { Sidebar } from "./sidebar.js";
 import { Conversation } from "./conversation.js";
@@ -50,6 +52,7 @@ import { observePage } from "./page-lifecycle.js";
 import { Startup } from "./startup.js";
 import { LanguageSelector } from "./language.js";
 import { t, useLanguage } from "./i18n.js";
+import { sourceLabel } from "./content.js";
 
 function Login({ development }) {
   const [password, setPassword] = useState("");
@@ -132,6 +135,8 @@ function App() {
   const demo = app.environment === "demo";
   const commandActivity = useCommandActivity(app);
   const command = commandActivity.current?.session === (app.active || "") ? commandActivity.current : null;
+  const activeSession = app.sessionDetails || app.sessions.find((s) => s.id === app.active);
+  const external = app.active ? externalSource(activeSession) : "";
   const mobile = useMediaQuery("(max-width: 700px)");
   const model = sessionModel(app);
   const [modelOpen, setModelOpen] = useState(false);
@@ -292,6 +297,16 @@ function App() {
             >
               <${Icon} name="back" size=${17} />${t("Back to parent session")}
             </button>
+          </div>`
+        : external
+        ? html`<div class="child-return" role="status">
+            <span>${t("This conversation belongs to {source}. Hermes accepts new messages for it only there.", { source: sourceLabel(external) })}</span>
+            ${canBranch(activeSession) && html`<button
+              class="text-button"
+              onClick=${() => update({ modal: { type: "fork", session: activeSession } })}
+            >
+              <${Icon} name="branch" size=${17} />${t("Continue in a branch")}
+            </button>`}
           </div>`
         : html`<div key="composer-area" class="composer-area">
             <${Composer}

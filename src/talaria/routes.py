@@ -14,7 +14,9 @@ from .hermes import APIError, Hermes, decode_json, identifier, object_result, va
 from .metadata import agent_identity
 from .profiles import connection_url
 from .relay import Relay
-from .transcripts import message_page
+from .transcripts import message_page, session_details
+
+EXTERNAL_BRANCH = "Update the Talaria plugin in Hermes to branch a conversation from another app."
 
 
 async def body(request: Request, limit=1024 * 1024) -> dict:
@@ -318,6 +320,9 @@ async def fork(request: Request):
     except APIError as exc:
         if exc.status != 404:
             raise  # An ambiguous failure must never create a second copy.
+        # Native forks end the original, which restarts a CLI or messaging session.
+        if (await session_details(client, sid)).get("source", "api_server") != "api_server":
+            raise APIError(EXTERNAL_BRANCH, 409) from None
         result = await client.request("POST", f"/api/sessions/{sid}/fork", json=payload)
     return JSONResponse(object_result(result).get("session", result), status_code=201)
 
@@ -419,6 +424,25 @@ async def control(request: Request):
     return JSONResponse(
         await request.app.state.hermes.request("POST", f"/v1/runs/{rid}/{action}", json=payload)
     )
+
+
+async def discard(request: Request):
+    """Acknowledge a turn lost in a Hermes restart. Hermes never runs it again."""
+    rid, hermes = identifier(request.path_params["run_id"]), request.app.state.hermes
+    status = object_result(await hermes.request("GET", f"/v1/runs/{rid}"))
+    if status.get("status") == "unknown":
+        admission, generation = status.get("admission_id"), status.get("execution_generation")
+        if not isinstance(admission, str) or type(generation) is not int:
+            raise APIError("Hermes did not identify the interrupted response.")
+        payload = {"admission_id": admission, "execution_generation": generation}
+        try:
+            await hermes.request("POST", f"/v1/runs/{rid}/resolve-unknown", json=payload)
+        except APIError as exc:
+            # Another client already decided; report the run as Hermes now has it.
+            if exc.status != 409:
+                raise
+        status = object_result(await hermes.request("GET", f"/v1/runs/{rid}"))
+    return JSONResponse(status)
 
 
 async def events(request: Request):

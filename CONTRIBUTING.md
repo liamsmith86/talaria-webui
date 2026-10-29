@@ -87,7 +87,7 @@ used by CI and generate a submission:
 
 ```sh
 git clone https://github.com/NousResearch/hermes-agent.git .local/hermes-catalog
-git -C .local/hermes-catalog checkout 4ec2e50b3cff8c3a1cf43c8675fa2c25d07bde49
+git -C .local/hermes-catalog checkout bf0203a794a07aac3ff764972ab9087baa4e4f4e  # v0.22.5
 UV_EXCLUDE_NEWER="14 days" uv sync --project .local/hermes-catalog --frozen --no-dev --extra sms --python 3.14
 .local/hermes-catalog/.venv/bin/python contrib/plugin_catalog.py --revision HEAD --output .local/plugin-catalog
 ```

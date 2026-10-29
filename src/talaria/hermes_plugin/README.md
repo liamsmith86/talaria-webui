@@ -32,9 +32,11 @@ alone.
   status responses omit their contents and file paths. On Hermes 0.22.1 and
   later, instructions travel in the run request, which Hermes keeps with the
   run in its session database.
-- **Session changes:** Authenticated actions can branch, rewind or compress API
-  sessions. Search includes other sessions visible within the authenticated
-  profile. Session changes use Hermes's storage and active-session protections.
+- **Session changes:** Authenticated actions can rewind or compress API
+  sessions and branch any session. Branching a CLI, messaging or scheduled
+  session copies it into a new API session and leaves the original open. Search
+  includes other sessions visible within the authenticated profile. Session
+  changes use Hermes's storage and active-session protections.
 - **Local storage:** Keeps up to 10,000 response metadata records in
   `$HERMES_HOME/talaria/observations.db`: identifiers, model names, token counts,
   timings and completion status. These records contain no message bodies or

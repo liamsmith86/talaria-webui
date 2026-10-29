@@ -48,6 +48,7 @@ export function sourceLabel(value) {
   const names = {
     api_server: "API",
     cli: "CLI",
+    oneshot: "CLI",
     tui: msg("Terminal"),
     desktop: msg("Desktop"),
     subagent: msg("Subagent"),

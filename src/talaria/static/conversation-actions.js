@@ -1,7 +1,7 @@
 import { html, useEffect, useRef, useState, Icon } from "./lib.js";
 import { Dialog } from "./dialogs.js";
 import { api, request } from "./api.js";
-import { update, pinSession, supports } from "./store.js";
+import { update, pinSession, canBranch } from "./store.js";
 import { running } from "./runs.js";
 import { count, money, numberValue, sourceLabel } from "./content.js";
 import { browserAttachments } from "./attachments.js";
@@ -45,7 +45,7 @@ export function ConversationMenu({ session, onClose, readOnly = false }) {
           html`<button
             class=${type === "delete" ? "danger-text" : ""}
             disabled=${busy ||
-            (type === "fork" && !supports("session_fork")) ||
+            (type === "fork" && !canBranch(session)) ||
             (type === "delete" && running(session.id))}
             onClick=${() => update({ modal: { type, session } })}
           >

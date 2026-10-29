@@ -187,6 +187,7 @@ def create_app(
             Route("/api/runs", routes.start_run, methods=["POST"]),
             Route("/api/runs/{run_id}/events", routes.events),
             Route("/api/runs/{run_id}", routes.run),
+            Route("/api/runs/{run_id}/discard", routes.discard, methods=["POST"]),
             Route("/api/runs/{run_id}/{action}", routes.control, methods=["POST"]),
             Mount(
                 "/static",

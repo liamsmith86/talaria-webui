@@ -172,6 +172,27 @@ async def main():
             _, _, requests = await run(body, "locked")
             assert [r["model"] for r in requests] == ["authority-lock"]
 
+            # API turns are stored as internal notifications; they stay editable, and the
+            # next turn sends only what remains.
+            async with client.get(f"{url}/api/sessions/{sid}/messages", headers=auth) as r:
+                rows = (await r.json())["data"]
+            third = next(m for m in rows if m["role"] == "user" and m["content"] == "Third")
+            path = f"{url}/talaria/v1/sessions/{sid}/rewind"
+            async with client.post(path, json={"message_id": third["id"], "preview": True}) as r:
+                assert r.status == 401
+            async with client.post(
+                path, json={"message_id": third["id"], "preview": True}, headers=auth
+            ) as r:
+                assert r.status == 200, await r.text()
+                preview = await r.json()
+            assert preview["user"]["content"] == "Third", preview
+            confirm = {"message_id": third["id"], "revision": preview["revision"]}
+            async with client.post(path, json=confirm, headers=auth) as r:
+                assert r.status == 200, await r.text()
+            _, _, requests = await run({"session_id": sid, "input": "Rewritten"}, "rewritten")
+            sent = [m["content"] for m in requests[0]["messages"] if m["role"] == "user"]
+            assert "Third" not in sent and sent[-1] == "Rewritten", sent
+
             # Native prompts carry the identifiers Talaria's answers echo back.
             question = {"question": "Which one?", "choices": ["alpha", "beta"]}
             planned.append(tool_call("clarify", {"questions": [question]}))
@@ -241,6 +262,29 @@ async def main():
             _, events, _ = await run(body, "approval", answer_approval)
             settled = next(e for e in events if e["event"] == "approval.settled")
             assert settled["prompt_id"] == events[1]["prompt_id"], events
+
+            # Another app's session takes no API turns; a branch continues it here.
+            db = adapter._ensure_session_db()
+            await asyncio.to_thread(db.create_session, "cli-session", "cli")
+            await asyncio.to_thread(db.append_message, "cli-session", "user", "From the CLI")
+            async with client.get(url + "/v1/capabilities", headers=auth) as r:
+                assert (await r.json())["features"]["run_unknown_resolution"] is True
+            async with client.get(url + "/talaria/v1/capabilities", headers=auth) as r:
+                assert (await r.json())["external_session_copies"] is True
+            refused = {"session_id": "cli-session", "input": "From Talaria"}
+            async with client.post(
+                url + "/talaria/v1/runs", json=refused, headers={**auth, "Idempotency-Key": "cli"}
+            ) as r:
+                assert r.status == 409, await r.text()
+                assert (await r.json())["error"]["code"] == "permission_denied"
+            async with client.post(
+                url + "/talaria/v1/sessions/cli-session/fork", json={}, headers=auth
+            ) as r:
+                assert r.status == 201, await r.text()
+                copy = (await r.json())["session"]
+            assert copy["source"] == "api_server"
+            assert (await asyncio.to_thread(db.get_session, "cli-session"))["end_reason"] is None
+            await run({"session_id": copy["id"], "input": "From Talaria"}, "copy")
     finally:
         await adapter.disconnect()
         await provider_runner.cleanup()

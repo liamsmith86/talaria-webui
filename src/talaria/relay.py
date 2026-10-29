@@ -73,6 +73,9 @@ class Relay:
                         raise APIError("Hermes returned an unreadable live update.")
                     if kind == "replay.truncated":
                         event = {"event": "talaria.reconcile"}
+                    if kind == "run.failed" and event.get("error") == "unknown_execution":
+                        # Hermes keeps this turn queued behind a turn lost in a restart.
+                        continue
                     await channel.publish(event)
                     if kind in TERMINAL_EVENTS:
                         return
@@ -98,6 +101,15 @@ class Relay:
                 if state in TERMINAL:
                     await channel.publish({**status, "event": f"run.{state}"})
                     return
+                if state == "unknown":
+                    # A restart lost this turn. It stays unknown until someone discards it.
+                    await channel.publish({**status, "event": "run.unknown"})
+                    return
+                waited = (last or {}).get("status") == "queued"
+                if state == "queued" and not waited:
+                    await channel.publish({"event": "run.queued"})
+                elif waited and state != "queued":
+                    await channel.publish({"event": "talaria.status", "text": ""})  # It started.
                 await publish_pending(channel, status, last)
                 last = status
             except APIError as exc:
