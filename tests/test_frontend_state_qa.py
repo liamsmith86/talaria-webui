@@ -417,8 +417,11 @@ def test_replaced_event_sources_cannot_mutate_the_current_run(module_page):
             constructor() { sources.push(this); }
             close() { this.closed = true; }
         };
+        const active = store.state.active;
         try {
-            store.update({lives:{'qa-stream':{id:'run-1', status:'running', text:'', tools:[]}}});
+            // Only the session on screen streams.
+            store.update({active:'qa-stream',
+                lives:{'qa-stream':{id:'run-1', status:'running', text:'', tools:[]}}});
             runs.subscribe('qa-stream');
             runs.subscribe('qa-stream');
             const [stale, current] = sources;
@@ -430,7 +433,7 @@ def test_replaced_event_sources_cannot_mutate_the_current_run(module_page):
             const live = store.state.lives['qa-stream'];
             return {text:live.text, reconnecting:live.reconnecting, closed:stale.closed};
         } finally {
-            store.update({lives:{'qa-stream':{status:'completed'}}});
+            store.update({active, lives:{'qa-stream':{status:'completed'}}});
             runs.clearCompletedRun('qa-stream');
             window.EventSource = EventSource;
         }
@@ -600,13 +603,15 @@ def test_restored_active_runs_do_not_duplicate_the_status_snapshot(module_page):
         window.fetch = (url, options) => String(url).endsWith('/api/runs/replay-run')
             ? Promise.resolve(Response.json({status:'running', output:'First'}))
             : fetch(url, options);
+        const active = state.active;
         try {
+            update({active:'qa-replay'});
             await runs.restoreRuns();
             for (const delta of ['First', ' second'])
                 source.onmessage({data:JSON.stringify({event:'message.delta', delta})});
             return state.lives['qa-replay'].text;
         } finally {
-            update({lives:{'qa-replay':{status:'completed'}}});
+            update({active, lives:{'qa-replay':{status:'completed'}}});
             runs.clearCompletedRun('qa-replay');
             window.fetch = fetch;
             window.EventSource = EventSource;

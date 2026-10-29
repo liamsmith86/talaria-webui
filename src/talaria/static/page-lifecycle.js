@@ -3,7 +3,7 @@ import {
   refreshSessionDetails, navigationVersion, navigationSignal, fail, update, beforeHistoryUpdate,
 } from "./store.js";
 import { selectedSession, selectedMessage } from "./session-navigation.js";
-import { followRun, running } from "./runs.js";
+import { followRun, refreshStreams, running } from "./runs.js";
 import { plainContent } from "./content.js";
 import { api } from "./api.js";
 
@@ -132,6 +132,7 @@ export function observePage() {
     }
   }
   const unwatch = beforeHistoryUpdate(() => queueMicrotask(() => {
+    refreshStreams();
     awaitBackground();
     followElsewhere();
   }));
@@ -141,6 +142,7 @@ export function observePage() {
   window.addEventListener("focus", schedule);
   window.addEventListener("online", schedule);
   document.addEventListener("visibilitychange", schedule);
+  document.addEventListener("visibilitychange", refreshStreams);
   return () => {
     stopped = true;
     clearTimeout(timer);
@@ -152,5 +154,6 @@ export function observePage() {
     window.removeEventListener("focus", schedule);
     window.removeEventListener("online", schedule);
     document.removeEventListener("visibilitychange", schedule);
+    document.removeEventListener("visibilitychange", refreshStreams);
   };
 }

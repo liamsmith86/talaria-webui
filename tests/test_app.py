@@ -65,4 +65,10 @@ def test_idempotent_run_and_replay(live_app):
         replay = client.get(f"/api/runs/{rid}/events", headers={"Last-Event-ID": "1"}).text
         assert "id: 1\n" not in replay
         assert '"event":"run.completed"' in replay
+        # A page resumes a parked run where it stopped; a reconnect's own cursor wins.
+        resumed = client.get(f"/api/runs/{rid}/events?after=2").text
+        assert "id: 2\n" not in resumed and "id: 3\n" in resumed
+        cursor = {"Last-Event-ID": "3"}
+        assert "id: 3\n" not in client.get(f"/api/runs/{rid}/events?after=1", headers=cursor).text
+        assert client.get(f"/api/runs/{rid}/events?after=soon").status_code == 400
         assert len(peer.runs) == 1

@@ -12,6 +12,8 @@ export const request = (path, options) => transport
   ? transport.request(path, options) : fetch(apiURL(path), options);
 export const eventSource = (path) => transport
   ? transport.events(path) : new EventSource(apiURL(path));
+// Each network stream holds one of the few connections a browser allows a server.
+export const streamsUseConnections = () => !transport;
 
 let csrf = "";
 export const setCSRF = (value) => {

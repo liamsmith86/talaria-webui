@@ -356,3 +356,65 @@ def test_another_tab_follows_a_running_reply_when_looked_at(page, live_app):
     expect(reply).to_be_visible(timeout=20000)
     expect(other.get_by_role("button", name="Stop response", exact=True)).to_be_hidden()
     expect_one_turn(other)
+
+
+OPEN_STREAMS = """() => {
+  const Native = window.EventSource, open = new Set();
+  window.EventSource = class extends Native {
+    constructor(url) { super(url); open.add(this); }
+    close() { open.delete(this); super.close(); }
+  };
+  window.openStreams = () => [...open].filter((s) => s.readyState !== 2).map((s) => s.url);
+}"""
+
+
+def test_only_the_session_on_screen_streams_its_reply(page, live_app):
+    # A browser allows about six connections per server across all its tabs.
+    peer = live_app[1]
+    page.evaluate(OPEN_STREAMS)
+    for sid in ("parked-first", "parked-second"):
+        open_session(page, seed(peer, sid, count=0))
+        page.get_by_label("Message Hermes").fill("Check the build slowly")
+        page.get_by_role("button", name="Send message", exact=True).click()
+        expect(page.locator(".message.assistant .message-text")).to_be_visible()
+    runs = page.evaluate("""async () => {
+      const {state} = await import('/static/store.js');
+      return [state.lives['parked-first'].id, state.lives['parked-second'].id];
+    }""")
+    streams = page.evaluate("window.openStreams()")
+    assert len(streams) == 1 and runs[1] in streams[0]
+    # Returning resumes after the events this page already showed.
+    open_session(page, "parked-first")
+    page.wait_for_function("run => window.openStreams().join().includes(run)", arg=runs[0])
+    streams = page.evaluate("window.openStreams()")
+    assert len(streams) == 1 and "after=" in streams[0]
+    wait_for_store(page, "s => s.lives['parked-first']?.status === 'completed'")
+    text = page.evaluate(
+        "async () => (await import('/static/store.js')).state.lives['parked-first'].text"
+    )
+    assert text.count("A thoughtful place to start") == 1
+    # The parked reply finishes without being opened.
+    finished = page.locator('a.session-select[href*="session=parked-second"] .session-activity')
+    expect(finished).to_have_attribute("aria-label", "Finished", timeout=20000)
+    page.wait_for_function("() => window.openStreams().length === 0")
+    open_session(page, "parked-second")
+    expect(page.locator(".message.assistant")).to_have_count(1)
+    expect(page.get_by_text("What would you like to explore next?")).to_have_count(1)
+
+
+def test_a_hidden_page_releases_its_stream_and_resumes_when_shown(page, live_app):
+    page.evaluate(OPEN_STREAMS)
+    open_session(page, seed(live_app[1], "hidden-page", count=0))
+    page.get_by_label("Message Hermes").fill("Check the build slowly")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.locator(".message.assistant .message-text")).to_be_visible()
+    shown = """state => {
+      Object.defineProperty(document, 'visibilityState', {value: state, configurable: true});
+      document.dispatchEvent(new Event('visibilitychange'));
+    }"""
+    page.evaluate(shown, "hidden")
+    page.wait_for_function("() => window.openStreams().length === 0")
+    page.evaluate(shown, "visible")
+    page.wait_for_function("() => window.openStreams().some((url) => url.includes('after='))")
+    expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_hidden(timeout=20000)
+    expect(page.get_by_text("What would you like to explore next?")).to_have_count(1)
