@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from playwright.sync_api import expect
 
 
@@ -37,7 +38,9 @@ def test_chat_and_settings(page, live_app):
     assert not errors
 
 
-def test_approval_and_reconnect(page, live_app):
+@pytest.mark.parametrize("native", [False, True], ids=["agent", "session-authority"])
+def test_approval_and_reconnect(page, live_app, native):
+    live_app[1].native_controls = native
     page.get_by_label("Message Hermes").fill("Please test approval")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_role("button", name="Allow once")).to_be_visible()
@@ -48,6 +51,7 @@ def test_approval_and_reconnect(page, live_app):
     expect(page.get_by_role("heading", name="A thoughtful place to start")).to_be_visible()
     assert live_app[1].approvals == 1
     assert len(live_app[1].runs) == 1
+    assert next(iter(live_app[1].runs.values()))["approval_choice"] == "once"
 
 
 def test_mobile(page):

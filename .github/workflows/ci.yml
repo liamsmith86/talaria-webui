@@ -206,7 +206,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: NousResearch/hermes-agent
-          ref: 4ec2e50b3cff8c3a1cf43c8675fa2c25d07bde49
+          ref: bf0203a794a07aac3ff764972ab9087baa4e4f4e # v0.22.5
           path: .local/hermes-catalog
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -227,9 +227,15 @@ jobs:
   hermes:
     needs: lint
     if: inputs.full || inputs.hermes_latest || github.event_name == 'schedule'
-    name: Native Hermes
+    name: Native Hermes (${{ matrix.hermes.name }})
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # Releases cover the oldest supported release and the current stable one,
+        # whose session authority the baseline lacks. Main's lockfile targets 3.14.
+        hermes: ${{ fromJSON((inputs.hermes_latest || github.event_name == 'schedule') && '[{"name":"main","ref":"main","python":"3.14"}]' || '[{"name":"0.21.5","ref":"f97608f178d1ffeca59860195ab7da295f7c8e5f","python":"3.12"},{"name":"v0.22.5","ref":"bf0203a794a07aac3ff764972ab9087baa4e4f4e","python":"3.14"}]') }}
     env:
       HERMES_SOURCE: ${{ github.workspace }}/.local/hermes
       HERMES_DISABLE_LAZY_INSTALLS: '1'
@@ -240,15 +246,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: NousResearch/hermes-agent
-          ref: ${{ (inputs.hermes_latest || github.event_name == 'schedule') && 'main' || 'f97608f178d1ffeca59860195ab7da295f7c8e5f' }}
+          ref: ${{ matrix.hermes.ref }}
           path: .local/hermes
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.12.9'
           checksum: *uv-checksum
-          # Hermes main's lockfile targets 3.14; the release baseline retains 3.12.
-          python-version: ${{ (inputs.hermes_latest || github.event_name == 'schedule') && '3.14' || '3.12' }}
+          python-version: ${{ matrix.hermes.python }}
       - run: uv sync --locked
       - name: Install Hermes from its own lockfile (sms extra supplies aiohttp)
         env:
@@ -258,7 +263,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
-          name: native-hermes
+          name: native-hermes-${{ matrix.hermes.name }}
           path: test-results/
           retention-days: 7
 

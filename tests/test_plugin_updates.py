@@ -325,9 +325,9 @@ def test_worker_uses_owner_environment_without_inheriting_secrets(tmp_path, monk
     from talaria import hermes_owner, plugin_worker
 
     home = tmp_path / "hermes"
-    home.mkdir()
+    home.mkdir(mode=0o755)  # Independent of a umask that allows group writes.
     interpreter = home / "python"
-    interpreter.touch()
+    interpreter.touch(mode=0o755)
     monkeypatch.setenv("SECRET_FOR_ROOT", "private")
     monkeypatch.setattr(plugin_updates.os, "geteuid", lambda: 0)
     monkeypatch.setattr(

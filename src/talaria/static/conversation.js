@@ -15,7 +15,7 @@ import { Clarification } from "./clarification.js";
 import { Markdown } from "./markdown.js";
 import { ToolCode } from "./tool-code.js";
 import { ToolResult } from "./tool-result.js";
-import { approve, retrySubmission, running } from "./runs.js";
+import { approve, discardRun, retrySubmission, running } from "./runs.js";
 import {
   state,
   toast,
@@ -810,11 +810,23 @@ export function Conversation({ app, command, onDismissCommand }) {
             ${live.retrying ? t("Recovering…") : t("Retry submission")}
           </button>`}
         </div>`}
+        ${live?.status === "unknown" &&
+        html`<div class="run-error" role="alert">
+          ${t("Hermes restarted before this response finished. Some actions may already have run, so check them before sending this message again.")}
+          <button
+            class="text-button"
+            title=${t("Hermes will not run it again, and this conversation can continue.")}
+            disabled=${live.discarding}
+            onClick=${() => discardRun(app.active).catch(fail)}
+          >
+            ${live.discarding ? t("Discarding…") : t("Discard and continue")}
+          </button>
+        </div>`}
         ${live?.turnLimitReached &&
         html`<div class="run-notice" role="status">
           ${t("Hermes reached its turn limit. Send another message to continue.")}
         </div>`}
-        ${live?.status === "cancelled" &&
+        ${live?.status === "cancelled" && !live.discarded &&
         html`<div class="run-notice">${t("You stopped this response.")}</div>`}
         ${live?.pendingSteer &&
         html`<div class="run-notice">

@@ -60,8 +60,17 @@ def revision(ids, content):
     return hashlib.sha256(json.dumps([ids, content], separators=(",", ":")).encode()).hexdigest()
 
 
-def rewind_preview(db, sid, message_id):
+def user_turn(row):
     from agent.context_compressor import split_user_originated_turn
+
+    handoff, user = split_user_originated_turn(row)
+    if handoff is None and user is None and row.get("display_kind") == "internal_notification":
+        # Hermes 0.22.1+ stores each API turn's own message this way; its rewind accepts them.
+        return split_user_originated_turn({**row, "display_kind": None})
+    return handoff, user
+
+
+def rewind_preview(db, sid, message_id):
     from agent.memory_manager import sanitize_context
 
     if (db.get_session(sid) or {}).get("source") != "api_server":
@@ -78,14 +87,14 @@ def rewind_preview(db, sid, message_id):
     if index is None or rows[index].get("role") not in {"user", "assistant"}:
         raise ValueError("This message is no longer available to change.")
     target = next(
-        (i for i in range(index, -1, -1) if split_user_originated_turn(rows[i])[1] is not None),
+        (i for i in range(index, -1, -1) if user_turn(rows[i])[1] is not None),
         None,
     )
     if target is None:
         raise ValueError(
             "The original message is in older, compacted history and cannot be changed here."
         )
-    handoff, user = split_user_originated_turn(rows[target])
+    handoff, user = user_turn(rows[target])
     content = user.get("content")
     if isinstance(content, str):
         content = sanitize_context(content).strip()
@@ -94,29 +103,27 @@ def rewind_preview(db, sid, message_id):
             "revision": revision(ids, content),
             "target_id": rows[target]["id"],
             "message_count": len(rows) - target,
-            "turn_count": sum(
-                split_user_originated_turn(row)[1] is not None for row in rows[target:]
-            ),
+            "turn_count": sum(user_turn(row)[1] is not None for row in rows[target:]),
             "user": {"id": rows[target]["id"], "role": "user", "content": content},
         },
         ids,
-        handoff is not None,
+        {
+            "preserve_compaction_handoff": handoff is not None,
+            # Hermes's content check refuses those API-turn rows; the active IDs still pin the turn.
+            "expected_target_content": None
+            if rows[target].get("display_kind") == "internal_notification"
+            else content,
+        },
     )
 
 
 def rewind(db, sid, data):
-    preview, ids, composite = rewind_preview(db, sid, data["message_id"])
+    preview, ids, options = rewind_preview(db, sid, data["message_id"])
     if data.get("preview") is True:
         return preview
     if data.get("revision") != preview["revision"]:
         raise RuntimeError("The session changed. Reopen the action and try again.")
-    result = db.rewind_to_message(
-        sid,
-        preview["target_id"],
-        expected_active_ids=ids,
-        preserve_compaction_handoff=composite,
-        expected_target_content=preview["user"]["content"],
-    )
+    result = db.rewind_to_message(sid, preview["target_id"], expected_active_ids=ids, **options)
     return {"ok": True, "removed": result["rewound_count"]}
 
 
@@ -233,6 +240,8 @@ async def capabilities(adapter, db):
             "live_interactions": context_runs and live_supported(adapter),
             "profile_context": context.public() if context else {},
             "rewind": supports_rewind(db),
+            # Branching a CLI, messaging or scheduled session leaves that session open.
+            "external_session_copies": True,
             "history_search": search_supported(db, adapter),
             "session_activity": activity_supported(adapter),
             "agent": {"name": name},

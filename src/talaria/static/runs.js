@@ -29,7 +29,9 @@ import { msg } from "./i18n.js";
 const sources = new Map();
 let recoveryRecords = {};
 let restoration;
-const terminal = new Set(["completed", "failed", "cancelled", "interrupted"]);
+// Hermes holds a turn lost in a restart as "unknown" until someone discards it.
+// Nothing more arrives for it, so the browser settles it as uncertain.
+const terminal = new Set(["completed", "failed", "cancelled", "interrupted", "unknown"]);
 const receiptKey = (sid, requestId) => `run.${sid}.${requestId}`;
 function retainedSize(live) {
   // Conservative UTF-16 payload estimate; shared strings may be counted twice.
@@ -111,6 +113,20 @@ function turnLimitReached(result) {
     result.turn_exit_reason.startsWith("max_iterations_reached(") &&
     typeof result.output === "string" && !!result.output.trim();
 }
+// Session-authority prompts are answered with their prompt ID and execution generation.
+function nativePrompt(prompt) {
+  return typeof prompt?.prompt_id === "string" && prompt.request_id === undefined
+    ? { ...prompt, request_id: prompt.prompt_id }
+    : prompt;
+}
+function pendingControl(status, kind) {
+  const controls = Array.isArray(status.pending_controls) ? status.pending_controls : [];
+  const prompt = controls.find((item) => item?.kind === kind && typeof item.prompt_id === "string");
+  return prompt ? nativePrompt(prompt) : null;
+}
+const generation = (prompt) =>
+  Number.isInteger(prompt?.execution_generation)
+    ? { execution_generation: prompt.execution_generation } : {};
 function runError(status, result) {
   return result.error || (status === "failed" && !turnLimitReached(result))
     ? errorMessage(result.error, msg("Hermes could not finish this response. Check the model/provider and try again."))
@@ -163,6 +179,16 @@ export function applyEvent(live, event) {
     next.statusText = "";
   }
   if (type === "talaria.clarification.resolved" && live.clarification?.request_id === event.request_id) {
+    next.clarification = null;
+    next.status = "running";
+  }
+  // Hermes 0.22.1+ asks through its session authority, keyed by prompt and generation.
+  if (type === "clarify.request" && typeof event.prompt_id === "string") {
+    next.clarification = nativePrompt(event);
+    next.status = "waiting_for_input";
+    next.statusText = "";
+  }
+  if (type === "clarify.settled" && live.clarification?.request_id === event.prompt_id) {
     next.clarification = null;
     next.status = "running";
   }
@@ -277,17 +303,20 @@ export function applyEvent(live, event) {
     }
   }
   if (type === "approval.request") {
-    next.approval = event;
+    next.approval = nativePrompt(event);
     next.status = "waiting_for_approval";
   }
-  if (type === "approval.responded" && live.approval &&
-    event.request_id === live.approval.request_id) {
+  if ((type === "approval.responded" || type === "approval.settled") && live.approval &&
+    (event.request_id ?? event.prompt_id) === live.approval.request_id) {
     next.approval = null;
     next.status = "running";
   }
+  if (type === "run.queued")
+    next.statusText = msg("Waiting for an earlier response in this conversation.");
   if (type?.startsWith("run.") && terminal.has(type.slice(4))) {
     next.status = type.slice(4);
-    next.outcomeUnknown = event.outcome_unknown === true;
+    next.outcomeUnknown = event.outcome_unknown === true || next.status === "unknown";
+    if (next.status === "unknown") next.uncertain = true;
     if (typeof event.output === "string" && event.output) {
       next.parts = finishText(live, event.output);
       next.text = next.parts
@@ -764,9 +793,12 @@ async function recoverRuns() {
         text: terminal.has(status.status) ? status.output || "" : "",
         tools: [],
         status: status.status,
-        approval: terminal.has(status.status) ? null : status.approval,
-        clarification: terminal.has(status.status) ? null : status.clarification,
+        approval: terminal.has(status.status)
+          ? null : status.approval || pendingControl(status, "approval"),
+        clarification: terminal.has(status.status)
+          ? null : status.clarification || pendingControl(status, "clarify"),
         turnLimitReached: status.status === "failed" && turnLimitReached(status),
+        ...(status.status === "unknown" ? { uncertain: true, outcomeUnknown: true } : {}),
         error: runError(status.status, status),
         usage: status.usage,
         pendingSteer: status.pending_steer,
@@ -820,12 +852,42 @@ export async function stopRun(sid) {
     publish(sid, { ...state.lives[sid], status: "stopping" });
 }
 
+// Hermes never runs a discarded turn again; queued turns behind it then continue.
+export async function discardRun(sid) {
+  const live = state.lives[sid];
+  if (live?.status !== "unknown" || live.discarding) return;
+  publish(sid, { ...live, discarding: true });
+  try {
+    const status = await api(`/runs/${encodeURIComponent(live.id)}/discard`, {
+      method: "POST",
+      body: {},
+    });
+    if (state.lives[sid]?.id !== live.id) return;
+    if (typeof status?.status !== "string" || !terminal.has(status.status) ||
+      status.status === "unknown")
+      throw new Error(msg("Hermes could not discard this response. Try again."));
+    const next = {
+      ...applyEvent(state.lives[sid], { ...status, event: `run.${status.status}`, needs_history: true }),
+      uncertain: false,
+      discarding: false,
+      discarded: true,
+    };
+    publish(sid, next);
+    remember();
+    await settle(sid, next);
+  } catch (error) {
+    if (state.lives[sid]?.id === live.id)
+      publish(sid, { ...state.lives[sid], discarding: false });
+    throw error;
+  }
+}
+
 export async function approve(sid, choice) {
   const live = state.lives[sid];
   if (!live?.id || !live.approval || !running(sid)) return;
   await api(`/runs/${encodeURIComponent(live.id)}/approval`, {
     method: "POST",
-    body: { choice, request_id: live.approval?.request_id },
+    body: { choice, request_id: live.approval?.request_id, ...generation(live.approval) },
   });
   if (
     state.lives[sid]?.id === live.id &&
@@ -845,7 +907,7 @@ export async function answerClarification(sid, requestId, answer) {
   try {
     await api(`/runs/${encodeURIComponent(live.id)}/clarification`, {
       method: "POST",
-      body: { request_id: requestId, answer },
+      body: { request_id: requestId, answer, ...generation(live.clarification) },
     });
     if (state.lives[sid]?.id === live.id && state.lives[sid]?.clarification?.request_id === requestId)
       publish(sid, { ...state.lives[sid], clarification: null, status: "running" });

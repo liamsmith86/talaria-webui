@@ -39,7 +39,7 @@ async def backend(tmp_path):
 @pytest.mark.parametrize("status", [404, 409, 503])
 async def test_fork_only_falls_back_when_the_plugin_endpoint_is_missing(backend, status):
     client, _, peer = backend
-    peer.sessions["original"] = {"id": "original", "source": "discord"}
+    peer.sessions["original"] = {"id": "original", "source": "api_server"}
     peer.messages["original"] = [{"id": 1, "role": "user", "content": "Original"}]
     peer.discovery_overrides["/talaria/v1/sessions/original/fork"] = (
         {"error": "Unavailable"},
@@ -52,11 +52,50 @@ async def test_fork_only_falls_back_when_the_plugin_endpoint_is_missing(backend,
     assert response.status_code == (201 if status == 404 else 409 if status == 409 else 502)
 
 
+async def test_native_fallback_never_ends_another_apps_session(backend):
+    client, _, peer = backend
+    peer.sessions["original"] = {"id": "original", "source": "telegram"}
+    peer.messages["original"] = [{"id": 1, "role": "user", "content": "Original"}]
+    response = await client.post("/api/sessions/original/fork", json={})
+    assert response.status_code == 409
+    assert "Update the Talaria plugin" in response.json()["error"]
+    assert not [c for c in peer.calls if c[0:2] == ("POST", "/api/sessions/original/fork")]
+    assert list(peer.sessions) == ["original"] and "end_reason" not in peer.sessions["original"]
+
+
+async def test_session_authority_refusal_explains_how_to_continue(backend):
+    client, _, peer = backend
+    peer.session_authority = True
+    peer.sessions["cli"] = {"id": "cli", "source": "cli"}
+    peer.messages["cli"] = []
+    response = await client.post("/api/runs", json={"session_id": "cli", "input": "Hello"})
+    assert response.status_code == 409
+    assert "Continue this conversation in a new branch." in response.json()["error"]
+    assert not peer.runs
+
+
+async def test_discarding_a_lost_turn_resolves_exactly_that_admission(backend):
+    client, _, peer = backend
+    peer.sessions["lost"] = {"id": "lost", "source": "api_server"}
+    peer.messages["lost"] = []
+    started = await client.post(
+        "/api/runs", json={"session_id": "lost", "input": "Lost in a restart"}
+    )
+    rid = started.json()["run_id"]
+    await asyncio.wait_for(peer.runs[rid]["_task"], 5)
+    assert (await client.get(f"/api/runs/{rid}")).json()["status"] == "unknown"
+    for _ in range(2):  # A repeated or concurrent discard reports the settled run.
+        response = await client.post(f"/api/runs/{rid}/discard", json={})
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "cancelled"
+    assert peer.messages["lost"][-1]["display_kind"] == "failed_turn"
+
+
 @pytest.mark.parametrize("plugin", [False, True])
 async def test_default_branch_names_are_chosen_by_hermes(backend, plugin):
     client, _, peer = backend
     peer.extension = {"session_fork": True} if plugin else None
-    peer.sessions["original"] = {"id": "original", "title": "Original", "source": "discord"}
+    peer.sessions["original"] = {"id": "original", "title": "Original", "source": "api_server"}
     peer.messages["original"] = []
     for number in (2, 3):
         response = await client.post("/api/sessions/original/fork", json={})
@@ -187,6 +226,8 @@ async def test_unexpected_response_envelopes_do_not_crash(
     backend, method, path, upstream, payload, result
 ):
     client, _, peer = backend
+    # A plugin-less branch first confirms the API owns the session.
+    peer.sessions["example"], peer.messages["example"] = {"id": "example"}, []
     peer.discovery_overrides[upstream] = (result, 200)
     response = await client.request(method, path, json=payload)
     assert response.status_code == 502

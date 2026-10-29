@@ -9,7 +9,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .files import read_text
-from .runtime import inherit_defaults, inherit_options, session_runtime
+from .runtime import (
+    authority_runs,
+    inherit_defaults,
+    inherit_options,
+    session_request,
+    session_runtime,
+)
 
 log = logging.getLogger(__name__)
 MAX_INSTRUCTIONS = 64 * 1024
@@ -149,6 +155,28 @@ def supports_context_runs(adapter):
         return False
 
 
+class CompletedRequest:
+    """The native request with a completed JSON body; everything else is the original."""
+
+    def __init__(self, request, body):
+        self._request, self._body = request, body
+
+    async def json(self, *args, **kwargs):
+        return deepcopy(self._body)
+
+    def __getattr__(self, name):
+        return getattr(self._request, name)
+
+    def __getitem__(self, key):
+        return self._request[key]
+
+    def __setitem__(self, key, value):
+        self._request[key] = value
+
+    def __contains__(self, key):
+        return key in self._request
+
+
 async def start_run(adapter, request):
     from gateway.platforms import api_server, api_server_runs
 
@@ -157,10 +185,22 @@ async def start_run(adapter, request):
         data = await request.json()
         use_default = isinstance(data, dict) and data.get("use_default_model") is True
         live = isinstance(data, dict) and data.get("live_interactions") is True
+        if authority_runs(native):
+            # Hermes's session authority runs the turn without _create_agent, so the
+            # inherited instructions and saved model travel in the body instead. They
+            # become part of its idempotency fingerprint and admission record.
+            if isinstance(data, dict):
+                db = await native._ensure_session_db_async()
+                body = await asyncio.to_thread(
+                    session_request, native, db, data, context.instructions, use_default
+                )
+                request = CompletedRequest(request, body)
+            return await api_server_runs._handle_runs(native, request, _api_server=api_server)
         return await api_server_runs._handle_runs(
             ProfileRunAdapter(native, context, use_default, live), request, _api_server=api_server
         )
 
     # Admission runs on the real adapter: its pending/drain counters remain shared
-    # with standard API runs. The body and idempotency fingerprint are unchanged.
+    # with standard API runs. Without a session authority, the body and idempotency
+    # fingerprint are unchanged.
     return await api_server._admit_api_agent_request(dispatch)(adapter, request)

@@ -607,6 +607,44 @@ def test_child_details_and_read_only_transcript(page, live_app):
     expect(page.locator(".topbar-title")).to_have_text("Design notes")
 
 
+@pytest.mark.parametrize(
+    "authority,plugin",
+    [(False, False), (True, False), (True, True)],
+    ids=["agent", "bare", "plugin"],
+)
+def test_sessions_owned_by_other_apps_continue_in_a_branch(page, live_app, authority, plugin):
+    peer = live_app[1]
+    sid = seed(peer, count=2)
+    peer.session_authority, peer.extension = authority, {} if plugin else None
+    page.reload()
+    page.get_by_role("link", name="Design notes", exact=True).click()
+    expect(page.get_by_text("Message 001", exact=True)).to_be_visible()
+    if not authority:
+        # Before Hermes 0.22.1, API turns may continue any session.
+        expect(page.get_by_label("Message Hermes")).to_be_visible()
+        return
+    expect(page.get_by_label("Message Hermes")).to_have_count(0)
+    notice = "This conversation belongs to CLI. Hermes accepts new messages for it only there."
+    expect(page.get_by_text(notice, exact=True)).to_be_visible()
+    branch = page.get_by_role("button", name="Continue in a branch", exact=True)
+    if not plugin:
+        # A native fork would end the CLI's session, so it is not offered.
+        expect(branch).to_have_count(0)
+        page.get_by_role("button", name="Session options", exact=True).click()
+        expect(page.get_by_role("button", name="Branch session", exact=True)).to_be_disabled()
+        return
+    screenshot(page, "external-session")
+    branch.click()
+    intro = "The branch is a copy you can continue here. The original stays in CLI."
+    expect(page.get_by_text(intro, exact=True)).to_be_visible()
+    page.get_by_role("button", name="Create branch", exact=True).click()
+    expect(page.get_by_text("Session branched", exact=True)).to_be_visible()
+    copy = next(s for s in peer.sessions.values() if s.get("parent_session_id") == sid)
+    assert copy["source"] == "api_server" and "end_reason" not in peer.sessions[sid]
+    send(page, "Continue here")
+    assert [run["session_id"] for run in peer.runs.values()] == [copy["id"]]
+
+
 def test_saved_child_cards_use_native_tool_results_and_explain_missing_links(page, live_app):
     peer = live_app[1]
     sid = seed(peer, count=0)

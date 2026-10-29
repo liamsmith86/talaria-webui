@@ -7,6 +7,7 @@ from playwright.sync_api import expect
 from talaria.relay import Relay
 
 from .test_app import signed_in
+from .test_browser import screenshot
 
 
 def test_duplicate_conversation_names(live_app):
@@ -64,6 +65,27 @@ def test_stop_and_steer(page, live_app):
     expect(page.get_by_text("You stopped this response.")).to_be_visible()
     assert live_app[1].stops == 1
     assert next(iter(live_app[1].runs.values()))["steer"] == "Focus on readability"
+
+
+def test_turn_lost_in_a_hermes_restart_waits_for_a_discard(page, live_app):
+    page.get_by_label("Message Hermes").fill("Lost in a restart")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    notice = page.get_by_text("Hermes restarted before this response finished.")
+    expect(notice).to_be_visible()
+    # Hermes cannot stop or steer it, and would queue a new message behind it.
+    expect(page.get_by_role("button", name="Stop response")).to_have_count(0)
+    page.get_by_label("Message Hermes").fill("Another message")
+    expect(page.get_by_role("button", name="Send message", exact=True)).to_be_disabled()
+    page.reload()
+    expect(notice).to_be_visible()
+    screenshot(page, "lost-turn")
+    page.get_by_role("button", name="Discard and continue", exact=True).click()
+    expect(page.get_by_text("This turn did not complete.", exact=False)).to_be_visible()
+    expect(notice).to_have_count(0)
+    expect(page.get_by_text("You stopped this response.")).to_have_count(0)
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
+    assert [run["status"] for run in live_app[1].runs.values()] == ["cancelled", "completed"]
 
 
 def test_long_history_and_malicious_markdown(page, live_app):

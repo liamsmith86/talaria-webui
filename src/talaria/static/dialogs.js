@@ -30,6 +30,7 @@ import {
   reasoningLabel,
   reasoningOptions,
 } from "./models.js";
+import { sourceLabel } from "./content.js";
 
 export function Dialog({
   title,
@@ -311,6 +312,8 @@ export function SessionDialog({ mode, session, message, onClose }) {
   return html`<${Dialog} title=${message ? t("Branch from here") : t({ rename: msg("Rename session"), delete: msg("Delete session?"), fork: msg("Branch session") }[mode])} onClose=${onClose} dismissible=${!busy}>
     <form onSubmit=${submit}>
       ${message && html`<p class="dialog-intro">${t("Copy this conversation through this response.")}</p>`}
+      ${mode === "fork" && !message && session.source && session.source !== "api_server" &&
+        html`<p class="dialog-intro">${t("The branch is a copy you can continue here. The original stays in {source}.", { source: sourceLabel(session.source) })}</p>`}
       ${mode === "delete" ? html`<p class="dialog-intro">${t("“{title}” will be permanently deleted from Hermes. This cannot be undone.", { title: displayedTitle })}</p>` : html`<label class="field">${t("Session name")}<input value=${displayedTitle} onInput=${(e) => setTitle(e.target.value)} placeholder=${mode === "fork" ? t("Automatic name from Hermes") : ""} maxlength="150" required=${mode !== "fork"} autofocus /></label>`}
       ${error && html`<div class="form-error" role="alert">${t(error)}</div>`}
       <div class="dialog-actions"><button type="button" class="button secondary" disabled=${busy} onClick=${onClose}>${t("Cancel")}</button><button disabled=${busy} class=${`button ${mode === "delete" ? "danger" : "primary"}`}>${busy ? t("Working…") : t({ rename: msg("Save name"), delete: msg("Delete session"), fork: msg("Create branch") }[mode])}</button></div>

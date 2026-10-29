@@ -76,8 +76,8 @@ carrier = (
 )
 carrier_id = db.append_message("compacted", "user", carrier)
 db.append_message("compacted", "assistant", "Compacted reply")
-preview, _, composite = rewind_preview(db, "compacted", carrier_id)
-assert composite and preview["user"]["content"] == "REAL ASK"
+preview, _, options = rewind_preview(db, "compacted", carrier_id)
+assert options["preserve_compaction_handoff"] and preview["user"]["content"] == "REAL ASK"
 rewind(db, "compacted", {"message_id": carrier_id, "revision": preview["revision"]})
 scaffold = db.get_messages("compacted")
 assert len(scaffold) == 1 and scaffold[0]["display_kind"] == "hidden"

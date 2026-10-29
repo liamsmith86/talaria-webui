@@ -558,3 +558,15 @@ export function newConversation(replace = false) {
 export function supports(feature) {
   return state.caps.features?.[feature] === true;
 }
+// Hermes 0.22.1+ takes API turns only in its API's own sessions and group rooms.
+// Its session authority is also what advertises unknown-run resolution.
+export function externalSource(session) {
+  const source = session?.source;
+  return supports("run_unknown_resolution") && typeof source === "string" &&
+    !["", "api_server", "bot_room"].includes(source) ? source : "";
+}
+// A native fork ends the original; only the plugin copies another app's session.
+export function canBranch(session) {
+  return supports("session_fork") && (!session?.source || session.source === "api_server" ||
+    state.caps.talaria_extensions?.external_session_copies === true);
+}

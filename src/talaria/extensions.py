@@ -93,6 +93,7 @@ async def discover(client):
                         "rewind",
                         "history_search",
                         "session_activity",
+                        "external_session_copies",
                     )
                 },
             }

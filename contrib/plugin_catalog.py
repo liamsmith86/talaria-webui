@@ -36,6 +36,9 @@ REQUIRED_CHECKS = {
     "security scan",
     "no core override",
 }
+# Hermes lists imports of its internals as advice, never a refusal. The plugin
+# relies on them for API sessions; the submission discloses this warning.
+INTERNAL_IMPORTS = "private core imports (catalog rule 9:"
 
 
 def git(*args, cwd=ROOT):
@@ -63,7 +66,7 @@ def require_clean_validation(result):
         raise ValueError("The complete current Hermes admission checks must pass.")
     if not all(check.get("ok") is True for check in checks.values()):
         raise ValueError("A Hermes admission check failed.")
-    if report.get("warnings"):
+    if any(not w.startswith(INTERNAL_IMPORTS) for w in report.get("warnings", [])):
         raise ValueError("Review and resolve validation warnings before preparing a submission.")
     if checks["security scan"].get("detail") != "safe":
         raise ValueError("The install scanner must report safe.")
@@ -160,7 +163,10 @@ def check_entry(entry, hermes_source):
         raise ValueError("Catalog entry: " + "; ".join([*errors, *warnings]))
 
 
-def submission(entry, hermes_sha):
+def submission(entry, hermes_sha, warnings=()):
+    advice = "there were no warnings"
+    if warnings:
+        advice = "its only warning lists the plugin's imports of Hermes internals"
     return f"""Add {entry["name"]} {entry["version"]} to the community catalog.
 
 Talaria is an independent web client for Hermes. This entry installs only its
@@ -177,7 +183,8 @@ Disclosures:
 - Reads the enabled Hermes profile's configuration, session database, model
   inventory, identity files, and configured instructions/prefill. A configured
   prefill path can be outside the profile directory.
-- Authenticated actions can branch, rewind, or compress API-session history.
+- Authenticated actions can rewind or compress API-session history and branch
+  any session. Branching another app's session copies it and leaves it open.
 - Chat/compression and inventory refreshes use Hermes's configured providers
   and catalog sources; provider charges can apply.
 - Stores bounded response metadata locally. The plugin has no full-prompt
@@ -196,7 +203,7 @@ Full behavior and storage details: [plugin README]({entry["docs_url"]}).
 Validation: exported exactly `{entry["sha"]}` and ran
 `hermes plugins validate {PLUGIN} --install-deps` (with JSON output)
 using Hermes `{hermes_sha}`. All admission checks passed, the security verdict
-was `safe`, dependency preparation succeeded, and there were no warnings.
+was `safe`, dependency preparation succeeded, and {advice}.
 The entry also passed Hermes's catalog schema validator.
 
 ![Desktop]({entry["screenshots"][0]})
@@ -234,7 +241,9 @@ def main():
     report.update(plugin_revision=sha, hermes_revision=hermes_sha)
     (args.output / "validation.json").write_text(json.dumps(report, indent=2) + "\n")
     (args.output / "plugin-requirements.txt").write_text(requirements)
-    (args.output / "submission.md").write_text(submission(entry, hermes_sha))
+    (args.output / "submission.md").write_text(
+        submission(entry, hermes_sha, report.get("warnings"))
+    )
     print(f"Prepared {entry['name']} {entry['version']} at {sha}: {args.output}")
     print("Publishing this commit and owner-submitted maintainer review are still required.")
 
