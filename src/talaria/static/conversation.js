@@ -336,6 +336,17 @@ function orphanTool(message) {
     tools: [tool], time: message.timestamp, reasoning: "" };
 }
 
+// Hermes saves a turn's steps while it runs, so a page that reconnects to the
+// run also loads some of them as history. Keep the saved prompt and show the
+// rest of that turn once, from the live copy.
+function withoutLiveTurn(history, live) {
+  if (!live || live.persisted || typeof live.baseMessageId !== "number") return history;
+  const prompt = history.findLastIndex((message) => userMessage(message) &&
+    typeof message.id === "number" && message.id > live.baseMessageId &&
+    withoutImagePlaceholders(plainContent(message.content)) === live.userText);
+  return prompt < 0 || prompt === history.length - 1 ? history : history.slice(0, prompt + 1);
+}
+
 function historyItems(history, live, excerpt = false) {
   const currentImage = currentImageMessage(history, live);
   const items = [];
@@ -537,11 +548,17 @@ export function Conversation({ app, command, onDismissCommand }) {
   const [olderBusy, setOlderBusy] = useState(false);
   const live = app.searchWindow ? null : app.lives[app.active];
   const agentName = app.agent?.name?.trim() || "Hermes";
+  // The same history object unless part of it is showing live.
+  const shown = useMemo(
+    () => withoutLiveTurn(app.history, live),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [app.history, live?.persisted, live?.baseMessageId, live?.userText],
+  );
   const items = useMemo(
-    () => historyItems(app.history, live, !!app.searchWindow),
+    () => historyItems(shown, live, !!app.searchWindow),
     // Snapshot live metadata when saved history/image reconciliation changes, not on text deltas.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [app.history, live?.persisted, live?.userImages, app.searchWindow],
+    [shown, live?.persisted, live?.userImages, app.searchWindow],
   );
   const streaming = !app.searchWindow && running(app.active, app.lives);
   useEffect(() => {

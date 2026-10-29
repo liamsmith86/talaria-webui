@@ -267,3 +267,39 @@ def test_focus_preserves_loaded_sidebar_pages(page, live_app):
     page.evaluate("window.dispatchEvent(new Event('focus'))")
     expect(page.get_by_role("link", name="Updated in another client", exact=True)).to_be_attached()
     expect(page.locator(".session-select")).to_have_count(115)
+
+
+def send_with_saved_steps(page, sid, text="Check the build slowly with saved steps"):
+    open_session(page, sid)
+    page.get_by_label("Message Hermes").fill(text)
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.locator(".message.assistant .message-text")).to_be_visible()
+
+
+def expect_one_turn(page):
+    expect(page.locator(".message.user")).to_have_count(2)
+    expect(page.locator(".message.assistant")).to_have_count(1)
+    expect(page.locator(".tool-card")).to_have_count(1)
+
+
+def test_reloading_mid_reply_shows_its_saved_steps_once(page, live_app):
+    send_with_saved_steps(page, seed(live_app[1], "saved-steps"))
+    page.reload()
+    stop = page.get_by_role("button", name="Stop response", exact=True)
+    expect(stop).to_be_visible()
+    wait_for_store(page, "s => s.active === 'saved-steps' && !s.loading && s.history.length")
+    expect_one_turn(page)
+    expect(stop).to_be_hidden(timeout=20000)
+    expect_one_turn(page)
+
+
+def test_returning_to_a_running_session_shows_its_saved_steps_once(page, live_app):
+    peer = live_app[1]
+    seed(peer, "elsewhere")
+    send_with_saved_steps(page, seed(peer, "saved-steps"))
+    open_session(page, "elsewhere")
+    wait_for_store(page, "s => s.active === 'elsewhere' && !s.loading")
+    open_session(page, "saved-steps")
+    wait_for_store(page, "s => s.active === 'saved-steps' && !s.loading")
+    expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_visible()
+    expect_one_turn(page)
