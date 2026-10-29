@@ -107,6 +107,40 @@ async def test_export_uses_canonical_metadata_and_filename(exports, format_):
     assert all(spool.closed for spool in spools)
 
 
+async def test_markdown_export_shows_the_conversation_not_compaction_machinery(exports):
+    client, peer, _ = exports
+    peer.seed("compacted", count=0, title="Compacted")
+    call = {"id": "seq", "function": {"name": "terminal", "arguments": "{}"}}
+    peer.rows["compacted"] = [
+        {"id": 5, "role": "user", "content": "Count to three"},
+        {"id": 6, "role": "assistant", "content": "", "tool_calls": [call]},
+        {"id": 3, "role": "tool", "tool_call_id": "seq", "content": "1 2 3"},
+        {"id": 4, "role": "assistant", "content": "Counted."},
+        {"id": 9, "role": "session_meta", "content": ""},
+        # In-place compaction's pruned copy and summary, then a Hermes event.
+        {"id": 7, "role": "tool", "tool_call_id": "seq", "content": "[Old tool output cleared]"},
+        {"id": 8, "role": "assistant", "content": "[CONTEXT COMPACTION]", "display_kind": "hidden"},
+        {
+            "id": 10,
+            "role": "user",
+            "content": "[ASYNC DELEGATION BATCH COMPLETE]",
+            "display_kind": "async_delegation_complete",
+        },
+        # Some providers reuse call IDs in every turn.
+        {"id": 11, "role": "assistant", "content": "", "tool_calls": [call]},
+        {"id": 12, "role": "tool", "tool_call_id": "seq", "content": "4 5 6"},
+    ]
+    response = await client.get("/api/sessions/compacted/export?format=markdown")
+    assert response.status_code == 200, response.text
+    body = response.text
+    assert "1 2 3" in body and "4 5 6" in body and "Counted." in body
+    assert "Old tool output cleared" not in body and "CONTEXT COMPACTION" not in body
+    assert "Session_meta" not in body
+    assert "## Hermes notice\n\n[ASYNC DELEGATION BATCH COMPLETE]" in body
+    json_export = await client.get("/api/sessions/compacted/export?format=json")
+    assert json_export.json()["messages"] == peer.rows["compacted"]
+
+
 @pytest.mark.parametrize("counts", [False, True])
 @pytest.mark.parametrize("mutation", ["rewind_head", "replace_tail", "append"])
 async def test_history_changes_fail_before_download_headers(exports, counts, mutation):

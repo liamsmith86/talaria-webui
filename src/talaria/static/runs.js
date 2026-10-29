@@ -22,7 +22,7 @@ import {
   placeholderCount,
   withoutImagePlaceholders,
 } from "./attachments.js";
-import { plainContent } from "./content.js";
+import { plainContent, userMessage } from "./content.js";
 import { responseParts, appendText, finishText, interimText } from "./response-parts.js";
 import { msg } from "./i18n.js";
 
@@ -227,6 +227,7 @@ export function applyEvent(live, event) {
       subject: event.preview || "",
       status: "running",
       kind: "tool",
+      startedAt: event.timestamp,
     };
     const index = next.tools.findIndex(
       (t) => t.kind !== "agent" && t.id === tool.id,
@@ -254,6 +255,7 @@ export function applyEvent(live, event) {
         ...next.tools[index],
         status: event.error ? "failed" : "completed",
         duration: event.duration,
+        endedAt: event.timestamp,
         ...(typeof event.preview === "string" ? { output: event.preview } : {}),
       };
   }
@@ -361,7 +363,7 @@ export async function sendMessage(
   // Capture the originating transcript before image storage or submission can
   // yield to navigation into another session.
   const history = sid ? state.history : [];
-  const previousUser = history.findLast((message) => message.role === "user");
+  const previousUser = history.findLast(userMessage);
   if (state.readOnlyParent)
     throw new Error(msg("Return to the parent session to continue."));
   if (Object.hasOwn(recoveryRecords, sid))
@@ -594,7 +596,7 @@ export function responseSaved(history, live) {
       (typeof live.baseMessageId !== "number" || typeof final.id !== "number" ||
         final.id > live.baseMessageId)) return true;
   }
-  const lastUser = history.findLastIndex((message) => message.role === "user");
+  const lastUser = history.findLastIndex(userMessage);
   const user = history[lastUser];
   if (
     user &&

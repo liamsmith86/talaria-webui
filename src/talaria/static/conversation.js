@@ -16,6 +16,7 @@ import { Markdown } from "./markdown.js";
 import {
   ActivityGroup,
   AgentCard,
+  Notice,
   ThoughtRow,
   ToolRow,
   activityRuns,
@@ -31,7 +32,7 @@ import {
   loadOlderMessages,
   update,
 } from "./store.js";
-import { plainContent } from "./content.js";
+import { isNotice, plainContent, userMessage } from "./content.js";
 import {
   currentImageMessage,
   messageImages,
@@ -68,6 +69,10 @@ function Message({
   // Reconciliation adds a native record to the existing live message. Code
   // already shown must not return to deferred highlighting at that boundary.
   const deferHighlight = useRef(!!record).current;
+  // Steps the reader opened. A run that becomes a group mounts its steps
+  // again, so they reopen from here instead of collapsing mid-response.
+  const openSteps = useRef(new Set()).current;
+  const remember = (key) => (open) => (open ? openSteps.add(key) : openSteps.delete(key));
   const toolRows = useMemo(
     () =>
       new Map(
@@ -79,6 +84,8 @@ function Message({
                 key=${key}
                 tool=${tool}
                 matched=${matchId && tool.messageIds?.some((id) => String(id) === String(matchId))}
+                initiallyOpen=${openSteps.has(key)}
+                onToggle=${remember(key)}
               />` }];
         }),
       ),
@@ -102,7 +109,8 @@ function Message({
   function step(entry) {
     if (entry.kind === "reasoning")
       return html`<${ThoughtRow} key=${entry.key} text=${entry.part.text}
-        streaming=${entry.tail} deferHighlight=${deferHighlight} />`;
+        streaming=${entry.tail} deferHighlight=${deferHighlight}
+        initiallyOpen=${openSteps.has(entry.key)} onToggle=${remember(entry.key)} />`;
     return toolRows.get(entry.key)?.node;
   }
   const nextGroups = new Map();
@@ -116,12 +124,16 @@ function Message({
     const signature = run.steps.flatMap((entry) =>
       [entry.key, entry.kind === "reasoning" ? entry.part.text : "", entry.tail]);
     const previous = groups.current.get(key);
+    const groupKey = `group:${key}`;
+    // A new group opens if the reader had opened one of the steps it absorbs.
+    if (!previous && run.steps.some((entry) => openSteps.has(entry.key))) openSteps.add(groupKey);
     const node = previous?.rows === toolRows && previous.working === working &&
       previous.signature.length === signature.length &&
       previous.signature.every((value, index) => value === signature[index])
       ? previous.node
       : html`<div class="tool-stack" key=${key}>
-          <${ActivityGroup} working=${working} steps=${run.steps.map((entry) => ({
+          <${ActivityGroup} working=${working} initiallyOpen=${openSteps.has(groupKey)}
+            onToggle=${remember(groupKey)} steps=${run.steps.map((entry) => ({
             key: entry.key, tool: toolRows.get(entry.key)?.tool, node: step(entry),
           }))} />
         </div>`;
@@ -323,7 +335,7 @@ function historyItems(history, live, excerpt = false) {
   const currentImage = currentImageMessage(history, live);
   const items = [];
   const calls = new Map();
-  const lastUser = history.findLastIndex((m) => m?.role === "user");
+  const lastUser = history.findLastIndex(userMessage);
   const currentChildren =
     withoutImagePlaceholders(plainContent(history[lastUser]?.content)) ===
     live?.userText
@@ -333,7 +345,7 @@ function historyItems(history, live, excerpt = false) {
   // IDs in older turns must not inherit the most recent run's outcome.
   const settledEnd = live?.persisted && live.savedMessageId != null
     ? history.findIndex((m) => m?.id === live.savedMessageId && m.role === "assistant") : -1;
-  const settledStart = history.findLastIndex((m, i) => i < settledEnd && m?.role === "user");
+  const settledStart = history.findLastIndex((m, i) => i < settledEnd && userMessage(m));
   const outcomes = new Map(settledStart >= 0 ? (live.tools || [])
     .filter((t) => t.kind !== "agent" && t.id != null &&
       !["running", "not_reported"].includes(t.status))
@@ -360,7 +372,8 @@ function historyItems(history, live, excerpt = false) {
         if (call.name === "terminal") call.exitCode = terminalExit(output);
         call.status = known?.status ||
           (call.exitCode != null ? (call.exitCode ? "failed" : "completed") : "finished");
-        if (known?.duration !== undefined) call.duration = known.duration;
+        if (known) Object.assign(call, { duration: known.duration, startedAt: known.startedAt,
+          endedAt: known.endedAt });
         if (call.name === "delegate_task" && output.length <= 250000) {
           try {
             const result = JSON.parse(output);
@@ -403,6 +416,10 @@ function historyItems(history, live, excerpt = false) {
           }
         }
       }
+    } else if (isNotice(message)) {
+      items.push({ record: message, role: "notice", kind: message.display_kind,
+        text: plainContent(message.content), images: [], tools: [], reasoning: "",
+        time: message.timestamp, id: message.id || items.length });
     } else if (message.role === "user" || message.role === "assistant") {
       const tools = (message.tool_calls || []).map((t, i) => {
         const name = t.function?.name || t.name;
@@ -452,7 +469,7 @@ function historyItems(history, live, excerpt = false) {
   // assistant turn with ordered parts, retaining the final row's native ID for
   // details and rewind actions. Never change the underlying transcript.
   for (const item of visible) {
-    if (item.role === "user") {
+    if (item.role !== "assistant") {
       turns.push(item);
       continue;
     }
@@ -478,7 +495,7 @@ function historyItems(history, live, excerpt = false) {
       previous.record = item.record;
     } else turns.push({ ...item, tools: [...item.tools], parts });
   }
-  return turns.filter((item) => item.role === "user" || item.parts.length);
+  return turns.filter((item) => item.role !== "assistant" || item.parts.length);
 }
 
 // In-place compaction re-inserts the rows it keeps with new IDs, so IDs do not
@@ -590,8 +607,10 @@ export function Conversation({ app, command, onDismissCommand }) {
     () =>
       !app.loading &&
       items.map(
-        (m) =>
-          html`<${Message}
+        (m) => m.role === "notice"
+          ? html`<${Notice} key=${messageKeys.get(m.id)} kind=${m.kind} text=${m.text} time=${m.time}
+              matched=${app.searchWindow && String(m.record.id) === String(app.searchWindow)} />`
+          : html`<${Message}
             key=${messageKeys.get(m.id)}
             ...${m}
             agentName=${agentName}

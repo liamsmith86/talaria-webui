@@ -251,7 +251,8 @@
     font-size: 11px;
   }
   .tool-content,
-  .reasoning > .markdown {
+  .reasoning > .markdown,
+  .notice > details > .markdown {
     margin-inline-start: 0;
   }
   .error-banner,

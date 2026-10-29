@@ -398,13 +398,15 @@
 }
 .tool-card,
 .reasoning,
-.activity {
+.activity,
+.notice > details {
   font-size: 12.5px;
   color: var(--muted);
 }
 .tool-card > summary,
 .reasoning > summary,
-.activity > summary {
+.activity > summary,
+.notice > details > summary {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -418,29 +420,32 @@
 }
 .tool-card > summary::-webkit-details-marker,
 .reasoning > summary::-webkit-details-marker,
-.activity > summary::-webkit-details-marker {
+.activity > summary::-webkit-details-marker,
+.notice > details > summary::-webkit-details-marker {
   display: none;
 }
 .tool-card > summary:hover,
 .reasoning > summary:hover,
-.activity > summary:hover {
+.activity > summary:hover,
+.notice > details > summary:hover {
   background: var(--surface-hover);
   color: var(--text);
 }
 .tool-card > summary > svg:last-child,
 .reasoning > summary > svg:last-child,
-.activity > summary > svg:last-child {
+.activity > summary > svg:last-child,
+.notice > details > summary > svg:last-child {
   flex: none;
   color: var(--faint);
   transform: rotate(-90deg);
   transition: transform 0.15s, opacity 0.15s;
 }
-:is(.tool-card, .reasoning)[open] > summary > svg:last-child,
+:is(.tool-card, .reasoning, .notice > details)[open] > summary > svg:last-child,
 .activity[open] > summary > svg:last-child {
   transform: none;
 }
 @media (hover: hover) {
-  :is(.tool-card, .reasoning):not([open]) > summary:not(:hover, :focus-visible) > svg:last-child {
+  :is(.tool-card, .reasoning, .notice > details):not([open]) > summary:not(:hover, :focus-visible) > svg:last-child {
     opacity: 0;
   }
 }
@@ -464,6 +469,13 @@
   flex: none;
   white-space: pre;
   font-weight: 550;
+}
+/* A label without a subject, such as a group's tally, shortens itself. */
+.tool-verb:only-child {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tool-subject {
   min-width: 0;
@@ -549,7 +561,8 @@
   color: var(--text);
   overflow-wrap: anywhere;
 }
-.reasoning > .markdown {
+.reasoning > .markdown,
+.notice > details > .markdown {
   margin: 4px 0 10px 24px;
   padding: 0 0 0 12px;
   border-left: 2px solid var(--line);
@@ -562,7 +575,7 @@
   font-size: 1em;
   letter-spacing: 0;
 }
-.reasoning > .markdown p {
+:is(.reasoning, .notice > details) > .markdown p {
   margin-bottom: 10px;
 }
 .activity > summary .tool-label {

@@ -121,20 +121,38 @@ def test_live_group_follows_the_current_step_then_summarizes(page, live_app):
         )
 
     apply(
-        {"event": "tool.started", "tool": "read_file", "tool_call_id": "a", "preview": "app.py"},
-        {"event": "tool.completed", "tool_call_id": "a", "duration": 0.4},
+        {
+            "event": "tool.started",
+            "tool": "read_file",
+            "tool_call_id": "a",
+            "preview": "app.py",
+            "timestamp": 100,
+        },
+        {"event": "tool.completed", "tool_call_id": "a", "duration": 0.4, "timestamp": 100.4},
     )
     expect(page.locator(".tool-card .tool-label")).to_have_text("Read app.py")
     apply(
-        {"event": "tool.started", "tool": "read_file", "tool_call_id": "c", "preview": "app.py"},
-        {"event": "tool.completed", "tool_call_id": "c", "duration": 0.5},
-        {"event": "tool.started", "tool": "terminal", "tool_call_id": "b", "preview": "pytest"},
+        {
+            "event": "tool.started",
+            "tool": "read_file",
+            "tool_call_id": "c",
+            "preview": "app.py",
+            "timestamp": 100.4,
+        },
+        {"event": "tool.completed", "tool_call_id": "c", "duration": 0.5, "timestamp": 100.9},
+        {
+            "event": "tool.started",
+            "tool": "terminal",
+            "tool_call_id": "b",
+            "preview": "pytest",
+            "timestamp": 100.9,
+        },
     )
     group = page.locator(".activity")
     expect(group).to_have_class("activity working")
     expect(group.locator("> summary .tool-label")).to_have_text("Running pytest")
     apply(
-        {"event": "tool.completed", "tool_call_id": "b", "duration": 1.1},
+        {"event": "tool.completed", "tool_call_id": "b", "duration": 1.1, "timestamp": 102},
         {"event": "talaria.reasoning.delta", "block_id": "r", "delta": "Checking the output"},
     )
     expect(group.locator("> summary .tool-label")).to_have_text("Thinking")
@@ -191,3 +209,190 @@ def test_compaction_copy_does_not_replace_the_original_result(page, live_app):
     expect(row.locator(".tool-status")).to_have_text("Completed")
     row.locator("summary").click()
     expect(row.get_by_role("region", name="Tool result")).to_have_text("1\n2\n3")
+
+
+def apply_live(page, sid, *events):
+    page.evaluate(
+        """async ([sid, events]) => {
+          const {state, update} = await import('/static/store.js');
+          const {applyEvent} = await import('/static/runs.js');
+          let live = state.lives[sid] || {id:'live', status:'running', text:'', tools:[],
+            userText:'Go', baseHistoryLength:0};
+          for (const event of events) live = applyEvent(live, event);
+          update({lives: {[sid]: live}});
+        }""",
+        [sid, list(events)],
+    )
+
+
+def started(call_id, tool, preview, at):
+    return {
+        "event": "tool.started",
+        "tool": tool,
+        "tool_call_id": call_id,
+        "preview": preview,
+        "timestamp": at,
+    }
+
+
+def completed(call_id, seconds, at):
+    return {
+        "event": "tool.completed",
+        "tool_call_id": call_id,
+        "duration": seconds,
+        "timestamp": at,
+    }
+
+
+def test_parallel_steps_show_elapsed_time_not_their_sum(page, live_app):
+    sid = seed(live_app[1], "parallel")
+    open_session(page, sid)
+    # Hermes runs read-only tools concurrently: 3s, then three 2s reads at once.
+    apply_live(
+        page,
+        sid,
+        started("run", "terminal", "make", 10),
+        completed("run", 3, 13),
+        *(started(f"read{i}", "read_file", f"f{i}.py", 13) for i in range(3)),
+        *(completed(f"read{i}", 2, 15) for i in range(3)),
+        {"event": "message.delta", "delta": "Done."},
+    )
+    expect(page.locator(".activity > summary .tool-meta")).to_have_text("5s")
+
+
+def test_an_opened_step_stays_open_when_the_run_becomes_a_group(page, live_app):
+    sid = seed(live_app[1], "keep-open")
+    open_session(page, sid)
+    apply_live(
+        page,
+        sid,
+        {"event": "talaria.reasoning.delta", "block_id": "r", "delta": "Planning"},
+        started("a", "read_file", "app.py", 1),
+        completed("a", 0.2, 1.2),
+    )
+    page.locator(".tool-stack > .tool-card > summary").click()
+    expect(page.locator(".tool-card[open]")).to_have_count(1)
+    apply_live(page, sid, started("b", "terminal", "pytest", 2))
+    group = page.locator(".activity")
+    expect(group).to_have_attribute("open", "")
+    expect(group.locator(".activity-steps .tool-card").first).to_have_attribute("open", "")
+    # Once formed, the group keeps the reader's own choice as steps arrive.
+    group.locator("> summary").click()
+    apply_live(page, sid, completed("b", 1, 3), started("c", "terminal", "ruff", 3))
+    expect(group).not_to_have_attribute("open", "")
+
+
+def test_tool_names_never_resolve_through_object_prototypes(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "prototype")
+    peer.messages[sid] = [
+        {"id": 1, "role": "user", "content": "Use the plugin tools"},
+        {
+            "id": 2,
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [call("one", "constructor"), call("two", "toString", path="a.py")],
+        },
+        {"id": 3, **result("one", {"ok": True})},
+        {"id": 4, **result("two", {"ok": True})},
+        {"id": 5, "role": "assistant", "content": "Done."},
+    ]
+    open_session(page, sid)
+    expect(page.get_by_text("Done.", exact=True)).to_be_visible()
+    page.locator(".activity > summary").click()
+    expect(page.locator(".activity-steps .tool-label")).to_have_text(
+        ["Constructor", "ToString a.py"]
+    )
+
+
+def test_find_searches_tool_inputs_shown_only_in_their_row(page, live_app):
+    peer = live_app[1]
+    sid = saved_activity(peer)
+    peer.messages[sid][1]["tool_calls"][0] = call("read", "read_file", path="src/zebra_unique.py")
+    open_session(page, sid)
+    page.get_by_role("button", name="Find in session", exact=True).click()
+    find = page.get_by_label("Find text in session")
+    find.fill("zebra_unique")
+    expect(page.locator(".find-count")).to_have_text("1 of 1")
+    expect(page.locator(".activity")).to_have_attribute("open", "")
+    # Commands keep their copyable block; the row's subject is not a second match.
+    find.fill("pytest -q")
+    expect(page.locator(".find-count")).to_have_text("1 of 2")
+
+
+def test_hermes_events_are_notices_not_user_messages(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "notices")
+    peer.messages[sid] = [
+        {"id": 1, "role": "user", "content": "Delegate the audit"},
+        {"id": 2, "role": "assistant", "content": "Dispatched in the background."},
+        {
+            "id": 3,
+            "role": "user",
+            "display_kind": "async_delegation_complete",
+            "content": "[ASYNC DELEGATION BATCH COMPLETE] The audit found three stale keys.",
+        },
+        {
+            "id": 4,
+            "role": "user",
+            "display_kind": "process_complete",
+            "content": "[Background process finished] make test exited 0",
+        },
+        {"id": 5, "role": "user", "content": "Summarize it"},
+        {"id": 6, "role": "assistant", "content": "Three stale keys."},
+    ]
+    open_session(page, sid)
+    expect(page.locator(".message.user")).to_have_count(2)
+    notices = page.locator(".message.notice")
+    expect(notices.locator("summary .tool-label")).to_have_text(
+        ["Background delegation completed", "Background process finished"]
+    )
+    expect(notices.first.locator(".markdown")).not_to_be_visible()
+    page.get_by_role("button", name="Find in session", exact=True).click()
+    page.get_by_label("Find text in session").fill("stale keys")
+    expect(page.locator(".find-count")).to_have_text("1 of 2")
+    expect(notices.first.locator("details")).to_have_attribute("open", "")
+    page.evaluate("async () => (await import('/static/i18n.js')).setLanguage('de')")
+    expect(notices.first.locator("summary .tool-label")).to_have_text(
+        "Delegierte Hintergrundaufgabe abgeschlossen"
+    )
+
+
+def test_a_notice_after_the_prompt_does_not_unsettle_the_reply(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "notice-settle")
+    peer.messages[sid] = [
+        {"id": 1, "role": "user", "content": "Earlier"},
+        {"id": 2, "role": "assistant", "content": "Earlier reply"},
+    ]
+    open_session(page, sid)
+    page.get_by_label("Message Hermes").fill("Check the build")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_hidden(timeout=10000)
+    # A subagent result lands after the prompt while the reply is saved.
+    rows = peer.messages[sid]
+    rows.insert(
+        -1,
+        {
+            "id": 99,
+            "role": "user",
+            "display_kind": "async_delegation_complete",
+            "content": "[ASYNC DELEGATION BATCH COMPLETE] done",
+        },
+    )
+    page.evaluate("async sid => (await import('/static/store.js')).refreshHistory(sid)", sid)
+    expect(page.locator(".message.notice")).to_have_count(1)
+    expect(page.locator(".message.user")).to_have_count(2)
+    expect(page.locator(".message.assistant")).to_have_count(2)
+
+
+def test_long_group_summaries_shorten_with_an_ellipsis(page, live_app):
+    page.set_viewport_size({"width": 360, "height": 800})
+    open_session(page, saved_activity(live_app[1]))
+    page.evaluate("async () => (await import('/static/i18n.js')).setLanguage('de')")
+    verb = page.locator(".activity > summary .tool-verb")
+    expect(verb).to_have_text("2 Befehle ausgeführt, 1 Datei gelesen und 1-mal gesucht")
+    assert verb.evaluate(
+        """el => [getComputedStyle(el).textOverflow, el.scrollWidth > el.clientWidth,
+          el.getBoundingClientRect().right <= el.parentElement.getBoundingClientRect().right]"""
+    ) == ["ellipsis", True, True]

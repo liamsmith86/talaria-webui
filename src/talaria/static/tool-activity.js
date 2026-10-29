@@ -1,6 +1,6 @@
 // Hermes activity between the agent's prose: one-line tool and reasoning
 // steps, folded into a single group when several tools run in a row.
-import { html, useMemo, useState, Icon } from "./lib.js";
+import { html, useMemo, useState, Icon, humanTime } from "./lib.js";
 import { Markdown } from "./markdown.js";
 import { ToolCode } from "./tool-code.js";
 import { ToolResult } from "./tool-result.js";
@@ -39,6 +39,9 @@ const primaryArgs = {
   delegate_task: "goal", skill_manage: "name",
 };
 const fallbackArgs = ["query", "text", "command", "path", "name", "prompt", "code", "goal"];
+// Tool names come from plugins and MCP servers: never resolve "constructor"
+// or "toString" through a lookup table's prototype.
+const own = (table, key) => (Object.hasOwn(table, key) ? table[key] : undefined);
 
 // One parse of a saved call's arguments: a one-line subject for its row and
 // the readable input shown when the row is expanded.
@@ -52,7 +55,7 @@ export function describeCall(name, args) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     return { subject: "", input: args };
   const key = name === "browser_type" ? null
-    : primaryArgs[name] || fallbackArgs.find((field) => Object.hasOwn(value, field));
+    : own(primaryArgs, name) || fallbackArgs.find((field) => Object.hasOwn(value, field));
   const primary = Array.isArray(value[key]) ? value[key][0] : value[key];
   const subject = ["string", "number"].includes(typeof primary)
     ? String(primary).replace(/\s+/g, " ").trim().slice(0, 300) : "";
@@ -109,9 +112,9 @@ const categories = {
   web_extract: "web", browser_navigate: "web",
 };
 const icons = { command: "terminal", read: "file", edit: "edit", search: "search", web: "globe" };
-const category = (tool) => categories[tool.name] || "other";
-const toolIcon = (tool) =>
-  icons[category(tool)] || (/^(?:browser|web)_/.test(tool.name) ? "globe" : "settings");
+const category = (tool) => own(categories, tool.name) || "other";
+const toolIcon = (tool) => icons[category(tool)] || (tool.name === "delegate_task" ? "branch"
+  : /^(?:browser|web)_/.test(tool.name) ? "globe" : "settings");
 const phrases = {
   command: (count) => n("ran {count} command", "ran {count} commands", count),
   read: (count) => n("read {count} file", "read {count} files", count),
@@ -128,7 +131,7 @@ const elapsed = (seconds) => (numberValue(seconds) >= 0.05 ? duration(seconds) :
 // Keep the verb visible and let only the subject shorten, wherever a
 // translation places it.
 function toolLabel(tool, active) {
-  const pair = labels[tool.name];
+  const pair = own(labels, tool.name);
   const text = tool.subject || "";
   if (pair && (text || !pair[0].includes("{subject}")))
     return rich(pair[active ? 1 : 0], {
@@ -151,8 +154,8 @@ function ToolStatus({ tool }) {
     ><span class="sr-only">${label}</span></span>`;
 }
 
-export function ToolRow({ tool, matched = false }) {
-  const [open, setOpen] = useState(false);
+export function ToolRow({ tool, matched = false, initiallyOpen = false, onToggle }) {
+  const [open, setOpen] = useState(initiallyOpen);
   // A path or query already shown in the row needs no second copy. Commands
   // keep their block for copying and highlighting.
   const input = tool.input ?? tool.subject;
@@ -164,11 +167,15 @@ export function ToolRow({ tool, matched = false }) {
   return html`<details
     class=${`tool-card${tool.status === "running" ? " working" : ""}${matched ? " search-tool-match" : ""}`}
     data-search-target=${matched ? "true" : undefined}
-    onToggle=${(event) => setOpen(event.currentTarget.open)}
+    open=${initiallyOpen}
+    onToggle=${(event) => {
+      setOpen(event.currentTarget.open);
+      onToggle?.(event.currentTarget.open);
+    }}
   >
     <summary>
       <span class="tool-icon"><${Icon} name=${toolIcon(tool)} size=${14} /></span
-      ><span class="tool-label">${toolLabel(tool, tool.status === "running")}</span
+      ><span class=${`tool-label${details ? "" : " findable"}`}>${toolLabel(tool, tool.status === "running")}</span
       >${meta && html`<span class="tool-meta">${meta}</span>`}<${ToolStatus} tool=${tool}
       /><${Icon} name="chevron" size=${14} />
     </summary>
@@ -202,9 +209,10 @@ function thoughtPreview(text) {
   return "";
 }
 
-export function ThoughtRow({ text, streaming = false, deferHighlight = false }) {
+export function ThoughtRow({ text, streaming = false, deferHighlight = false, initiallyOpen = false, onToggle }) {
   const preview = useMemo(() => thoughtPreview(text), [text]);
-  return html`<details class=${`reasoning${streaming ? " working" : ""}`}>
+  return html`<details class=${`reasoning${streaming ? " working" : ""}`} open=${initiallyOpen}
+    onToggle=${(event) => onToggle?.(event.currentTarget.open)}>
     <summary>
       <span class="tool-icon"><${Icon} name="thought" size=${14} /></span
       ><span class="tool-label">${segment(`${streaming ? t("Thinking") : t("Thought")}${preview ? " " : ""}`)}${preview &&
@@ -236,21 +244,30 @@ function summary(counts) {
   return segment(text.charAt(0).toLocaleUpperCase() + text.slice(1));
 }
 
+// Hermes runs read-only tools in parallel, so durations do not add up: use
+// the span from the first start to the last finish Hermes reported.
+function span(tools) {
+  const starts = tools.map((tool) => numberValue(tool.startedAt));
+  const ends = tools.map((tool) => numberValue(tool.endedAt));
+  if (starts.includes(null) || ends.includes(null)) return "";
+  return elapsed(Math.max(...ends) - Math.min(...starts));
+}
+
 // Several consecutive steps. Folded by default; while it is the reply's
 // current activity its header follows the latest step.
-export function ActivityGroup({ steps, working }) {
+export function ActivityGroup({ steps, working, initiallyOpen = false, onToggle }) {
   const tools = steps.flatMap((step) => (step.tool ? [step.tool] : []));
   const last = steps.at(-1);
   const failed = tools.filter(toolFailed).length;
-  const total = tools.every((tool) => numberValue(tool.duration) !== null)
-    ? elapsed(tools.reduce((sum, tool) => sum + tool.duration, 0)) : "";
+  const total = span(tools);
   const counts = tally(tools);
   // The most frequent kind of step represents the group.
   const main = tools.find((tool) => category(tool) ===
     [...counts].sort((a, b) => b[1] - a[1])[0][0]);
   const title = working && last.tool?.status === "running" ? toolLabel(last.tool, true)
     : working && !last.tool ? segment(t("Thinking")) : summary(counts);
-  return html`<details class=${`activity${working ? " working" : ""}`}>
+  return html`<details class=${`activity${working ? " working" : ""}`} open=${initiallyOpen}
+    onToggle=${(event) => onToggle?.(event.currentTarget.open)}>
     <summary>
       <span class="tool-icon">${working
         ? html`<span class="spinner" />`
@@ -282,6 +299,28 @@ export function activityRuns(parts) {
     }
   }
   return segments.flatMap((item) => (item.steps && item.tools < 2 ? item.steps : [item]));
+}
+
+// Hermes's CLI replays its events (content.js NOTICE_KINDS) as one-line
+// notices, never as something the user wrote.
+const notices = {
+  async_delegation_complete: [msg("Background delegation completed"), "branch"],
+  process_complete: [msg("Background process finished"), "terminal"],
+  auto_continue: [msg("Resumed an interrupted turn"), "refresh"],
+  model_switch: [msg("Model changed"), "spark"],
+};
+export function Notice({ kind, text, time, matched = false }) {
+  const [label, icon] = notices[kind];
+  return html`<article class=${`message notice${matched ? " search-match" : ""}`}>
+    <details>
+      <summary>
+        <span class="tool-icon"><${Icon} name=${icon} size=${14} /></span
+        ><span class="tool-label">${segment(t(label))}</span
+        >${time && html`<time class="tool-meta">${humanTime(time)}</time>`}<${Icon} name="chevron" size=${14} />
+      </summary>
+      <${Markdown} text=${text} />
+    </details>
+  </article>`;
 }
 
 export function AgentCard({ tool }) {
