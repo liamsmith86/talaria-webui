@@ -270,7 +270,7 @@ def test_external_release_and_corrupt_journal_fail_closed(deployment):
 
 
 def test_health_requires_the_selected_build(live_app):
-    check_health(live_app[0], None, timeout=0.1, assets=True)
+    check_health(live_app[0], None, assets=True)
     with pytest.raises(DeploymentError, match="health check failed"):
         check_health(live_app[0], B, timeout=0.1)
 

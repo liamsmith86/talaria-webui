@@ -221,6 +221,15 @@ def wait_for_store(page, predicate):
         state.dispose()
 
 
+def wait_in_browser(page, read, timeout=10):
+    """Poll a value that Playwright's route and request events fill in, and return it."""
+    deadline = time.monotonic() + timeout
+    while not (value := read()):
+        assert time.monotonic() < deadline, "Timed out waiting for the browser"
+        page.wait_for_timeout(50)
+    return value
+
+
 def wait_for(read, predicate, timeout=8):
     """Poll a server-side value until it satisfies predicate."""
     deadline = time.monotonic() + timeout

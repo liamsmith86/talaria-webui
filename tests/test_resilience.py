@@ -133,7 +133,7 @@ def test_long_history_and_malicious_markdown(page, live_app):
     assert not page.evaluate("window.compromised")
     assert not any("untrusted.example" in url for url in requested)
     assert page.locator('.markdown a[href^="javascript:"]').count() == 0
-    assert page.locator(".token.string").count() > 0
+    expect(page.locator(".token.string").first).to_be_attached()
 
 
 def test_connection_setup_without_exposing_key(page, live_app):

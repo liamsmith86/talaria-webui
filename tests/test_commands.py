@@ -9,7 +9,7 @@ from playwright.sync_api import expect
 from talaria.app import STATE_UNAVAILABLE
 from talaria.session_state import StateUnavailable
 
-from .conftest import browser_context, wait_for, wait_for_store
+from .conftest import browser_context, wait_for, wait_for_store, wait_in_browser
 from .test_app import signed_in
 from .test_conversation_features import png
 from .test_reply_settlement import start_reply
@@ -369,11 +369,7 @@ def test_a_dismissed_result_stays_dismissed_when_an_older_list_arrives(page, liv
             lists.append((route, route.fetch()))
 
     def held(routes):
-        for _ in range(100):
-            if routes:
-                return routes[0]
-            page.wait_for_timeout(50)
-        raise AssertionError("The request never arrived")
+        return wait_in_browser(page, lambda: routes)[0]
 
     page.route(f"**/api/sessions/{sid}/commands*", hold_first_list)
     page.evaluate("() => { import('/static/store.js').then(s => s.refreshCommands()); }")
@@ -664,8 +660,7 @@ def test_compression_refresh_keeps_chat_visible_until_new_history_arrives(page, 
     page.wait_for_function("() => document.querySelector('.message.notice')")
     expect(page.get_by_text("Original reply remains visible", exact=True)).to_be_visible()
     expect(page.locator(".history-loading")).to_have_count(0)
-    page.wait_for_timeout(100)
-    assert history_requests
+    wait_in_browser(page, lambda: history_requests)
     history_requests[-1].fulfill(
         json={
             "session_id": sid,
@@ -780,6 +775,7 @@ def test_command_acknowledgement_preserves_draft_after_leaving_child_view(page, 
     expect(page.locator(".composer")).to_have_count(0)
     page.get_by_role("button", name="Back to parent session").click()
     composer.fill("New draft written before command acknowledgement")
+    wait_in_browser(page, lambda: admissions)
     assert len(admissions) == 1
     admissions[0].continue_()
     peer.finish_command(session_id=sid, changed=True, text="Context compressed")

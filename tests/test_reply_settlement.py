@@ -5,7 +5,7 @@ import json
 import pytest
 from playwright.sync_api import expect
 
-from .conftest import wait_for_store
+from .conftest import wait_for_store, wait_in_browser
 
 
 def start_reply(page, live_app, text, *, prefix="", reasoning=""):
@@ -139,8 +139,7 @@ def test_finishing_reply_keeps_each_frame_at_the_reading_position(
     finish_reply(page, text)
     wait_for_store(page, "s => s.lives.settling.status === 'completed'")
     # Hold the history response to distinguish terminal layout shifts from replacement flashes.
-    page.wait_for_timeout(100)
-    assert routes
+    wait_in_browser(page, lambda: routes)
     for route in routes:
         route.continue_()
     wait_for_store(page, "s => s.lives.settling.persisted")

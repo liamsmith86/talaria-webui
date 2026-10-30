@@ -1,11 +1,12 @@
 """Tab navigation and refresh through the real UI and a synthetic Hermes server."""
 
+import re
 from urllib.parse import urljoin
 
 import pytest
 from playwright.sync_api import expect
 
-from .conftest import browser_context, wait_for_store
+from .conftest import browser_context, wait_for_store, wait_in_browser
 from .test_conversation_features import seed
 
 
@@ -193,7 +194,7 @@ def test_refresh_compaction_uses_canonical_session_and_carries_draft(page, live_
     page.evaluate("window.stopTrackingHistory()")
     assert len([url for url in requests if "/messages" in url]) == 1
     wait_for_store(page, "s => s.active === 'after-compaction'")
-    assert "session=after-compaction" in page.url
+    expect(page).to_have_url(re.compile("session=after-compaction"))
     expect(page.get_by_label("Message Hermes")).to_have_value("Draft survives external compaction")
     assert history_ids(page) == [1, 2, 3]
 
@@ -206,7 +207,7 @@ def test_delayed_focus_response_cannot_replace_new_navigation(page, live_app):
     page.route("**/api/sessions/slow-old/messages?*", lambda route: routes.append(route))
     page.evaluate("window.dispatchEvent(new Event('focus'))")
     expect(page.get_by_label("Message Hermes")).to_be_visible()
-    page.wait_for_timeout(200)
+    wait_in_browser(page, lambda: routes)
     assert len(routes) == 1
     open_session(page, b)
     for route in routes:
@@ -215,7 +216,7 @@ def test_delayed_focus_response_cannot_replace_new_navigation(page, live_app):
     page.wait_for_timeout(200)
     wait_for_store(page, "s => s.active === 'fast-new'")
     assert history_ids(page) == [1, 2, 3]
-    assert "session=fast-new" in page.url
+    expect(page).to_have_url(re.compile("session=fast-new"))
 
 
 def test_refresh_retries_shifted_offsets_without_duplicates(module_page):
@@ -257,7 +258,7 @@ def test_return_during_cooldown_gets_one_delayed_refresh(page, live_app):
     page.clock.run_for(150)
     wait_for_store(page, "s => s.sessionDetails?.id === 'cooldown'")
     # Wait for the complete batch, then return again inside the cooldown.
-    page.wait_for_timeout(100)
+    wait_in_browser(page, lambda: any("/cooldown/messages" in url for url in calls))
     live_app[1].messages[sid].append({"id": 3, "role": "assistant", "content": "During cooldown"})
     page.evaluate("""() => {
         window.dispatchEvent(new Event('focus'));
