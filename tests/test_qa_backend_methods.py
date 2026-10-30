@@ -65,7 +65,6 @@ async def test_head_uses_the_read_branch_even_with_a_body(method_client, path, p
             {"usage": {"input_tokens": 10}},
         ),
         ("/api/commands", "/talaria/v1/commands", {"commands": []}),
-        ("/api/commands/example", "/talaria/v1/commands/example", {"status": "completed"}),
     ],
 )
 async def test_head_proxy_reads_use_the_same_upstream_get(method_client, path, upstream, result):

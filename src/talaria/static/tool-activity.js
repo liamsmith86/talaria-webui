@@ -310,12 +310,14 @@ export function GuidanceRow({ text, matched = false }) {
 }
 
 // Hermes's CLI replays its events (content.js NOTICE_KINDS) as one-line
-// notices, never as something the user wrote.
+// notices, never as something the user wrote. A compaction Talaria ran is one
+// too: Hermes hides compaction from its transcript, and Talaria records it.
 const notices = {
   async_delegation_complete: [msg("Background delegation completed"), "branch"],
   process_complete: [msg("Background process finished"), "terminal"],
   auto_continue: [msg("Resumed an interrupted turn"), "refresh"],
   model_switch: [msg("Model changed"), "spark"],
+  compaction: [msg("Context compressed"), "context"],
 };
 export function Notice({ kind, text, time, matched = false }) {
   const [label, icon] = notices[kind];

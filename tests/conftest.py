@@ -219,3 +219,14 @@ def wait_for_store(page, predicate):
         page.wait_for_function(predicate, arg=state)
     finally:
         state.dispose()
+
+
+def wait_for(read, predicate, timeout=8):
+    """Poll a server-side value until it satisfies predicate."""
+    deadline = time.monotonic() + timeout
+    while True:
+        value = read()
+        if predicate(value):
+            return value
+        assert time.monotonic() < deadline, f"Timed out; last value: {value!r}"
+        time.sleep(0.1)

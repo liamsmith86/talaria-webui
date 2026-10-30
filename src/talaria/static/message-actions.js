@@ -1,4 +1,4 @@
-import { html, useEffect, useState } from "./lib.js";
+import { html, randomId, readStorage, useEffect, useState, writeStorage } from "./lib.js";
 import { Dialog } from "./dialogs.js";
 import { api } from "./api.js";
 import {
@@ -8,6 +8,7 @@ import {
   refreshSessionDetails,
   refreshSessions,
   toast,
+  update,
 } from "./store.js";
 import { running, sendMessage, clearCompletedRun } from "./runs.js";
 import { sessionModel, sessionReasoning } from "./models.js";
@@ -16,6 +17,7 @@ import {
   withCachedImages,
   messageImages,
   withoutImagePlaceholders,
+  pendingStorage,
 } from "./attachments.js";
 import { Images } from "./images.js";
 import { msg, t, n } from "./i18n.js";
@@ -37,6 +39,25 @@ function rewindDescription(deleting, later) {
     : t("Replace this turn? Removed messages are kept in Hermes’s archived history. This does not undo actions already taken by tools.");
 }
 
+// Once the rewind removes the original turn, the replacement exists nowhere
+// else until Hermes accepts it. Keep it as the session's draft meanwhile, unless
+// someone is already writing one there.
+async function keepDraft(session, text, images) {
+  const key = `draft.${session}`;
+  const pending = await pendingStorage(key).catch(() => null);
+  if (readStorage(key).trim() || pending?.length) return null;
+  const saved = images.filter((image) => image.url)
+    .map(({ name, url }) => ({ id: randomId(), name, url }));
+  writeStorage(key, text);
+  if (saved.length) await pendingStorage(key, saved).catch(() => {});
+  return { key, text, images: saved };
+}
+async function releaseDraft(kept) {
+  if (!kept || readStorage(kept.key) !== kept.text) return;
+  writeStorage(kept.key, "");
+  if (kept.images.length) await pendingStorage(kept.key, null).catch(() => {});
+}
+
 export function MessageAction({ action, session, message, onClose }) {
   const [preview, setPreview] = useState(null);
   const [text, setText] = useState("");
@@ -44,6 +65,7 @@ export function MessageAction({ action, session, message, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [rewound, setRewound] = useState(false);
+  const [kept, setKept] = useState(null);
   const deleting = action === "delete",
     editing = action === "edit";
   const title = deleting
@@ -81,6 +103,7 @@ export function MessageAction({ action, session, message, onClose }) {
     const generation = navigationVersion();
     setBusy(true);
     setError("");
+    let draft = kept;
     try {
       if (session !== state.active || state.readOnlyParent || running(session))
         throw new Error(
@@ -103,6 +126,7 @@ export function MessageAction({ action, session, message, onClose }) {
           },
         });
         setRewound(true);
+        if (!deleting) setKept(draft = await keepDraft(session, text, images));
         clearCompletedRun(session);
         await refreshHistory(session);
         refreshSessionDetails(session).catch(() => {});
@@ -112,12 +136,13 @@ export function MessageAction({ action, session, message, onClose }) {
         throw new Error(
           msg("The session changed. Reopen it before sending this message."),
         );
-      if (!deleting)
+      if (!deleting) {
         await sendMessage(text, sessionModel(state), {
           images,
           reasoning: sessionReasoning(state),
         });
-      else toast(msg("Turn removed from the session."));
+        await releaseDraft(draft);
+      } else toast(msg("Turn removed from the session."));
       onClose();
     } catch (e) {
       setError(e.message);
@@ -125,7 +150,12 @@ export function MessageAction({ action, session, message, onClose }) {
       setBusy(false);
     }
   }
-  return html`<${Dialog} title=${title} onClose=${onClose} dismissible=${!busy}>
+  // Closing before the message is sent leaves it in the message box.
+  function close() {
+    if (kept) update({ restoredDraft: kept });
+    onClose();
+  }
+  return html`<${Dialog} title=${title} onClose=${close} dismissible=${!busy}>
     <form onSubmit=${confirm}>
       ${
         preview
@@ -143,7 +173,7 @@ export function MessageAction({ action, session, message, onClose }) {
       ${editing && images.length > 0 && html`<${Images} images=${images} />`}
       ${missingImages && html`<p class="form-error" role="alert">${t("The original images are not available to resend. Your session has not been changed.")}</p>`}
       ${error && html`<p class="form-error" role="alert">${t(error)}</p>`}
-      <div class="dialog-actions"><button type="button" class="button secondary" disabled=${busy} onClick=${onClose}>${rewound ? t("Close") : t("Cancel")}</button>
+      <div class="dialog-actions"><button type="button" class="button secondary" disabled=${busy} onClick=${close}>${rewound ? t("Close") : t("Cancel")}</button>
         <button class=${`button ${deleting ? "danger" : "primary"}`} disabled=${busy || !preview || missingImages || (!deleting && !text.trim() && !images.length)}>${busy ? t("Working…") : rewound && !deleting ? t("Send message") : title}</button></div>
     </form>
   </${Dialog}>`;

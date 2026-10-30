@@ -17,7 +17,7 @@ def test_http_origin_supports_dialogs_images_messages_and_commands(browser, live
     origin = address.replace("127.0.0.1", hostname)
     catalog = [*CATALOG, {"name": "help", "aliases": [], "mode": "web", "description": "Commands"}]
     peer.extension = {"commands": True}
-    peer.discovery_overrides["/talaria/v1/commands"] = ({"commands": catalog}, 200)
+    peer.command_catalog = catalog
     context = browser.new_context(viewport={"width": 1440, "height": 960})
     errors = capture_browser_errors(context)
 
@@ -66,23 +66,11 @@ def test_http_origin_supports_dialogs_images_messages_and_commands(browser, live
         posted = []
 
         def command(route):
-            if route.request.method == "GET":
-                route.fulfill(json={"commands": catalog})
-            else:
+            if route.request.method == "POST":
                 posted.append(route.request.post_data_json)
-                route.fulfill(json={"status": "running"})
+            route.fallback()
 
         page.route("**/api/commands", command)
-        page.route(
-            "**/api/commands/*",
-            lambda route: route.fulfill(
-                json={
-                    "status": "completed",
-                    "session_id": next(iter(peer.sessions)),
-                    "text": "Compressed.",
-                }
-            ),
-        )
         composer.fill("/help")
         expect(page.get_by_role("option", name="/help Commands")).to_be_visible()
         page.get_by_role("button", name="Send message", exact=True).click()
@@ -91,6 +79,8 @@ def test_http_origin_supports_dialogs_images_messages_and_commands(browser, live
         composer.fill("/compress")
         expect(page.get_by_role("option").first).to_contain_text("/compress")
         page.get_by_role("button", name="Send message", exact=True).click()
+        expect(page.locator(".command-card")).to_contain_text("Compressing context…")
+        peer.finish_command(session_id=next(iter(peer.sessions)), text="Compressed.")
         expect(page.locator(".command-card")).to_contain_text("Compressed.")
         assert len(posted) == 1
         assert len(peer.runs) == 1

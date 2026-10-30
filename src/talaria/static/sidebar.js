@@ -18,12 +18,14 @@ import {
   fail,
 } from "./store.js";
 import { SessionSearch } from "./session-search.js";
-import { activityLabel, activityStatus, useSessionActivity } from "./session-activity.js";
+import { activityLabel, activityStatus } from "./session-activity.js";
 import { sourceLabel } from "./content.js";
 import { readinessLabel } from "./readiness.js";
 import { ProfileSwitch } from "./profiles.js";
 import { sessionURL } from "./session-navigation.js";
 import { t, msg, useLanguage } from "./i18n.js";
+
+const NONE = {};
 
 function groupName(session, day) {
   const now = new Date(day);
@@ -67,8 +69,7 @@ export function Sidebar({ app }) {
       )
       .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true));
   }, [app.sessions, query]);
-  const activity = useSessionActivity(app.connected && app.caps.talaria_extensions?.session_activity &&
-    (mobile ? app.sidebar : !app.sidebarCollapsed));
+  const activity = app.connected && app.caps.talaria_extensions?.session_activity ? app.activity : NONE;
   const liveKey = JSON.stringify([...new Set([...Object.keys(activity), ...Object.keys(app.lives)])]
     .sort().map((id) => {
       const live = Object.hasOwn(app.lives, id) ? app.lives[id] : null;

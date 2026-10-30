@@ -4,13 +4,7 @@ import { migratePendingImages, withCachedImages } from "./attachments.js";
 import { selectedSession, selectedMessage, rememberSession } from "./session-navigation.js";
 import { historyWindow } from "./history-page.js";
 import { msg } from "./i18n.js";
-import {
-  modelInventory,
-  readModelChoices,
-  saveModelChoice,
-  readReasoningChoices,
-  saveReasoningChoice,
-} from "./models.js";
+import { importBrowserChoices, modelChoice, modelInventory, reasoningChoice } from "./models.js";
 
 const listeners = new Set();
 const historyListeners = new Set();
@@ -39,10 +33,15 @@ export const state = {
   models: [],
   providers: [],
   defaultModel: null,
-  modelChoices: readModelChoices(),
+  // Each session's model and reasoning choice, as Talaria's server records it.
+  modelChoices: {},
   draftModel: null,
-  reasoningChoices: readReasoningChoices(),
+  reasoningChoices: {},
   draftReasoning: "auto",
+  // Native commands Talaria recorded for the open session and its compaction lineage.
+  commands: { session: null, records: [], clock: 0 },
+  // Each session's latest run as Hermes reports it to every device.
+  activity: {},
   readiness: { status: "unknown", issues: [] },
   agent: { name: "Hermes", name_source: "fallback" },
   agentInfo: null,
@@ -56,8 +55,13 @@ export const state = {
   sidebarCollapsed: readStorage("sidebar-collapsed") === "true",
   error: "",
   toast: "",
+  // Text returned to a session's message box, such as guidance Hermes never received.
+  restoredDraft: null,
 };
 let frame = 0;
+// Revalidation repeats reads that usually find nothing new. Skipping those
+// updates keeps an idle page from re-rendering.
+const same = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b);
 export function update(changes, defer = false) {
   if (Object.hasOwn(changes, "history") && changes.history !== state.history)
     for (const listener of historyListeners) listener();
@@ -93,6 +97,14 @@ export function toast(message) {
   clearTimeout(toastTimer);
   update({ toast: message });
   toastTimer = setTimeout(() => update({ toast: "" }), 3500);
+}
+// Text returned to a session's message box, unless someone is writing there.
+export function restoreDraft(session, text) {
+  const key = `draft.${session || "new"}`;
+  if (readStorage(key).trim()) return false;
+  writeStorage(key, text);
+  update({ restoredDraft: { key, text } });
+  return true;
 }
 export function fail(error) {
   if (error.code === "unauthenticated") update({ auth: false });
@@ -172,6 +184,7 @@ export async function connect(configured = true) {
       connected: true,
       connecting: false,
       agent: caps.talaria_agent || state.agent,
+      activity: {},
     });
     // The sidebar, current transcript, catalog, and readiness are independent.
     // A slow session listing must not postpone showing the last reply.
@@ -182,6 +195,10 @@ export async function connect(configured = true) {
       refreshModels().catch(() => {});
     } else update({ models: [], providers: [], defaultModel: null });
     refreshReadiness();
+    if (caps.talaria_extensions?.session_activity) refreshActivity();
+    importBrowserChoices(api).then((imported) => {
+      if (imported && state.active) return refreshSessionDetails(state.active);
+    }).catch(() => {});
     const last = selectedSession();
     if (!last && !state.active) rememberSession(null, true);
     await Promise.all([
@@ -251,26 +268,78 @@ export async function refreshAgentInfo() {
     if (request === agentInfoRequest) throw error;
   }
 }
+// A choice made on one device applies on every device. It shows at once, and
+// session details requested before the latest change settled never undo it.
+const choiceChanges = new Map();
+const choiceVersion = (id) => choiceChanges.get(id)?.version ?? 0;
+function withChoice(choices, id, value, present = true) {
+  const next = { ...choices };
+  if (present) next[id] = value;
+  else delete next[id];
+  return next;
+}
+function applyPreferences(id, saved, version) {
+  if (!saved || typeof saved !== "object" || choiceChanges.get(id)?.pending ||
+      choiceVersion(id) !== version) return;
+  const changes = {};
+  for (const [key, field] of [["modelChoices", "model"], ["reasoningChoices", "reasoning"]]) {
+    const present = Object.hasOwn(saved, field);
+    if (present !== Object.hasOwn(state[key], id) || !same(state[key][id], saved[field]))
+      changes[key] = withChoice(state[key], id, saved[field], present);
+  }
+  if (Object.keys(changes).length) update(changes);
+}
+async function savePreference(id, field, value) {
+  const key = field === "model" ? "modelChoices" : "reasoningChoices";
+  const previous = state[key], had = Object.hasOwn(previous, id);
+  const changing = choiceChanges.get(id) || { pending: 0, version: 0 };
+  choiceChanges.set(id, changing);
+  changing.pending++;
+  changing.version++;
+  update({ [key]: withChoice(previous, id, value) });
+  try {
+    await api(`/sessions/${encodeURIComponent(id)}/preferences`, {
+      method: "PUT",
+      body: { [field]: value },
+    });
+  } catch (error) {
+    if (state[key][id] === value)
+      update({ [key]: withChoice(state[key], id, previous[id], had) });
+    fail(error);
+  } finally {
+    changing.pending--;
+    changing.version++;
+  }
+}
 export function chooseModel(model, id = state.active) {
-  if (id)
-    update({ modelChoices: saveModelChoice(state.modelChoices, id, model) });
-  else update({ draftModel: model });
+  if (id) return savePreference(id, "model", modelChoice(model));
+  update({ draftModel: model });
 }
 export function chooseReasoning(value, id = state.active) {
-  if (id)
-    update({
-      reasoningChoices: saveReasoningChoice(state.reasoningChoices, id, value),
-    });
-  else update({ draftReasoning: value });
+  if (id) return savePreference(id, "reasoning", reasoningChoice(value));
+  update({ draftReasoning: value });
 }
 let detailsRequest = 0;
 export async function refreshSessionDetails(id = state.active, signal) {
   if (!id) return;
   const generation = navigation;
   const request = id === state.active ? ++detailsRequest : detailsRequest;
-  const result = await api(`/sessions/${encodeURIComponent(id)}`, { signal });
+  const version = choiceVersion(id);
+  let result;
+  try {
+    result = await api(`/sessions/${encodeURIComponent(id)}`, { signal });
+  } catch (error) {
+    // Deleted elsewhere: leave for a new session instead of keeping a
+    // transcript and message box that can no longer reach Hermes.
+    if (error.status === 404 && state.active === id && generation === navigation) {
+      newConversation(true);
+      toast(msg("This session was deleted."));
+    }
+    throw error;
+  }
   const session = result?.session || result;
   if (!session || typeof session !== "object" || Array.isArray(session)) return;
+  if (generation === navigation) applyPreferences(id, result.talaria_preferences, version);
   if (
     state.active === id &&
     generation === navigation &&
@@ -281,10 +350,71 @@ export async function refreshSessionDetails(id = state.active, signal) {
       typeof session.parent_session_id === "string"
         ? { id: session.parent_session_id, title: msg("Parent session") }
         : state.readOnlyParent;
-    update({ sessionDetails: session, readOnlyParent: parent });
+    if (!same(session, state.sessionDetails) || !same(parent, state.readOnlyParent))
+      update({ sessionDetails: session, readOnlyParent: parent });
     if (parent) writeStorage("child-view", JSON.stringify({ id, parent }));
   }
   return session;
+}
+let commandsRequest = 0;
+// Results dismissed here until Talaria confirms it: a list read before then
+// still has them.
+const dismissing = new Set();
+// Commands recorded for this session, including rows a compaction continuation
+// inherited from its earlier sessions.
+export async function refreshCommands(id = state.active, signal) {
+  if (!id || state.caps.talaria_extensions?.commands !== true) return;
+  const generation = navigation;
+  const request = ++commandsRequest;
+  const lineage = [...new Set(state.history.map((row) => row?.session_id)
+    .filter((sid) => typeof sid === "string" && sid && sid !== id))];
+  const query = lineage.length ? `?lineage=${encodeURIComponent(lineage.join(","))}` : "";
+  const result = await api(`/sessions/${encodeURIComponent(id)}/commands${query}`, { signal });
+  if (state.active !== id || generation !== navigation || request !== commandsRequest) return;
+  const clock = Number(result.server_time) * 1000 - Date.now();
+  const records = (Array.isArray(result.data) ? result.data : [])
+    .filter((record) => !dismissing.has(record.id));
+  if (state.commands.session === id && same(records, state.commands.records)) return;
+  update({ commands: { session: id, records, clock: Number.isFinite(clock) ? clock : 0 } });
+}
+// Talaria answered a command's start before its list caught up. Show the
+// record now. Refreshing supersedes any list requested before the answer.
+export function showCommand(record) {
+  const { commands } = state;
+  if (commands.session === record.session_id && !commands.records.some((r) => r.id === record.id))
+    update({ commands: { ...commands, records: [...commands.records, record] } });
+  refreshCommands().catch(() => {});
+}
+// Dismissing a result applies on every device.
+export async function dismissCommand(id) {
+  dismissing.add(id);
+  const { commands } = state;
+  update({ commands: { ...commands, records: commands.records.filter((record) => record.id !== id) } });
+  try {
+    await api(`/commands/${encodeURIComponent(id)}`, { method: "DELETE" });
+  } catch {
+    /* The list read next shows whatever Talaria kept. */
+  } finally {
+    // Supersedes any list read before Talaria forgot it.
+    dismissing.delete(id);
+    refreshCommands().catch(() => {});
+  }
+}
+let activityPending;
+const runStatuses = new Set(["queued", "running", "waiting_for_approval", "waiting_for_input",
+  "completed", "failed", "cancelled", "interrupted"]);
+// Shared by the sidebar's run status and following a reply started elsewhere.
+export function refreshActivity() {
+  activityPending ??= api("/activity")
+    .then((result) => Object.fromEntries((Array.isArray(result.data) ? result.data : [])
+      .filter((run) => typeof run?.session_id === "string" && runStatuses.has(run.status))
+      .map((run) => [run.session_id, run])))
+    .catch(() => ({}))
+    .then((activity) => {
+      if (!same(activity, state.activity)) update({ activity });
+    })
+    .finally(() => { activityPending = null; });
+  return activityPending;
 }
 export async function pinSession(session) {
   await api(`/sessions/${encodeURIComponent(session.id)}`, {
@@ -305,9 +435,18 @@ export function refreshSessions(more = false, signal) {
       : sessionsPending.promise.then(() => {
           if (state.hasMore) return refreshSessions(true);
         });
+  return loadSessions(more, signal);
+}
+// Revalidation never discards a page someone asked for. Between focus changes
+// it reads only the first page, where other devices' changes appear.
+export function revalidateSessions(signal, recent = false) {
+  if (sessionsPending?.more) return sessionsPending.promise;
+  return loadSessions(false, signal, recent);
+}
+function loadSessions(more, signal, recent = false) {
   const generation = ++sessionsRequest;
   const offset = more ? state.sessionsOffset : 0;
-  const end = more ? offset + 100 : Math.max(100, state.sessionsOffset);
+  const end = more ? offset + 100 : recent ? 0 : Math.max(100, state.sessionsOffset);
   const promise = (async () => {
     let next = offset, result, incoming = [];
     do {
@@ -322,7 +461,7 @@ export function refreshSessions(more = false, signal) {
       if (!result || generation !== sessionsRequest) return;
       const incoming = result.data || result.sessions || [];
       const rows = more ? [...state.sessions, ...incoming] : incoming;
-      const unique = [
+      let unique = [
         ...new Map(
           rows.map((s) => [
             s.id || s.session_id,
@@ -330,11 +469,17 @@ export function refreshSessions(more = false, signal) {
           ]),
         ).values(),
       ];
-      update({
-        sessions: unique,
-        hasMore: !!result.has_more,
-        sessionsOffset: result.next_offset,
-      });
+      // Pages loaded beyond the first stay as they were.
+      const deeper = recent && result.has_more && state.sessionsOffset > result.next_offset;
+      if (deeper) {
+        const fresh = new Set(unique.map((s) => s.id));
+        unique = [...unique, ...state.sessions.filter((s) => !fresh.has(s.id))];
+      }
+      const hasMore = deeper ? state.hasMore : !!result.has_more;
+      const sessionsOffset = deeper ? state.sessionsOffset : result.next_offset;
+      if (same(unique, state.sessions) && state.hasMore === hasMore &&
+          state.sessionsOffset === sessionsOffset) return;
+      update({ sessions: unique, hasMore, sessionsOffset });
     })
     .finally(() => {
       if (sessionsPending?.generation === generation) sessionsPending = null;
@@ -368,10 +513,13 @@ async function migrateCanonical(id, canonical, parent, current) {
     writeStorage(to, combined);
     if (readStorage(to) === combined) writeStorage(from, "");
   }
-  if (id in state.modelChoices)
-    chooseModel(state.modelChoices[id], canonical);
-  if (id in state.reasoningChoices)
-    chooseReasoning(state.reasoningChoices[id], canonical);
+  // Talaria's server carries the choice to the continuation. Carry it here
+  // too, so the picker does not change while the continuation's details load.
+  if (Object.hasOwn(state.modelChoices, id) && !Object.hasOwn(state.modelChoices, canonical))
+    update({ modelChoices: withChoice(state.modelChoices, canonical, state.modelChoices[id]) });
+  if (Object.hasOwn(state.reasoningChoices, id) && !Object.hasOwn(state.reasoningChoices, canonical))
+    update({ reasoningChoices: withChoice(state.reasoningChoices, canonical, state.reasoningChoices[id]) });
+  if (state.commands.session === id) update({ commands: { ...state.commands, session: canonical } });
   rememberSession(canonical, true);
   if (parent)
     writeStorage("child-view", JSON.stringify({ id: canonical, parent }));
@@ -439,7 +587,9 @@ export async function openSession(id, parent = null, replace = false, messageId 
   } catch (error) {
     if (generation === navigation && request >= historyCommitted) {
       update({ loading: false });
-      if (error.name !== "AbortError") fail(error);
+      // A missing transcript may be a deleted session, which opens a new one.
+      if (error.status === 404) await refreshSessionDetails(id).catch(() => {});
+      if (error.name !== "AbortError" && generation === navigation) fail(error);
     }
   } finally {
     if (opening === controller) opening = null;

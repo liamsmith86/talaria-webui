@@ -446,7 +446,10 @@ def test_regenerating_a_steered_reply_starts_from_its_prompt(page, live_app):
     page.get_by_role("button", name="Regenerate response", exact=True).click()
     modal = "import('/static/store.js').then(s => s.state.modal?.message?.id)"
     assert page.evaluate(modal) == 2
+    # Escape reaches the dialog only once it has opened.
+    expect(page.get_by_role("dialog")).to_be_visible()
     page.keyboard.press("Escape")
+    expect(page.get_by_role("dialog")).to_have_count(0)
     page.get_by_role("button", name="Delete turn", exact=True).last.click()
     assert page.evaluate(modal) == 2
 

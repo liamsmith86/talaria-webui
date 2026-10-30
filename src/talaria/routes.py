@@ -1,6 +1,7 @@
 """Validated browser routes over the public Hermes API."""
 
 import asyncio
+import contextlib
 import secrets
 from dataclasses import replace
 
@@ -10,10 +11,21 @@ from starlette.responses import JSONResponse, StreamingResponse
 
 from . import __version__, auth
 from .content import MAX_CHAT_BODY, REASONING, image_inputs
-from .hermes import APIError, Hermes, decode_json, identifier, object_result, valid_api_key
+from .extensions import PREFIX, Extensions, discover, numeric
+from .hermes import (
+    IDENTIFIER,
+    APIError,
+    Hermes,
+    decode_json,
+    identifier,
+    object_result,
+    valid_api_key,
+)
 from .metadata import agent_identity
 from .profiles import connection_url
 from .relay import Relay
+from .session_preferences import saved_choice
+from .session_state import StateUnavailable
 from .transcripts import message_page, session_details
 
 EXTERNAL_BRANCH = "Update the Talaria plugin in Hermes to branch a conversation from another app."
@@ -52,7 +64,9 @@ async def bootstrap(request: Request):
             "authenticated": logged_in,
             "csrf": auth.csrf_token(request) if logged_in else None,
             "connected": bool(request.app.state.hermes_key) if logged_in else False,
-            "agent": agent_identity(request.app.state.capabilities, request.app.state.extensions)
+            "agent": agent_identity(
+                request.app.state.capabilities, request.app.state.extensions.features
+            )
             if logged_in
             else None,
             "profile": request.app.state.profiles.describe(request.app.state.profile_id)
@@ -165,7 +179,7 @@ async def connection(request: Request):
                         state.settings, state.hermes = settings, client
                         state.hermes_key = key
                         state.relay = Relay(client)
-                        state.capabilities, state.extensions = caps, {}
+                        state.capabilities, state.extensions = caps, Extensions()
                         client = None
                         await old_relay.close()
                         await old_client.close()
@@ -180,8 +194,6 @@ async def connection(request: Request):
 
 
 async def capabilities(request: Request):
-    from .extensions import discover
-
     state = request.app.state
     tasks = [
         asyncio.create_task(state.hermes.request("GET", "/v1/capabilities")),
@@ -198,22 +210,20 @@ async def capabilities(request: Request):
         await asyncio.gather(*tasks, return_exceptions=True)
     caps = object_result(caps)
     state.capabilities = caps
-    state.extensions = extended
+    extended = state.extensions.adopt(extended)
     return JSONResponse(
         {
             **caps,
-            "talaria_agent": agent_identity(caps, state.extensions),
-            "talaria_extensions": state.extensions,
+            "talaria_agent": agent_identity(caps, extended),
+            "talaria_extensions": extended,
         }
     )
 
 
 async def model_options(request: Request):
-    from .extensions import PREFIX
-
     state = request.app.state
     params = {"refresh": "1"} if request.query_params.get("refresh") == "1" else {}
-    if state.extensions.get("model_details"):
+    if (await state.extensions.check(state.hermes)).get("model_details"):
         try:
             result = await state.hermes.request("GET", f"{PREFIX}/models", params=params)
             if isinstance(result, dict) and isinstance(result.get("providers"), list):
@@ -273,13 +283,85 @@ async def session(request: Request):
                 raise APIError("Invalid pin state.", 400)
             fields["pinned"] = data["pinned"]
         payload["json"] = fields
-    return JSONResponse(
-        await request.app.state.hermes.request(
-            "GET" if request.method == "HEAD" else request.method,
-            f"/api/sessions/{sid}",
-            **payload,
-        )
+    result = await request.app.state.hermes.request(
+        "GET" if request.method == "HEAD" else request.method,
+        f"/api/sessions/{sid}",
+        **payload,
     )
+    state = request.app.state
+    if request.method in {"GET", "HEAD"} and isinstance(result, dict):
+        await add_talaria_details(
+            state, sid, result, request.query_params.get("usage") == "conversation"
+        )
+    elif request.method == "DELETE":
+        # Hermes deleted the session. If Talaria cannot forget it now, its rows age out.
+        with contextlib.suppress(StateUnavailable):
+            await asyncio.to_thread(state.session_state.forget_session, state.profile_id, sid)
+    return JSONResponse(result)
+
+
+async def add_talaria_details(state, sid, result, conversation_totals):
+    """Add what Talaria records about a session to Hermes's details of it."""
+    details = result.get("session", result)
+    if not isinstance(details, dict):
+        return
+    choice = await saved_choice(state, sid, details.get("parent_session_id"))
+    if choice is not None:
+        result["talaria_preferences"] = choice
+    if conversation_totals and (totals := await conversation_usage(state.hermes, details)):
+        details["talaria_conversation_usage"] = totals
+
+
+USAGE = (
+    "input_tokens",
+    "output_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+    "reasoning_tokens",
+    "api_call_count",
+    "estimated_cost_usd",
+    "actual_cost_usd",
+)
+
+
+async def resumes_in(client, sid):
+    """The session Hermes continues when asked for this one."""
+    return (await message_page(client, sid, limit=1)).get("session_id", sid)
+
+
+async def conversation_usage(client, session):
+    """Usage of one conversation that rotating compaction split into sessions.
+
+    Hermes counts each session separately, so a continuation reports only its
+    own share. In-place compaction keeps one session and needs nothing here.
+    A compacted parent belongs to this conversation only when Hermes continues
+    it here: a branch or subagent started from it is a conversation of its own.
+    """
+    segments, parent = [session], session.get("parent_session_id")
+    seen, here = {session.get("id")}, None
+    while isinstance(parent, str) and IDENTIFIER.fullmatch(parent) and parent not in seen:
+        if len(segments) >= 32:
+            return None
+        try:
+            earlier = await session_details(client, parent)
+            if earlier.get("end_reason") != "compression":
+                break
+            here = here or await resumes_in(client, session["id"])
+            if await resumes_in(client, parent) != here:
+                break
+        except (APIError, KeyError):
+            return None  # A partial sum would be wrong in a way nobody could see.
+        segments.append(earlier)
+        seen.add(parent)
+        parent = earlier.get("parent_session_id")
+    if len(segments) == 1:
+        return None
+    totals = {}
+    for key in USAGE:
+        values = [numeric(segment.get(key)) for segment in segments]
+        known = [value for value in values if value is not None]
+        totals[key] = sum(known) if known else None
+    return totals
 
 
 async def messages(request: Request):
@@ -289,19 +371,18 @@ async def messages(request: Request):
         limit = max(1, min(int(request.query_params.get("limit", "100")), 500))
     except ValueError as exc:
         raise APIError("Invalid message page.", 400) from exc
-    page = await message_page(request.app.state.hermes, sid, offset, limit=limit)
-    if request.app.state.extensions.get("rewind"):
+    state = request.app.state
+    page = await message_page(state.hermes, sid, offset, limit=limit)
+    if (await state.extensions.check(state.hermes)).get("rewind"):
         from .branching import mark_branch_points
 
         page["data"] = await mark_branch_points(
-            request.app.state.hermes, page.get("session_id", sid), page["data"]
+            state.hermes, page.get("session_id", sid), page["data"]
         )
     return JSONResponse(page)
 
 
 async def fork(request: Request):
-    from .extensions import PREFIX
-
     sid = identifier(request.path_params["session_id"])
     data = await body(request)
     # Omitted titles use Hermes's own lineage naming (including uniqueness).
@@ -328,8 +409,6 @@ async def fork(request: Request):
 
 
 async def start_run(request: Request):
-    from .extensions import PREFIX
-
     data = await body(request, MAX_CHAT_BODY)
     sid = identifier(text_field(data, "session_id", 256))
     prompt = text_field(data, "input", 800_000).strip()
@@ -392,8 +471,6 @@ async def control(request: Request):
     data = await body(request)
     native = "execution_generation" in data
     if action == "clarification":
-        from .extensions import PREFIX
-
         if "answer" not in data:
             raise APIError("Provide an answer or explicitly skip the question.", 400)
         answer = text_field(data, "answer", 16000)

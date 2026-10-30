@@ -242,3 +242,38 @@ def test_archived_responses_do_not_offer_branching(page, live_app):
     expect(old).to_be_visible()
     expect(old.get_by_role("button", name="Branch from here")).to_have_count(0)
     expect(page.get_by_role("button", name="Branch from here")).to_have_count(2)
+
+
+async def test_branch_buttons_survive_restarts_and_failed_plugin_checks(backend):
+    client, _, peer = backend
+    seed_branch(peer)
+    # A restarted Talaria has not checked for the plugin when a tab asks for history.
+    response = await client.get("/api/sessions/original/messages")
+    assert {row["id"] for row in response.json()["data"] if row.get("branchable")} == {13, 15}
+    # One slow or failed check never hides the plugin's features from every tab.
+    peer.discovery_overrides["/talaria/v1/capabilities"] = ({"error": "Timed out"}, 504)
+    capabilities = (await client.get("/api/capabilities")).json()
+    assert capabilities["talaria_extensions"]["rewind"] is True
+    response = await client.get("/api/sessions/original/messages")
+    assert {row["id"] for row in response.json()["data"] if row.get("branchable")} == {13, 15}
+    # Hermes saying the plugin is gone is believed.
+    peer.discovery_overrides["/talaria/v1/capabilities"] = ({"error": "Not found"}, 404)
+    assert (await client.get("/api/capabilities")).json()["talaria_extensions"] == {}
+    response = await client.get("/api/sessions/original/messages")
+    assert not any(row.get("branchable") for row in response.json()["data"])
+
+
+async def test_turns_a_compaction_archived_cannot_be_rewound(backend):
+    client, _, peer = backend
+    seed_branch(peer)
+    for row in peer.messages["original"][:4]:
+        row["active"] = False
+    response = await client.get("/api/sessions/original/messages")
+    marks = {row["id"]: row.get("rewindable") for row in response.json()["data"]}
+    assert marks == {10: False, 11: False, 12: None, 13: False, 14: True, 15: True}
+    # The plugin's own reason reaches the person, not a guess about the model.
+    refused = await client.post(
+        "/api/sessions/original/rewind", json={"message_id": 12, "preview": True}
+    )
+    assert refused.status_code == 400
+    assert refused.json()["error"] == "This message is no longer available."

@@ -14,3 +14,7 @@ hermes_agent._end_session_on_close  # noqa: B018
 hermes_agent._cached_system_prompt  # noqa: B018
 hermes_agent._active_session_turn_lease_holder  # noqa: B018
 hermes_agent._active_session_turn_lease_ttl_seconds  # noqa: B018
+
+# sqlite3 reads this connection attribute to build mapping rows.
+sqlite_connection = SimpleNamespace()
+sqlite_connection.row_factory  # noqa: B018

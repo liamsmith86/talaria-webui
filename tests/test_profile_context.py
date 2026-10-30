@@ -11,7 +11,7 @@ def test_profile_context_runs_use_existing_history_replay_and_events(live_app):
     peer.extension = {"context_runs": True}
     # Existing browser tabs may resume against a freshly restarted Talaria before
     # any capabilities request. Context must not depend on cached UI discovery.
-    assert live_app[2].state.extensions == {}
+    assert not live_app[2].state.extensions.known
     with signed_in(live_app[0]) as client:
         sid = client.post("/api/sessions", json={"title": "Inherited context"}).json()["id"]
         payload = {

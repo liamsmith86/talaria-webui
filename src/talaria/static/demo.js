@@ -18,7 +18,7 @@ export async function enableDemo(signal, version, pluginVersion) {
   signal.throwIfAborted();
   const extensions = { version: 1, rewind: true, commands: true, context_usage: true, response_details: true, history_search: true,
     context_runs: true, release: { version: pluginVersion, status: "current" } };
-  const sessions = new Map(), runs = new Map(), jobs = new Map();
+  const sessions = new Map(), runs = new Map(), jobs = new Map(), choices = new Map();
   let sequence = 1000;
   const row = (session, data) => ({ ...data, id: ++sequence, session_id: session.id, timestamp: Date.now() / 1000 });
   const create = (data) => {
@@ -134,11 +134,28 @@ export async function enableDemo(signal, version, pluginVersion) {
       const text = { compress: "Context is already compact.", version: "Hermes Agent 0.3.0", profile: "default",
         egress: "No outbound network access.", bundles: "No bundles enabled." }[body.command];
       if (!text) return missing();
-      jobs.set(body.request_id, { status: "completed", text, session_id: body.session_id });
+      const now = Date.now() / 1000;
+      const anchor = sessions.get(body.session_id)?.messages.at(-1)?.timestamp ?? null;
+      jobs.set(body.request_id, { id: body.request_id, session_id: body.session_id || "",
+        result_session_id: body.session_id || null, command: body.command, args: body.args || "",
+        status: "completed", changed: false, text, anchor, started_at: now, finished_at: now });
       if (jobs.size > 16) jobs.delete(jobs.keys().next().value);
-      return { id: body.request_id };
+      return jobs.get(body.request_id);
+    }
+    if (parts[0] === "commands" && parts[1] && method === "DELETE") {
+      if (!jobs.delete(parts[1])) return missing();
+      return { ok: true };
     }
     if (parts[0] === "commands" && parts[1]) return jobs.get(parts[1]) || missing();
+    if (parts[0] === "preferences" && method === "POST") return { imported: 0 };
+    if (parts[0] === "sessions" && parts[2] === "preferences" && method === "PUT") {
+      if (!sessions.has(parts[1])) return missing();
+      const saved = { ...choices.get(parts[1]) };
+      if (Object.hasOwn(body, "model")) saved.model = body.model && { id: body.model.id, provider: body.model.provider };
+      if (Object.hasOwn(body, "reasoning")) saved.reasoning = body.reasoning;
+      choices.set(parts[1], saved);
+      return { ok: true };
+    }
     if (method === "GET" && Object.hasOwn(resources, parts[0])) return structuredClone(resources[parts[0]]);
     if (method === "GET" && parts[0] === "installation") return {
       version,
@@ -176,7 +193,9 @@ export async function enableDemo(signal, version, pluginVersion) {
     }
     const session = sessions.get(parts[1]);
     if (parts[0] !== "sessions" || !session) return missing();
-    if (parts.length === 2) return summary(session);
+    if (parts.length === 2) return { ...summary(session), talaria_preferences: { ...choices.get(session.id) } };
+    if (parts[2] === "commands") return { server_time: Date.now() / 1000,
+      data: [...jobs.values()].filter((job) => job.session_id === session.id) };
     if (["messages", "around"].includes(parts[2])) {
       const end = session.messages.length - Math.max(0, Number(url.searchParams.get("offset")) || 0);
       const limit = Math.max(1, Math.min(500, Number(url.searchParams.get("limit")) || 100));

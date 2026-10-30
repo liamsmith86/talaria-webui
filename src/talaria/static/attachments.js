@@ -154,6 +154,16 @@ export async function migratePendingImages(from, to) {
 }
 
 const CACHE_LIMIT = 32 * 1024 * 1024;
+// Hermes keeps a message's time and text when compaction re-saves it under a
+// new ID, and a branch copies both. Together they still find its originals.
+export function imageFingerprint(message) {
+  const stamp = Number(message?.timestamp);
+  const content = message?.content;
+  if (typeof content !== "string" || !Number.isFinite(stamp)) return null;
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < content.length; i++) hash = Math.imul(hash ^ content.charCodeAt(i), 0x01000193);
+  return `${stamp}:${content.length}:${(hash >>> 0).toString(36)}`;
+}
 const cacheError =
   msg("This browser could not retain the image. Download a copy to keep it.");
 function imageIndex(value) {
@@ -174,6 +184,7 @@ export async function cacheMessageImages(
   messageId,
   images,
   receipt = null,
+  fingerprint = null,
 ) {
   const bytes = images.reduce((n, image) => n + image.url.length, 0);
   // Reject before evicting or deleting the submission receipt. Otherwise a
@@ -194,6 +205,7 @@ export async function cacheMessageImages(
           session,
           messageId,
           bytes,
+          ...(fingerprint ? { fingerprint } : {}),
         });
         let size = index.reduce((n, item) => n + item.bytes, 0);
         while (index.length > 100 || size > CACHE_LIMIT) {
@@ -213,7 +225,7 @@ export async function cacheMessageImages(
       reject(new Error(cacheError));
   });
 }
-export async function browserAttachments(session, ids = null) {
+export async function browserAttachments(session, ids = null, fingerprints = null) {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
     // The index and originals form one snapshot, with one transaction even
@@ -227,13 +239,15 @@ export async function browserAttachments(session, ids = null) {
         for (const item of imageIndex(request.result)
           .filter(
             (item) =>
-              item.session === session && (!ids || ids.has(item.messageId)),
+              (item.session === session && (!ids || ids.has(item.messageId))) ||
+              (fingerprints && fingerprints.has(item.fingerprint)),
           )
           .slice(-100)) {
           const images = records.get(item.key);
           images.onsuccess = () => {
             if (Array.isArray(images.result) && images.result.length)
-              rows.push({ message_id: item.messageId, images: images.result });
+              rows.push({ message_id: item.messageId, session: item.session,
+                fingerprint: item.fingerprint, images: images.result });
           };
         }
       } catch {
@@ -276,14 +290,29 @@ export async function forgetImages(session) {
       reject(new Error(cacheError));
   });
 }
-export async function withCachedImages(session, messages) {
-  if (!messages.some((message) => placeholderCount(message?.content)))
-    return messages;
+// The originals this browser kept for these messages, by their current IDs.
+export async function cachedAttachments(session, messages) {
+  const wanted = messages.filter((message) => placeholderCount(message?.content));
+  if (!wanted.length) return new Map();
   const records = await browserAttachments(
     session,
-    new Set(messages.map((message) => message.id)),
+    new Set(wanted.map((message) => message.id)),
+    new Set(wanted.map(imageFingerprint).filter(Boolean)),
   ).catch(() => []);
-  const images = new Map(records.map((item) => [item.message_id, item.images]));
+  const byId = new Map(records.filter((item) => item.session === session)
+    .map((item) => [item.message_id, item.images]));
+  const byFingerprint = new Map(records.filter((item) => item.fingerprint)
+    .map((item) => [item.fingerprint, item.images]));
+  const found = new Map();
+  for (const message of wanted) {
+    const images = byId.get(message.id) || byFingerprint.get(imageFingerprint(message));
+    if (images) found.set(message.id, images);
+  }
+  return found;
+}
+export async function withCachedImages(session, messages) {
+  const images = await cachedAttachments(session, messages);
+  if (!images.size) return messages;
   return messages.map((message) =>
     images.has(message.id)
       ? { ...message, browserImages: images.get(message.id) }

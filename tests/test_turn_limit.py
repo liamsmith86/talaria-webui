@@ -7,7 +7,7 @@ import pytest
 from playwright.sync_api import expect
 
 from .conftest import wait_for_store
-from .test_commands import CATALOG, prepare
+from .test_commands import prepare
 
 
 @pytest.mark.parametrize("restored", [False, True])
@@ -55,21 +55,11 @@ def test_turn_limit_handoff_reconciles_and_allows_compression(
     expect(page.locator(".message.assistant")).to_have_count(2)
     expect(page.locator(".message.assistant").last).to_contain_text(terminal["output"])
     # Exercise the reported next action through the actual command UI.
-    page.route(
-        "**/api/commands",
-        lambda route: route.fulfill(
-            json={"commands": CATALOG} if route.request.method == "GET" else {"status": "running"}
-        ),
-    )
-    page.route(
-        "**/api/commands/*",
-        lambda route: route.fulfill(
-            json={"status": "completed", "session_id": sid, "text": "Compression complete"}
-        ),
-    )
     page.get_by_label("Message Hermes").fill("/compress ")
     page.get_by_role("button", name="Send message", exact=True).click()
     card = page.get_by_role("region", name="/compress command")
+    expect(card).to_contain_text("Compressing context…")
+    live_app[1].finish_command(session_id=sid, text="Compression complete")
     expect(card).to_contain_text("Compression complete")
     expect(card).to_be_in_viewport()
 

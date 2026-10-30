@@ -3,6 +3,7 @@ import { api } from "./api.js";
 import { Dialog } from "./dialogs.js";
 import { count, duration, numberValue } from "./content.js";
 import { reasoningNames } from "./models.js";
+import { compacted } from "./command-activity.js";
 import { t, n, msg, formatNumber } from "./i18n.js";
 
 function useDetails(path, enabled, initial = null) {
@@ -99,10 +100,26 @@ export function ResponseDetails({ session, message, enabled, onClose }) {
 
 export function ContextIndicator({ app }) {
   const stamp = app.lives[app.active]?.status || "saved";
+  const enabled = !!app.caps.talaria_extensions?.context_usage;
+  // The reply now ending the conversation keeps its usage after a rewind.
+  const reply = app.history.findLast((row) => row?.role === "assistant");
   const { data } = useDetails(
-    `/sessions/${encodeURIComponent(app.active)}/context?turn=${encodeURIComponent(stamp)}&head=${app.history.at(-1)?.id || 0}`,
-    !!app.caps.talaria_extensions?.context_usage,
+    `/sessions/${encodeURIComponent(app.active)}/context?turn=${encodeURIComponent(stamp)}` +
+      `&head=${app.history.at(-1)?.id || 0}` +
+      (Number.isSafeInteger(reply?.id) ? `&reply=${reply.id}` : ""),
+    enabled,
   );
+  // No request has measured the compressed context until the next reply.
+  const replyTime = Number(reply?.timestamp);
+  const records = app.commands.session === app.active ? app.commands.records : [];
+  const compressed = enabled && records.some((record) => compacted(record) &&
+    !(Number(record.anchor ?? record.finished_at) < replyTime));
+  if (compressed) {
+    const label = t("Context compressed · usage updates after the next reply");
+    return html`<span class="context-indicator" role="img" aria-label=${label} title=${label}>
+      <${Icon} name="context" size=${18} /><span aria-hidden="true">–</span>
+    </span>`;
+  }
   const context = data?.context;
   const used = numberValue(context?.used),
     maximum = numberValue(context?.maximum);

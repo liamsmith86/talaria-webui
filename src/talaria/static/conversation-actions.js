@@ -4,7 +4,7 @@ import { api, request } from "./api.js";
 import { update, pinSession, canBranch } from "./store.js";
 import { running } from "./runs.js";
 import { count, money, numberValue, sourceLabel } from "./content.js";
-import { browserAttachments } from "./attachments.js";
+import { cachedAttachments } from "./attachments.js";
 import { t, msg } from "./i18n.js";
 
 export function ConversationMenu({ session, onClose, readOnly = false }) {
@@ -63,7 +63,7 @@ export function ConversationDetails({ session, onClose }) {
   const [busy, setBusy] = useState(true);
   useEffect(() => {
     let current = true;
-    api(`/sessions/${encodeURIComponent(session.id)}`)
+    api(`/sessions/${encodeURIComponent(session.id)}?usage=conversation`)
       .then((value) => {
         const next = value?.session || value;
         if (!next || typeof next !== "object" || Array.isArray(next))
@@ -82,18 +82,20 @@ export function ConversationDetails({ session, onClose }) {
       current = false;
     };
   }, [session.id]);
+  // Rotating compaction continues a conversation in new sessions; count them all.
+  const usage = details.talaria_conversation_usage || details;
   const cost =
-    numberValue(details.actual_cost_usd) !== null
-      ? details.actual_cost_usd
-      : details.estimated_cost_usd;
-  const actual = numberValue(details.actual_cost_usd) !== null;
+    numberValue(usage.actual_cost_usd) !== null
+      ? usage.actual_cost_usd
+      : usage.estimated_cost_usd;
+  const actual = numberValue(usage.actual_cost_usd) !== null;
   const counters = [
-    [msg("Input tokens"), details.input_tokens],
-    [msg("Output tokens"), details.output_tokens],
-    [msg("Cache read tokens"), details.cache_read_tokens],
-    [msg("Cache write tokens"), details.cache_write_tokens],
-    [msg("Reasoning tokens"), details.reasoning_tokens],
-    [msg("Model calls"), details.api_call_count],
+    [msg("Input tokens"), usage.input_tokens],
+    [msg("Output tokens"), usage.output_tokens],
+    [msg("Cache read tokens"), usage.cache_read_tokens],
+    [msg("Cache write tokens"), usage.cache_write_tokens],
+    [msg("Reasoning tokens"), usage.reasoning_tokens],
+    [msg("Model calls"), usage.api_call_count],
   ];
   return html`<${Dialog} title=${t("Session details")} className="usage-dialog" onClose=${onClose}>
     <p class="detail-title">${details.title || t("Untitled session")}${busy && html`<span class="details-refresh" role="status" aria-label=${t("Refreshing details")}><span class="spinner" /></span>`}</p>
@@ -107,7 +109,7 @@ export function ConversationDetails({ session, onClose }) {
           <dd>${count(value)}</dd>
         </div>`,
     )}</dl>
-    ${actual && numberValue(details.estimated_cost_usd) !== null && html`<p class="field-help">${t("Hermes’s estimate: {cost}", { cost: money(details.estimated_cost_usd) })}</p>`}
+    ${actual && numberValue(usage.estimated_cost_usd) !== null && html`<p class="field-help">${t("Hermes’s estimate: {cost}", { cost: money(usage.estimated_cost_usd) })}</p>`}
   </${Dialog}>`;
 }
 
@@ -131,19 +133,17 @@ export function TranscriptDownload({ session, onClose }) {
           detail.error || msg("The transcript could not be downloaded. Try again."),
         );
       }
-      const attachments =
-        format === "json"
-          ? await browserAttachments(session.id).catch(() => [])
-          : [];
       let blob;
-      if (attachments.length) {
-        const transcript = await response.json();
-        const ids = new Set(transcript.messages.map((message) => message.id));
-        const retained = attachments.filter((item) => ids.has(item.message_id));
-        if (retained.length) transcript.browser_attachments = retained;
-        blob = new Blob([JSON.stringify(transcript, null, 2)], {
-          type: "application/json",
-        });
+      if (format === "json") {
+        const text = await response.text();
+        const transcript = JSON.parse(text);
+        const attachments = await cachedAttachments(session.id,
+          Array.isArray(transcript.messages) ? transcript.messages : []);
+        if (attachments.size) {
+          transcript.browser_attachments = [...attachments]
+            .map(([id, images]) => ({ message_id: id, images }));
+          blob = new Blob([JSON.stringify(transcript, null, 2)], { type: "application/json" });
+        } else blob = new Blob([text], { type: "application/json" });
       } else blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");

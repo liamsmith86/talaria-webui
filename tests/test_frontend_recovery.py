@@ -280,11 +280,15 @@ def test_older_page_respects_transcript_identity_and_navigation(page, canonical,
           offset:store.state.historyOffset, more:store.state.historyHasMore, heads,
           source:await pendingStorage('draft.original') ?? null,
           target:await pendingStorage('draft.continued') ?? null,
-          sourceText:readStorage('draft.original'), targetText:readStorage('draft.continued')};
+          sourceText:readStorage('draft.original'), targetText:readStorage('draft.continued'),
+          search:location.search};
       } finally {window.fetch = fetch;}
     }""",
         {"canonical": canonical, "navigate": navigate, "image": image("unsent")},
     )
+    # This test's Hermes has no "continued" session to describe, so a later
+    # details check would leave it as deleted. The address is read before that.
+    search = result.pop("search")
     if navigate:
         assert result == {
             "active": None,
@@ -309,7 +313,7 @@ def test_older_page_respects_transcript_identity_and_navigation(page, canonical,
             "sourceText": "",
             "targetText": "Unsent original draft",
         }
-        assert "session=continued" in page.url
+        assert "session=continued" in search
     else:
         assert result == {
             "active": "original",

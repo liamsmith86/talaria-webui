@@ -44,6 +44,8 @@ def test_approval_and_reconnect(page, live_app, native):
     page.get_by_label("Message Hermes").fill("Please test approval")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_role("button", name="Allow once")).to_be_visible()
+    # Hermes scopes this grant to the run, so it never claims the whole session.
+    expect(page.get_by_role("button", name="Allow for this response")).to_be_visible()
     screenshot(page, "approval")
     page.reload()
     expect(page.get_by_role("button", name="Allow once")).to_be_visible()

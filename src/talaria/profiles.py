@@ -5,6 +5,7 @@ Profile selection belongs to each browser tab, never to shared server state.
 """
 
 import asyncio
+import contextlib
 import re
 import secrets
 from contextlib import contextmanager
@@ -26,6 +27,7 @@ from .hermes import (
     valid_api_key,
 )
 from .relay import Channel
+from .session_state import StateUnavailable
 
 MAX_PROFILES = 8
 MAX_ACTIVE_RUNS = 16
@@ -349,6 +351,11 @@ async def remove(request):
                 )
                 profiles.apps.pop(profile_id, None)
                 profiles.inflight.pop(profile_id, None)
+                # If Talaria cannot forget the removed profile now, its rows age out.
+                with contextlib.suppress(StateUnavailable):
+                    await asyncio.to_thread(
+                        profiles.app.state.session_state.forget_profile, profile_id
+                    )
                 if app:
                     await app.state.relay.close()
                     await app.state.hermes.close()

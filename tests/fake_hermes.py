@@ -41,6 +41,13 @@ class FakeHermes:
         self.discovery_overrides = {}
         self.extension = None
         self.rewinds = 0
+        # Plugin command jobs by request ID. A test finishes one by replacing its result.
+        self.commands = {}
+        self.command_catalog = []
+        self.command_refusal = None
+        # Seconds the plugin takes to accept a command, and whether its answer is lost.
+        self.command_delay = 0.0
+        self.command_answer_lost = False
         self.calls = []
         self.app = Starlette(
             routes=[
@@ -49,6 +56,43 @@ class FakeHermes:
                 )
             ]
         )
+
+    def command(self, method, path, body):
+        """The plugin's bounded command jobs, which Talaria follows by request ID."""
+        if method == "GET" and path == "/talaria/v1/commands":
+            return JSONResponse({"commands": self.command_catalog})
+        if method == "GET":
+            job = self.commands.get(path.rsplit("/", 1)[-1])
+            if job is None:
+                return JSONResponse({"error": "Command result expired or Hermes restarted."}, 404)
+            return JSONResponse(job["result"])
+        if self.command_refusal:
+            return JSONResponse({"error": self.command_refusal}, 400)
+        if self.command_answer_lost:
+            return JSONResponse({"error": "Bad gateway"}, 502)
+        job = self.commands.get(body["request_id"])
+        if job is None:
+            job = self.commands[body["request_id"]] = {
+                "payload": body,
+                "result": {"status": "running"},
+            }
+        return JSONResponse(job["result"], 202)
+
+    def finish_command(self, request_id=None, **result):
+        """Complete the newest (or a named) running command, once Talaria has posted it."""
+        deadline = time.monotonic() + 10
+        while request_id is None:
+            running = [
+                rid for rid, job in self.commands.items() if job["result"]["status"] == "running"
+            ]
+            if running:
+                request_id = running[-1]
+            elif time.monotonic() > deadline:
+                raise AssertionError("No running command reached Hermes")
+            else:
+                time.sleep(0.05)
+        self.commands[request_id]["result"] = {"status": "completed", **result}
+        return self.commands[request_id]["payload"]
 
     async def handle(self, request: Request):
         if request.headers.get("authorization") != f"Bearer {self.api_key}":
@@ -90,6 +134,10 @@ class FakeHermes:
                         **self.extension,
                     }
                 )
+            if path == "/talaria/v1/commands" or path.startswith("/talaria/v1/commands/"):
+                if request.method == "POST" and self.command_delay:
+                    await asyncio.sleep(self.command_delay)
+                return self.command(request.method, path, body)
             view = session_view(self, request)
             if view is not None:
                 return view
@@ -249,17 +297,20 @@ class FakeHermes:
             if path.endswith("/messages"):
                 # Native API forks lacking the CLI's marker are incorrectly
                 # treated as continuations by Hermes's resume resolver.
-                children = [
-                    s
-                    for s in self.sessions.values()
-                    if s.get("parent_session_id") == sid
-                    and not any(
-                        (s.get("model_config") or {}).get(key)
-                        for key in ("_branched_from", "_delegate_from", "_reset_from")
-                    )
-                    and s.get("source") != "tool"
-                ]
-                if children:
+                # Hermes follows the whole compression chain to its tip.
+                for _ in range(32):
+                    children = [
+                        s
+                        for s in self.sessions.values()
+                        if s.get("parent_session_id") == sid
+                        and not any(
+                            (s.get("model_config") or {}).get(key)
+                            for key in ("_branched_from", "_delegate_from", "_reset_from")
+                        )
+                        and s.get("source") != "tool"
+                    ]
+                    if not children:
+                        break
                     sid = children[-1]["id"]
                 offset = int(request.query_params.get("offset", "0"))
                 limit = int(request.query_params.get("limit", "100"))
@@ -320,7 +371,14 @@ class FakeHermes:
                 del self.sessions[sid]
                 del self.messages[sid]
                 return JSONResponse({"ok": True})
-            return JSONResponse(self.sessions[sid])
+            # Hermes reports each session's activity alongside its details.
+            rows = self.messages.get(sid) or []
+            stamps = [m["timestamp"] for m in rows if isinstance(m.get("timestamp"), int | float)]
+            activity = {
+                "message_count": len(rows),
+                "last_active": max(stamps, default=self.sessions[sid].get("started_at")),
+            }
+            return JSONResponse({**activity, **self.sessions[sid]})
         if path == "/v1/runs":
             owner = self.sessions.get(body.get("session_id"), {}).get("source", "api_server")
             if self.session_authority and owner not in {"api_server", "bot_room"}:

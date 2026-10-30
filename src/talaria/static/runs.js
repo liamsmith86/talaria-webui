@@ -12,12 +12,14 @@ import {
   chooseReasoning,
   refreshSessionDetails,
   refreshReadiness,
+  restoreDraft,
 } from "./store.js";
 import { randomId, readStorage, writeStorage } from "./lib.js";
 import {
   pendingStorage,
   consumePendingImages,
   cacheMessageImages,
+  imageFingerprint,
   currentImageMessage,
   placeholderCount,
   withoutImagePlaceholders,
@@ -32,6 +34,8 @@ const parkedRuns = new Set();
 const cursors = new Map();
 let parkedCheck = null;
 let recoveryRecords = {};
+// Saved runs this tab finished recovering, so it may remove their records.
+const recoveredRuns = new Set();
 let restoration, recovered = false;
 // Hermes holds a turn lost in a restart as "unknown" until someone discards it.
 // Nothing more arrives for it, so the browser settles it as uncertain.
@@ -81,21 +85,37 @@ function remember() {
         baseUserId: r.baseUserId,
         baseMessageId: r.baseMessageId,
         imageReceipt: !!r.imageReceipt,
+        // When the turn began orders it against command results.
+        createdAt: r.createdAt,
         ...(!r.id
-          ? {
-              ...(r.payload?.images?.length
-                ? { imageReceipt: true }
-                : { payload: r.payload }),
-              createdAt: r.createdAt,
-            }
+          ? r.payload?.images?.length
+            ? { imageReceipt: true }
+            : { payload: r.payload }
           : {}),
       },
     ]);
-  const saved = { ...recoveryRecords, ...Object.fromEntries(entries) };
+  // Every tab of this browser shares these records. Keep another tab's record
+  // until a tab has seen that run through.
+  const stored = savedRuns();
+  const settled = new Set([...Object.values(state.lives).map(runKey), ...recoveredRuns]);
+  for (const [sid, record] of Object.entries(stored))
+    if (settled.has(runKey(record))) delete stored[sid];
+  const saved = { ...stored, ...recoveryRecords, ...Object.fromEntries(entries) };
   writeStorage(
     "runs",
     JSON.stringify(Object.fromEntries(Object.entries(saved).slice(-16))),
   );
+}
+const runKey = (record) => record?.id || record?.requestId || null;
+function savedRuns() {
+  try {
+    const saved = JSON.parse(readStorage("runs", "{}"));
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+    return Object.fromEntries(Object.entries(saved).filter(([, record]) =>
+      record && typeof record === "object" && !Array.isArray(record)));
+  } catch {
+    return {};
+  }
 }
 function canRetry(live) {
   if (!live.uncertain) return true;
@@ -399,6 +419,7 @@ export async function sendMessage(
       method: "POST",
       body: { input: text },
     });
+    sentGuidance.set(live.id, [...(sentGuidance.get(live.id) || []), text.trim()]);
     // Hermes saves the guidance after the current step; show it there.
     const current = state.lives[sid];
     if (current?.id === live.id && running(sid))
@@ -589,14 +610,20 @@ export function subscribe(sid, finishing = false) {
     }
     if (!event || typeof event !== "object" || Array.isArray(event)) return;
     if (event.event === "talaria.reconcile") {
+      // A replay that restarts the response rebuilds it, never appends to the
+      // copy already shown. Otherwise only the saved transcript is complete.
       publish(sid, {
         ...state.lives[sid],
-        reconnecting: true,
+        ...(event.replay === true ? { text: "", reasoning: "", parts: [], tools: [] } : {}),
+        reconnecting: false,
         needsHistory: true,
       });
       return;
     }
-    if (event.event === "talaria.unavailable") {
+    const unavailable = event.event === "talaria.unavailable";
+    // Hermes forgot the run, so it ended, though Hermes no longer says how.
+    const forgotten = unavailable && event.forgotten === true;
+    if (unavailable) {
       event = {
         event: "run.interrupted",
         error: event.message,
@@ -605,6 +632,7 @@ export function subscribe(sid, finishing = false) {
       };
     }
     const next = applyEvent(state.lives[sid], event);
+    if (forgotten) next.expired = true;
     publish(sid, next);
     if (terminal.has(next.status)) {
       source.close();
@@ -729,11 +757,18 @@ export async function prepareRunReconciliation(sid, history, current) {
   const live = state.lives[sid];
   if (!current() || !live?.id || !terminal.has(live.status) ||
     (live.persisted && !live.imageReceipt)) return;
+  const reply = history.findLast(
+    (message) => message.role === "assistant" && message.display_kind !== "hidden",
+  );
   const saved = responseSaved(history, live) ? {
     persisted: true,
-    savedMessageId: history.findLast(
-      (message) => message.role === "assistant" && message.display_kind !== "hidden",
-    )?.id,
+    savedMessageId: reply?.id,
+    // Hermes forgot the run but saved its final answer: it finished, though
+    // Hermes no longer says how, so Response details claim no status. A reply
+    // that stopped at a tool call or an error still asks for a check.
+    ...(live.expired && reply?.finish_reason === "stop" ? {
+      status: "completed", error: null, outcomeUnknown: true, uncertain: false, expired: false,
+    } : {}),
   } : {};
   const imageMessage = currentImageMessage(history, live);
   let imageSaved = !live.imageReceipt;
@@ -744,6 +779,7 @@ export async function prepareRunReconciliation(sid, history, current) {
         imageMessage.id,
         live.userImages,
         receiptKey(sid, live.requestId),
+        imageFingerprint(imageMessage),
       );
       imageSaved = true;
     } catch (error) {
@@ -788,13 +824,27 @@ async function settle(sid, live) {
   await refreshSessions();
   refreshSessionDetails(sid).catch(() => {});
   refreshReadiness();
-  if (live.pendingSteer)
-    toast(msg("Some guidance arrived after the response. It is available below."));
+  const mine = (sentGuidance.get(live.id) || []).filter((text) =>
+    typeof live.pendingSteer === "string" && live.pendingSteer.includes(text));
+  sentGuidance.delete(live.id);
+  if (mine.length) restoreGuidance(sid, mine.join("\n\n"));
+}
+
+// Guidance each response was sent from this tab. Every device shows guidance
+// Hermes never received; only the tab that sent it gets it back to send again.
+const sentGuidance = new Map();
+
+// Guidance sent as a response ended never reached Hermes. It returns to the
+// message box, ready to send, unless someone is writing there.
+function restoreGuidance(sid, text) {
+  toast(restoreDraft(sid, text)
+    ? msg("Your guidance arrived after the response finished. It is back in the message box.")
+    : msg("Your guidance arrived after the response finished. It is shown below."));
 }
 
 // Hermes saves a turn's prompt as it starts. Until then, or once the turn has
-// a final reply, the open history holds no running turn to follow.
-function runningPrompt(history, run) {
+// a final reply, the open history holds no unanswered turn for this run.
+function unansweredPrompt(history, run) {
   const index = history.findLastIndex(userMessage);
   const prompt = history[index];
   if (!prompt || !(Number(prompt.timestamp) >= run.created_at - 5)) return -1;
@@ -804,11 +854,7 @@ function runningPrompt(history, run) {
 }
 
 function storedRun(sid) {
-  try {
-    return JSON.parse(readStorage("runs", "{}"))?.[sid] || null;
-  } catch {
-    return null;
-  }
+  return savedRuns()[sid] || null;
 }
 
 // Follow a reply that another device or tab is running in the open session.
@@ -826,16 +872,8 @@ export function followRun(sid, run) {
     if (!recovered || stored.imageReceipt) return false;
     origin = stored;
   } else {
-    const history = state.history;
-    const index = runningPrompt(history, run);
-    if (index < 0) return false;
-    const previous = history.slice(0, index).findLast(userMessage);
-    const before = history[index - 1]?.id;
-    origin = {
-      userText: withoutImagePlaceholders(plainContent(history[index].content)),
-      baseUserId: previous ? previous.id : null,
-      baseMessageId: typeof before === "number" ? before : 0,
-    };
+    origin = promptOrigin(state.history, run);
+    if (!origin) return false;
   }
   publish(sid, {
     ...origin,
@@ -851,6 +889,53 @@ export function followRun(sid, run) {
   return true;
 }
 
+function promptOrigin(history, run) {
+  const index = unansweredPrompt(history, run);
+  if (index < 0) return null;
+  const previous = history.slice(0, index).findLast(userMessage);
+  const before = history[index - 1]?.id;
+  return {
+    userText: withoutImagePlaceholders(plainContent(history[index].content)),
+    baseUserId: previous ? previous.id : null,
+    baseMessageId: typeof before === "number" ? before : 0,
+  };
+}
+
+// Why a response failed or stopped is part of the conversation on every
+// device and after reloads, for as long as Hermes reports the run (an hour).
+export async function showOutcome(sid, run) {
+  const known = () => {
+    const live = state.lives[sid];
+    return sid !== state.active || running(sid) || live?.uncertain || live?.id === run.run_id ||
+      (Number.isFinite(live?.createdAt) && live.createdAt >= run.created_at * 1000) ||
+      Object.hasOwn(recoveryRecords, sid);
+  };
+  if (!["failed", "cancelled", "interrupted"].includes(run?.status) ||
+      typeof run.run_id !== "string" || !Number.isFinite(run.created_at) || known()) return false;
+  const history = state.history;
+  const origin = promptOrigin(history, run);
+  if (!origin) return false;
+  let status;
+  try {
+    status = await api(`/runs/${encodeURIComponent(run.run_id)}`);
+  } catch {
+    return false;
+  }
+  if (known() || state.history !== history || !terminal.has(status?.status)) return false;
+  publish(sid, {
+    ...origin,
+    id: run.run_id,
+    text: typeof status.output === "string" ? status.output : "",
+    tools: [],
+    status: status.status,
+    createdAt: run.created_at * 1000,
+    error: runError(status.status, status),
+    turnLimitReached: status.status === "failed" && turnLimitReached(status),
+    usage: status.usage,
+  });
+  return true;
+}
+
 export function restoreRuns() {
   if (!restoration)
     restoration = recoverRuns().finally(() => {
@@ -861,21 +946,7 @@ export function restoreRuns() {
 }
 
 async function recoverRuns() {
-  let saved;
-  try {
-    saved = JSON.parse(readStorage("runs", "{}"));
-  } catch {
-    return;
-  }
-  if (!saved || typeof saved !== "object" || Array.isArray(saved)) return;
-  recoveryRecords = Object.fromEntries(
-    Object.entries(saved)
-      .filter(
-        ([, record]) =>
-          record && typeof record === "object" && !Array.isArray(record),
-      )
-      .slice(-16),
-  );
+  recoveryRecords = Object.fromEntries(Object.entries(savedRuns()).slice(-16));
   const records = Object.entries(recoveryRecords).sort(
     ([a], [b]) => Number(b === state.active) - Number(a === state.active),
   );
@@ -939,6 +1010,8 @@ async function recoverRuns() {
         );
       const live = {
         ...record,
+        createdAt: Number.isFinite(record.createdAt) ? record.createdAt
+          : Number.isFinite(status.created_at) ? status.created_at * 1000 : undefined,
         // Active runs replay their deltas. A status snapshot may already
         // contain those same deltas, so only use its output once terminal.
         text: terminal.has(status.status) ? status.output || "" : "",
@@ -968,6 +1041,7 @@ async function recoverRuns() {
           tools: [],
           status: "interrupted",
           uncertain: error.status !== 404,
+          expired: error.status === 404,
           needsHistory: true,
           error:
             error.status === 404
@@ -979,6 +1053,8 @@ async function recoverRuns() {
       }
     } finally {
       delete recoveryRecords[sid];
+      const key = runKey(savedRecord);
+      if (key) recoveredRuns.add(key);
     }
   }
   // Prioritize the open session and keep a small number of independent

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import tracemalloc
 
 import httpx
 import pytest
@@ -600,7 +601,7 @@ async def test_polling_recovers_and_clears_native_clarification():
 
     channel = Channel("pending")
     await asyncio.wait_for(Relay(Upstream()).poll(channel), 6)
-    events = [json.loads(event) for _, event in channel.events]
+    events = [json.loads(entry.encoded) for entry in channel.events]
     assert events == [
         {**question, "event": "talaria.clarification.request"},
         {"event": "talaria.clarification.resolved", "request_id": "pending-question"},
@@ -608,14 +609,77 @@ async def test_polling_recovers_and_clears_native_clarification():
     ]
 
 
+@pytest.mark.parametrize(("status", "forgotten"), [(404, True), (401, False), (403, False)])
+async def test_only_a_run_hermes_forgot_is_reported_as_ended(status, forgotten):
+    class Upstream:
+        async def request(self, *args, **kwargs):
+            raise APIError("Run not found.", status)
+
+    channel = Channel("gone")
+    await asyncio.wait_for(Relay(Upstream()).poll(channel), 2)
+    events = [json.loads(entry.encoded) for entry in channel.events]
+    assert events == [
+        {"event": "talaria.unavailable", "message": "Run not found.", "forgotten": forgotten}
+    ]
+
+
+def replayed(frames):
+    events = [json.loads(frame.split("data: ", 1)[1]) for frame in frames if "data: " in frame]
+    return events, "".join(e.get("delta", "") for e in events if e["event"] == "message.delta")
+
+
+async def test_long_responses_replay_completely_to_late_and_lagging_subscribers():
+    channel = Channel("example")
+    await channel.publish({"event": "tool.started", "tool_call_id": "a", "tool": "terminal"})
+    for i in range(3000):
+        await channel.publish({"event": "message.delta", "delta": f"{i},"})
+    await channel.publish({"event": "tool.completed", "tool_call_id": "a"})
+    await channel.publish({"event": "message.delta", "delta": "end"})
+    channel.finished = True
+    text = "".join(f"{i}," for i in range(3000)) + "end"
+    # Another device joining now sees the whole response, in order.
+    events, joined = replayed([frame async for frame in Relay(None).stream(channel, 0)])
+    assert joined == text
+    assert events[0]["event"] == "tool.started"
+    assert "talaria.reconcile" not in {e["event"] for e in events}
+    assert len(channel.events) == 1500
+    # A subscriber that saw part of the older text receives only the rest.
+    events, rest = replayed([frame async for frame in Relay(None).stream(channel, 1001)])
+    assert rest == text[len("".join(f"{i}," for i in range(1000))) :]
+    assert "talaria.reconcile" not in {e["event"] for e in events}
+
+
 async def test_new_stream_reconciles_when_its_initial_events_have_expired():
     channel = Channel("example")
-    for _ in range(1501):
-        await channel.publish({"event": "message.delta", "delta": "part"})
+    await channel.publish({"event": "tool.started", "tool_call_id": "a", "tool": "terminal"})
+    for _ in range(3):
+        await channel.publish({"event": "message.delta", "delta": "x" * 1024 * 1024})
     channel.finished = True
-    frames = [frame async for frame in Relay(None).stream(channel, 0)]
-    assert '"event":"talaria.reconcile"' in frames[1]
-    assert len(channel.events) == 1500
+    frames = [frame async for frame in Relay(None).stream(channel, 1)]
+    # Beyond the size limit some text is gone. A client keeps what it already
+    # shows, including its tool, and the saved transcript fills the gap.
+    assert frames[1] == 'data: {"event":"talaria.reconcile"}\n\n'
+    assert channel.size <= 2 * 1024 * 1024
+    # A cursor from before Talaria restarted numbers other events: rebuild.
+    frames = [frame async for frame in Relay(None).stream(channel, 99)]
+    assert frames[1] == 'data: {"event":"talaria.reconcile","replay":true}\n\n'
+
+
+async def test_relay_holds_no_more_than_its_size_limit_accounts_for():
+    tracemalloc.start()
+    try:
+        before = tracemalloc.get_traced_memory()[0]
+        channel = Channel("example")
+        for _ in range(60000):
+            await channel.publish({"event": "message.delta", "delta": "文字"})
+        held = tracemalloc.get_traced_memory()[0] - before
+    finally:
+        tracemalloc.stop()
+    channel.finished = True
+    # Recent events cost their envelope as well, a bounded number of them.
+    assert held < 2 * channel.size + 1024 * 1024, (held, channel.size)
+    _, text = replayed([frame async for frame in Relay(None).stream(channel, 30000)])
+    assert text == "文字" * 30000
 
 
 @pytest.mark.parametrize("row", [None, [], "message"])
@@ -670,3 +734,51 @@ async def test_download_disconnect_closes_the_spool_even_before_iteration(
         assert files[0].closed
     finally:
         files[0].close()
+
+
+async def test_session_details_count_a_conversation_split_by_rotating_compaction(backend):
+    client, _, peer = backend
+    usage = {
+        "input_tokens": 100,
+        "output_tokens": 10,
+        "api_call_count": 1,
+        "estimated_cost_usd": 0.5,
+    }
+    peer.sessions["first"] = {"id": "first", "end_reason": "compression", **usage}
+    peer.sessions["second"] = {
+        "id": "second",
+        "parent_session_id": "first",
+        "end_reason": "compression",
+        **usage,
+    }
+    peer.sessions["latest"] = {"id": "latest", "parent_session_id": "second", **usage}
+    peer.sessions["branch"] = {"id": "branch", "parent_session_id": "latest", **usage}
+    for sid in peer.sessions:
+        peer.messages[sid] = []
+    details = (await client.get("/api/sessions/latest", params={"usage": "conversation"})).json()
+    assert details["talaria_conversation_usage"] == {
+        "input_tokens": 300,
+        "output_tokens": 30,
+        "cache_read_tokens": None,
+        "cache_write_tokens": None,
+        "reasoning_tokens": None,
+        "api_call_count": 3,
+        "estimated_cost_usd": 1.5,
+        "actual_cost_usd": None,
+    }
+    # A branch's parent did not end by compression: it is a separate conversation.
+    branch = (await client.get("/api/sessions/branch", params={"usage": "conversation"})).json()
+    assert "talaria_conversation_usage" not in branch
+    # Nor is a branch or subagent started before its parent was compacted.
+    for marker in ("_branched_from", "_delegate_from"):
+        peer.sessions["early"] = {
+            "id": "early",
+            "parent_session_id": "first",
+            "model_config": {marker: "first"},
+            **usage,
+        }
+        peer.messages["early"] = []
+        early = (await client.get("/api/sessions/early", params={"usage": "conversation"})).json()
+        assert "talaria_conversation_usage" not in early, marker
+    # Revalidation never pays for the extra reads.
+    assert "talaria_conversation_usage" not in (await client.get("/api/sessions/latest")).json()
