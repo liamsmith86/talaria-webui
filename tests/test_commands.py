@@ -37,6 +37,20 @@ CATALOG = [
         "reason": "Use this command in Hermes's terminal.",
     },
     {
+        "name": "stop",
+        "aliases": [],
+        "description": "Kill all running background processes",
+        "mode": "unavailable",
+        "reason": "Use this command in Hermes's terminal.",
+    },
+    {
+        "name": "steer",
+        "aliases": ["s"],
+        "description": "Inject a message after the next tool call",
+        "mode": "unavailable",
+        "reason": "Use this command in Hermes's terminal.",
+    },
+    {
         "name": "title",
         "aliases": [],
         "description": "Name the session",
@@ -182,6 +196,64 @@ def test_command_picker_alias_and_result_do_not_become_messages(page, live_app):
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_text("Use this command in Hermes's terminal.", exact=True)).to_be_visible()
     assert len(peer.commands) == 1
+
+
+def test_commands_talaria_cannot_run_stay_out_of_the_picker_and_help(page, live_app):
+    prepare(page, live_app)
+    composer = page.get_by_role("textbox", name="Message Hermes")
+    composer.fill("/")
+    options = page.get_by_role("option")
+    expect(options.filter(has_text="/compress")).to_have_count(1)
+    expect(options.filter(has_text="/steer")).to_contain_text("<prompt>")
+    expect(options.filter(has_text="/stop")).to_contain_text("Stop the current response")
+    expect(options.filter(has_text="/clear")).to_have_count(0)
+    composer.fill("/cl")
+    expect(options).to_have_count(0)
+    live_app[1].command_catalog = [*CATALOG, {**CATALOG[0], "name": "help", "mode": "web"}]
+    page.reload()
+    composer.fill("/help")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    output = page.locator(".command-output")
+    expect(output).to_contain_text("/stop — Stop the current response")
+    expect(output).not_to_contain_text("/clear")
+
+
+def test_stop_and_steer_act_on_the_running_response(page, live_app):
+    prepare(page, live_app)
+    peer = live_app[1]
+    composer = page.get_by_role("textbox", name="Message Hermes")
+
+    def run_command(text):
+        composer.fill(text)
+        page.locator(".send-button").click()
+
+    for text, error in (
+        ("/stop", "No response is running."),
+        ("/steer Use tabs", "No response is running."),
+    ):
+        run_command(text)
+        expect(page.get_by_text(error, exact=True)).to_be_visible()
+    assert not peer.runs
+
+    composer.fill("Start working")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_visible()
+    [run] = peer.runs.values()
+
+    run_command("/steer")
+    expect(page.get_by_text("Type your guidance after /steer.", exact=True)).to_be_visible()
+    run_command("/stop now")
+    expect(page.get_by_text("Use /stop without arguments.", exact=True)).to_be_visible()
+    assert "steer" not in run and not peer.stops
+
+    run_command("/s Use tabs")
+    expect(composer).to_have_value("")
+    wait_for(lambda: run.get("steer"), lambda steer: steer == "Use tabs")
+    assert len(peer.runs) == 1
+
+    run_command("/stop")
+    expect(composer).to_have_value("")
+    wait_for(lambda: peer.stops, lambda stops: stops == 1)
 
 
 def test_lost_admission_response_and_reload_never_post_twice(page, live_app):
