@@ -1,5 +1,4 @@
 {
-  "About {percent} context used · estimated after compression": "Etwa {percent} des Kontexts genutzt · Schätzung nach der Komprimierung",
   "/{command} command": "Befehl /{command}",
   "A Hermes event exceeded the display limit.": "Ein Hermes-Ereignis überschreitet das Anzeigelimit.",
   "A moment for your approval": "Deine Freigabe ist gefragt",
@@ -9,6 +8,7 @@
     "one": "Etwa {count} Token · Schätzung nach der Komprimierung",
     "other": "Etwa {count} Tokens · Schätzung nach der Komprimierung"
   },
+  "About {percent} context used · estimated after compression": "Etwa {percent} des Kontexts genutzt · Schätzung nach der Komprimierung",
   "Accent color": "Akzentfarbe",
   "Add a profile to connect to another Hermes address or profile.": "Füge ein Profil hinzu, um eine andere Hermes-Adresse oder ein anderes Hermes-Profil zu verbinden.",
   "Add profile": "Profil hinzufügen",
@@ -631,6 +631,7 @@
     "one": "{count} Datei bearbeitet",
     "other": "{count} Dateien bearbeitet"
   },
+  "execute_code attempt was blocked by Hermes. Update your Hermes Agent’s {file} and set {setting} to {value} to allow.": "Der execute_code-Versuch wurde von Hermes blockiert. Setze in der Datei {file} deines Hermes Agent {setting} auf {value}, um ihn zuzulassen.",
   "exit {code}": "Exit-Code {code}",
   "ran {count} command": {
     "one": "{count} Befehl ausgeführt",

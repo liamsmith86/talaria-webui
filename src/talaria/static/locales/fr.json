@@ -1,5 +1,4 @@
 {
-  "About {percent} context used · estimated after compression": "Environ {percent} du contexte utilisé · estimation après compression",
   "/{command} command": "Commande /{command}",
   "A Hermes event exceeded the display limit.": "Un événement Hermes dépasse la limite d’affichage.",
   "A moment for your approval": "Votre accord est nécessaire",
@@ -10,6 +9,7 @@
     "many": "Environ {count} jetons · estimation après compression",
     "other": "Environ {count} jetons · estimation après compression"
   },
+  "About {percent} context used · estimated after compression": "Environ {percent} du contexte utilisé · estimation après compression",
   "Accent color": "Couleur d’accentuation",
   "Add a profile to connect to another Hermes address or profile.": "Ajoutez un profil pour vous connecter à une autre adresse ou à un autre profil Hermes.",
   "Add profile": "Ajouter un profil",
@@ -636,6 +636,7 @@
     "many": "{count} fichiers modifiés",
     "other": "{count} fichiers modifiés"
   },
+  "execute_code attempt was blocked by Hermes. Update your Hermes Agent’s {file} and set {setting} to {value} to allow.": "La tentative d’execute_code a été bloquée par Hermes. Modifiez le fichier {file} de votre Hermes Agent et définissez {setting} sur {value} pour l’autoriser.",
   "exit {code}": "code de sortie {code}",
   "ran {count} command": {
     "one": "{count} commande exécutée",

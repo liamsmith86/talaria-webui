@@ -184,6 +184,20 @@ function ToolStatus({ tool }) {
     ><span class="sr-only">${label}</span></span>`;
 }
 
+// Hermes refuses this on every API session unless told otherwise, and its text says
+// nobody could approve the code. What to change is more useful here.
+const blockedBySetting = (tool) => tool.name === "execute_code" && typeof tool.output === "string" &&
+  tool.output.includes("BLOCKED: execute_code runs arbitrary local Python") &&
+  tool.output.includes("unattended platform");
+
+function BlockedCode() {
+  const code = (text) => html`<code>${text}</code>`;
+  return html`<p class="tool-blocked">${rich(
+    "execute_code attempt was blocked by Hermes. Update your Hermes Agent’s {file} and set {setting} to {value} to allow.",
+    { file: code("config.yaml"), setting: code("approvals.unattended_mode"), value: code("approve") },
+  )}</p>`;
+}
+
 export function ToolRow({ tool, matched = false, initiallyOpen = false, onToggle }) {
   const [open, setOpen] = useState(initiallyOpen);
   // A path or query already shown in the row needs no second copy. Commands
@@ -213,7 +227,9 @@ export function ToolRow({ tool, matched = false, initiallyOpen = false, onToggle
       ${details &&
       html`<${ToolCode} text=${input} label=${t("Tool details")}
         shell=${tool.name === "terminal"} enabled=${open} />`}
-      ${tool.output !== undefined
+      ${blockedBySetting(tool)
+        ? html`<${BlockedCode} />`
+        : tool.output !== undefined
         ? html`<small>${t("Result")}</small>
             <${ToolResult} text=${tool.output}
               enabled=${open && tool.status !== "running"} />`

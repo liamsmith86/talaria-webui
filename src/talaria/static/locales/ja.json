@@ -1,5 +1,4 @@
 {
-  "About {percent} context used · estimated after compression": "コンテキスト使用量 約{percent} · 圧縮後の推定値",
   "/{command} command": "/{command}コマンド",
   "A Hermes event exceeded the display limit.": "Hermesのイベントが表示上限を超えました。",
   "A moment for your approval": "承認をお願いします",
@@ -8,6 +7,7 @@
   "About {count} token · estimated after compression": {
     "other": "約{count}トークン · 圧縮後の推定値"
   },
+  "About {percent} context used · estimated after compression": "コンテキスト使用量 約{percent} · 圧縮後の推定値",
   "Accent color": "アクセントカラー",
   "Add a profile to connect to another Hermes address or profile.": "別のHermesアドレスやプロファイルに接続するには、プロファイルを追加してください。",
   "Add profile": "プロファイルを追加",
@@ -626,6 +626,7 @@
   "edited {count} file": {
     "other": "ファイルを{count}件編集"
   },
+  "execute_code attempt was blocked by Hermes. Update your Hermes Agent’s {file} and set {setting} to {value} to allow.": "execute_code の実行は Hermes によってブロックされました。許可するには、Hermes Agent の {file} で {setting} を {value} に設定してください。",
   "exit {code}": "終了コード {code}",
   "ran {count} command": {
     "other": "コマンドを{count}件実行"

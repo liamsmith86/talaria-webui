@@ -182,3 +182,38 @@ def test_wide_code_is_keyboard_scrollable(page, live_app):
     code.focus()
     page.keyboard.press("ArrowRight")
     expect(code).not_to_have_js_property("scrollLeft", 0)
+
+
+def test_blocked_code_says_which_setting_allows_it(page, live_app):
+    peer = live_app[1]
+    peer.sessions["blocked-code"] = {"id": "blocked-code", "title": "Blocked code"}
+    peer.messages["blocked-code"] = [
+        {
+            "id": 1,
+            "role": "assistant",
+            "tool_calls": [
+                {"id": "call-1", "function": {"name": "execute_code", "arguments": "{}"}}
+            ],
+        },
+        {
+            "id": 2,
+            "role": "tool",
+            "tool_call_id": "call-1",
+            "content": json.dumps(
+                {
+                    "status": "error",
+                    "error": "BLOCKED: execute_code runs arbitrary local Python. This session "
+                    "runs on an unattended platform (api_server) with no user present.",
+                }
+            ),
+        },
+    ]
+    page.reload()
+    page.get_by_role("link", name="Blocked code", exact=True).click()
+    card = page.locator(".tool-card")
+    expect(card.locator(".tool-status.failed")).to_be_visible()
+    card.locator("summary").click()
+    expect(card.locator(".tool-blocked code")).to_have_text(
+        ["config.yaml", "approvals.unattended_mode", "approve"]
+    )
+    expect(card).not_to_contain_text("BLOCKED")

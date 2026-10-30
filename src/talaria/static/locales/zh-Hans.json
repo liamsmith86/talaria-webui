@@ -1,5 +1,4 @@
 {
-  "About {percent} context used · estimated after compression": "已使用约 {percent} 的上下文 · 压缩后的估算值",
   "/{command} command": "/{command} 命令",
   "A Hermes event exceeded the display limit.": "一条 Hermes 事件超出了显示上限。",
   "A moment for your approval": "请确认此操作",
@@ -8,6 +7,7 @@
   "About {count} token · estimated after compression": {
     "other": "约 {count} 个词元 · 压缩后的估算值"
   },
+  "About {percent} context used · estimated after compression": "已使用约 {percent} 的上下文 · 压缩后的估算值",
   "Accent color": "强调色",
   "Add a profile to connect to another Hermes address or profile.": "添加配置档案，以连接其他 Hermes 地址或配置档案。",
   "Add profile": "添加配置档案",
@@ -626,6 +626,7 @@
   "edited {count} file": {
     "other": "编辑了 {count} 个文件"
   },
+  "execute_code attempt was blocked by Hermes. Update your Hermes Agent’s {file} and set {setting} to {value} to allow.": "Hermes 已阻止 execute_code 尝试。如需允许，请更新 Hermes Agent 的 {file}，将 {setting} 设置为 {value}。",
   "exit {code}": "退出码 {code}",
   "ran {count} command": {
     "other": "运行了 {count} 条命令"

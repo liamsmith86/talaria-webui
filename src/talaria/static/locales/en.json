@@ -631,6 +631,7 @@
     "one": "edited {count} file",
     "other": "edited {count} files"
   },
+  "execute_code attempt was blocked by Hermes. Update your Hermes Agent’s {file} and set {setting} to {value} to allow.": "execute_code attempt was blocked by Hermes. Update your Hermes Agent’s {file} and set {setting} to {value} to allow.",
   "exit {code}": "exit {code}",
   "ran {count} command": {
     "one": "ran {count} command",

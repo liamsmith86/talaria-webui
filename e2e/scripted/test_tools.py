@@ -51,6 +51,18 @@ def test_reasoning_appears_once_the_reply_is_done(chat):
     expect(chat.page.locator(".reasoning")).to_contain_text("Weighing it up.")
 
 
+def test_blocked_code_says_which_setting_allows_it(chat):
+    chat.send(plan(tool("execute_code", code="print('hello')"), "blocked"))
+    step = chat.page.locator(".tool-card").filter(has_text="Ran code")
+    expect(step.locator(".tool-status.failed")).to_be_visible()
+    step.locator("summary").click()
+    expect(step.locator(".tool-blocked")).to_have_text(
+        "execute_code attempt was blocked by Hermes. Update your Hermes Agent’s config.yaml "
+        "and set approvals.unattended_mode to approve to allow."
+    )
+    expect(step).not_to_contain_text("BLOCKED")
+
+
 def test_long_output_is_readable_text(chat):
     chat.send(plan(terminal("seq 1 6000"), "6000"))
     step = chat.page.locator(".tool-card").filter(has_text="seq 1 6000").first

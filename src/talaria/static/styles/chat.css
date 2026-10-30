@@ -562,6 +562,10 @@
   font-size: 11px;
   color: var(--muted);
 }
+.tool-content .tool-blocked {
+  font-size: 13px;
+  color: inherit;
+}
 .tool-facts {
   display: flex;
   flex-wrap: wrap;
