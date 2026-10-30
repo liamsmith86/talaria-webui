@@ -72,12 +72,12 @@ def serve(app, port=0):
     server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False))
     thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
-    for _ in range(100):
-        if server.started:
-            break
+    # A ceiling only: a healthy start returns at once, and a CI runner can stall for seconds.
+    deadline = time.monotonic() + 30
+    while not server.started:
+        if time.monotonic() > deadline:
+            raise RuntimeError("Test server did not start")
         time.sleep(0.02)
-    else:
-        raise RuntimeError("Test server did not start")
     return server, thread, f"http://127.0.0.1:{bound_port}"
 
 
