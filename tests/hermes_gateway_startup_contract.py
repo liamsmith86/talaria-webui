@@ -160,7 +160,11 @@ with gateway("late-enable") as log:
     configs["default"]["plugins"]["enabled"] = ["talaria-webui"]
     (home / "config.yaml").write_text(json.dumps(configs["default"]))
     reload_plugins()
-    assert "Talaria API registration requires a gateway restart" in log.read_text()
+    # The log line can land just after the reload's answer does.
+    deadline = time.monotonic() + 10
+    while "Talaria API registration requires a gateway restart" not in log.read_text():
+        assert time.monotonic() < deadline, log.read_text()
+        time.sleep(0.05)
     asyncio.run(capabilities("", keys["default"], 404))
 
 with gateway("restart-after-enable"):
