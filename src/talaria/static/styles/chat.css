@@ -740,16 +740,19 @@
 }
 .conversation-jumps.is-idle {
   opacity: 0;
-  pointer-events: none;
 }
 .conversation-jumps:focus-within {
   opacity: 1;
-  pointer-events: auto;
 }
 @media (hover: hover) {
   .conversation-jumps:hover {
     opacity: 1;
-    pointer-events: auto;
+  }
+}
+/* Without hover, nothing would reveal them before a tap landed on them. */
+@media (hover: none) {
+  .conversation-jumps.is-idle:not(:focus-within) {
+    pointer-events: none;
   }
 }
 .jump-bottom,

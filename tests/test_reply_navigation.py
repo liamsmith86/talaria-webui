@@ -12,6 +12,13 @@ from .conftest import fire_timers, wait_for_store, wait_in_browser
 from .test_conversation_features import seed
 
 
+def show_long_reply(page):
+    page.evaluate("""async () => (await import('/static/store.js')).update({
+      active:'reading',history:[],loading:false,lives:{reading:{id:'reading-run',status:'running',
+        text:'## A long reply\\n\\n'+('A paragraph to read. '.repeat(20)+'\\n\\n').repeat(12),
+        tools:[],userText:'Tell me more',baseHistoryLength:0}}})""")
+
+
 @pytest.mark.parametrize("width", [390, 1440])
 @pytest.mark.parametrize("motion", ["reduce", "no-preference"])
 def test_scroll_shortcuts_stay_clear_of_text_and_fade_while_reading(page, width, motion):
@@ -29,10 +36,7 @@ def test_scroll_shortcuts_stay_clear_of_text_and_fade_while_reading(page, width,
             }"""),
         )
 
-    page.evaluate("""async () => (await import('/static/store.js')).update({
-      active:'reading',history:[],loading:false,lives:{reading:{id:'reading-run',status:'running',
-        text:'## A long reply\\n\\n'+('A paragraph to read. '.repeat(20)+'\\n\\n').repeat(12),
-        tools:[],userText:'Tell me more',baseHistoryLength:0}}})""")
+    show_long_reply(page)
     controls = page.locator(".conversation-jumps")
     start = page.get_by_role("button", name="Jump to start of reply", exact=True)
     expect(start).to_be_visible()
@@ -42,7 +46,6 @@ def test_scroll_shortcuts_stay_clear_of_text_and_fade_while_reading(page, width,
     assert button_box["x"] >= content_box["x"] + content_box["width"]
     assert button_box["width"] == button_box["height"] == 36
     let_fade()
-    expect(controls).to_have_css("pointer-events", "none")
     # Automatic follow must not reveal the controls on every arriving token.
     page.evaluate("""async () => {
       const {state,update}=await import('/static/store.js');
@@ -63,6 +66,13 @@ def test_scroll_shortcuts_stay_clear_of_text_and_fade_while_reading(page, width,
         arg=before_wheel,
     )
     let_fade()
+    # Resting the pointer where they are brings them back.
+    box = start.bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    expect(controls).to_have_class("conversation-jumps is-idle")
+    expect(controls).to_have_css("opacity", "1")
+    viewport.hover()
+    expect(controls).to_have_css("opacity", "0")
     viewport.dispatch_event("pointerdown", {"pointerType": "touch"})
     expect(controls).to_have_css("opacity", "1")
     start.focus()
@@ -71,6 +81,26 @@ def test_scroll_shortcuts_stay_clear_of_text_and_fade_while_reading(page, width,
     expect(controls).to_have_css("opacity", "1")
     page.keyboard.press("Enter")
     wait_at_reply_start(page, "A long reply")
+
+
+def test_faded_scroll_shortcuts_let_touches_through(page, live_app):
+    context = page.context.browser.new_context(
+        viewport={"width": 390, "height": 844},
+        is_mobile=True,
+        has_touch=True,
+        storage_state=page.context.storage_state(),
+    )
+    try:
+        mobile = context.new_page()
+        mobile.goto(live_app[0])
+        expect(mobile.get_by_label("Message Hermes")).to_be_visible()
+        show_long_reply(mobile)
+        controls = mobile.locator(".conversation-jumps")
+        # Nothing reveals them on a touch screen before a tap would land on them.
+        expect(controls).to_have_class("conversation-jumps is-idle")
+        expect(controls).to_have_css("pointer-events", "none")
+    finally:
+        context.close()
 
 
 @pytest.mark.parametrize("width", [390, 1440])
