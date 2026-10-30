@@ -336,7 +336,7 @@ def test_hermes_recovery_prompts_are_all_recognised():
     source = Path(os.environ["HERMES_SOURCE"])
     script = """
 import json
-from agent import conversation_loop
+from agent import context_compressor, conversation_loop
 names = (
     "_LENGTH_CONTINUATION_NETWORK_STUB", "_LEGACY_LENGTH_CONTINUATION_NETWORK_STUB",
     "_LENGTH_CONTINUATION_OUTPUT_LIMIT", "_LENGTH_CONTINUATION_DROPPED_TOOLS_PREFIX",
@@ -344,6 +344,7 @@ names = (
     "_DROPPED_TOOLCALL_NUDGE_CONTENT", "_EMPTY_TOOL_RESPONSE_NUDGE",
 )
 prompts = [getattr(conversation_loop, name, None) for name in names]
+prompts.append(getattr(context_compressor, "MAX_ITERATIONS_SUMMARY_REQUEST", None))
 print(json.dumps([prompt for prompt in prompts if prompt]))
 """
     result = subprocess.run(

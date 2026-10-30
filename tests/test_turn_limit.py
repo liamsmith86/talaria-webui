@@ -52,8 +52,12 @@ def test_turn_limit_handoff_reconciles_and_allows_compression(
         page.get_by_role("status").filter(has_text="Hermes reached its turn limit")
     ).to_be_visible()
     wait_for_store(page, "s => s.lives[s.active]?.persisted === true")
-    expect(page.locator(".message.assistant")).to_have_count(2)
-    expect(page.locator(".message.assistant").last).to_contain_text(terminal["output"])
+    # Hermes's request for this wrap-up isn't something the reader said.
+    expect(page.get_by_text("maximum number of tool-calling iterations")).to_have_count(0)
+    reply = page.locator(".message.assistant")
+    expect(reply).to_have_count(1)
+    expect(reply).to_contain_text("Before the turn limit.")
+    expect(reply).to_contain_text(terminal["output"])
     # Exercise the reported next action through the actual command UI.
     page.get_by_label("Message Hermes").fill("/compress ")
     page.get_by_role("button", name="Send message", exact=True).click()
