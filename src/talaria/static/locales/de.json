@@ -1,9 +1,14 @@
 {
+  "About {percent} context used · estimated after compression": "Etwa {percent} des Kontexts genutzt · Schätzung nach der Komprimierung",
   "/{command} command": "Befehl /{command}",
   "A Hermes event exceeded the display limit.": "Ein Hermes-Ereignis überschreitet das Anzeigelimit.",
   "A moment for your approval": "Deine Freigabe ist gefragt",
   "A tool needs your permission to continue.": "Ein Werkzeug benötigt deine Erlaubnis, um fortzufahren.",
   "API key": "API-Schlüssel",
+  "About {count} token · estimated after compression": {
+    "one": "Etwa {count} Token · Schätzung nach der Komprimierung",
+    "other": "Etwa {count} Tokens · Schätzung nach der Komprimierung"
+  },
   "Accent color": "Akzentfarbe",
   "Add a profile to connect to another Hermes address or profile.": "Füge ein Profil hinzu, um eine andere Hermes-Adresse oder ein anderes Hermes-Profil zu verbinden.",
   "Add profile": "Profil hinzufügen",

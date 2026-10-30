@@ -1,5 +1,5 @@
 name: talaria-webui
-version: "1.5.2"
+version: "1.6.0"
 description: Extends Hermes Agent API capabilities to deliver a richer chat interface with Talaria WebUI
 author: Liam Smith
 requires_hermes: ">=0.21.5"
@@ -8,6 +8,8 @@ provides_hooks:
   - pre_api_request
   - post_api_request
   - on_session_end
+  - post_compaction
+  - on_session_delete
 provides_middleware: []
 requires_env: []
 python_dependencies:

@@ -37,8 +37,72 @@ with session_lease(agent, db, sys.argv[2]):
     assert db.get_messages(sid) == before
 
 
+def observe_compaction():
+    """Deliver Hermes's post_compaction hook, on releases that have it, as a loaded plugin would."""
+    from hermes_cli.plugins import VALID_HOOKS, get_plugin_manager
+    from hermes_constants import get_hermes_home
+
+    from talaria.hermes_plugin.observations import Observations
+
+    if "post_compaction" not in VALID_HOOKS:
+        return False
+    hooks = get_plugin_manager()._hooks.setdefault("post_compaction", [])
+    hooks.append(Observations(get_hermes_home()).compacted)
+    return True
+
+
+async def verify_kept_turn(client, headers, db, canonical, reply, needle, sized):
+    """A turn compaction keeps is renumbered, not new: details, search and windows still find it."""
+    from hermes_constants import get_hermes_home
+
+    from talaria.hermes_plugin.observations import Observations
+
+    kept = next(m for m in db.get_messages(canonical) if needle in str(m["content"]))
+    assert kept["id"] != reply["id"], "Hermes no longer renumbers kept turns"
+    if reply.get("message_uid"):
+        assert kept["message_uid"] == reply["message_uid"]
+        response = await client.get(
+            f"/talaria/v1/sessions/{canonical}/response",
+            headers=headers,
+            params={"message_id": kept["id"]},
+        )
+        detail = await response.json()
+        assert detail["model"] == "observed-model" and detail["message_id"] == kept["id"], detail
+    response = await client.get("/talaria/v1/search", headers=headers, params={"q": needle})
+    hits = (await response.json())["data"]
+    assert [hit["id"] for hit in hits] == [kept["id"]], hits
+    response = await client.get(
+        f"/talaria/v1/sessions/{canonical}/around",
+        headers=headers,
+        params={"message_id": kept["id"]},
+    )
+    window = [row["id"] for row in (await response.json())["data"]]
+    shown = [row["id"] for row in db.get_messages(canonical, include_compacted=True)]
+    start = shown.index(window[0])
+    assert kept["id"] in window and shown[start : start + len(window)] == window
+    if sized:
+        response = await client.get(f"/talaria/v1/sessions/{canonical}/context", headers=headers)
+        context = (await response.json())["context"]
+        assert context["estimated"] is True and context["used"] > 0, context
+        assert context["maximum"] == 1000 and context["model"] == "observed-model", context
+    stored = Observations(get_hermes_home()).read(reply["session_id"])
+    assert stored, "Saved details vanished with the compaction"
+
+
+async def verify_rotated_search(client, headers, db, canonical, needle):
+    """Rotation copies kept turns to the new session: search finds each once, where it is shown."""
+    response = await client.get("/talaria/v1/search", headers=headers, params={"q": needle})
+    hits = [(hit["session_id"], hit["id"]) for hit in (await response.json())["data"]]
+    if "include_ancestors" not in inspect.signature(db.get_messages).parameters:
+        return
+    assert len(hits) == 1, hits
+    shown = db.get_messages(canonical, include_compacted=True, include_ancestors=True)
+    assert hits == [(m["session_id"], m["id"]) for m in shown if needle in str(m["content"])], hits
+
+
 async def verify_commands(client, db, model):
     await asyncio.to_thread(verify_lease_recovery, db)
+    sized = observe_compaction()
     headers = {"Authorization": "Bearer fixture-key"}
     assert (await client.get("/talaria/v1/commands")).status == 401
     response = await client.get("/talaria/v1/commands", headers=headers)
@@ -68,7 +132,21 @@ async def verify_commands(client, db, model):
             db.append_message(
                 sid, "user" if i % 2 == 0 else "assistant", f"Message {i}: " + "detail " * 2000
             )
+        needle = f"keptneedle{partial}{rotate}".lower()
+        db.append_message(sid, "user", "Keep going")
+        db.append_message(sid, "assistant", " ".join([needle, *["detail"] * 200]))
         before = db.get_messages(sid)
+        reply = before[-1]
+        from hermes_constants import get_hermes_home
+
+        from talaria.hermes_plugin.observations import Observations
+
+        Observations(get_hermes_home()).save(
+            sid,
+            reply["id"],
+            {"model": "observed-model", "context_max": 1000, "observed_at": 1.0},
+            uid=reply.get("message_uid"),
+        )
         before_conversation = db.get_messages_as_conversation(sid)
         preview = await command(sid, "here 2 --preview")
         assert preview["status"] == "completed" and preview["changed"] is False, preview
@@ -116,6 +194,10 @@ async def verify_commands(client, db, model):
                 m["content"] for m in before_conversation[-4:]
             ]
         assert not any(m["content"].startswith("/compress") for m in after)
+        if partial and not rotate:
+            await verify_kept_turn(client, headers, db, canonical, reply, needle, sized)
+        if partial and rotate:
+            await verify_rotated_search(client, headers, db, canonical, needle)
         if "include_ancestors" in inspect.signature(db.get_messages).parameters:
             response = await client.get(
                 f"/api/sessions/{canonical}/messages",

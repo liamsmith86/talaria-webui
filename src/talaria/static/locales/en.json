@@ -4,6 +4,11 @@
   "A moment for your approval": "A moment for your approval",
   "A tool needs your permission to continue.": "A tool needs your permission to continue.",
   "API key": "API key",
+  "About {count} token · estimated after compression": {
+    "one": "About {count} token · estimated after compression",
+    "other": "About {count} tokens · estimated after compression"
+  },
+  "About {percent} context used · estimated after compression": "About {percent} context used · estimated after compression",
   "Accent color": "Accent color",
   "Add a profile to connect to another Hermes address or profile.": "Add a profile to connect to another Hermes address or profile.",
   "Add profile": "Add profile",

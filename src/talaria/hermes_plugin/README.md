@@ -37,10 +37,11 @@ alone.
   session copies it into a new API session and leaves the original open. Search
   includes other sessions visible within the authenticated profile. Session
   changes use Hermes's storage and active-session protections.
-- **Local storage:** Keeps up to 10,000 response metadata records in
-  `$HERMES_HOME/talaria/observations.db`: identifiers, model names, token counts,
-  timings and completion status. These records contain no message bodies or
-  credentials. Disabling the plugin leaves this file in place.
+- **Local storage:** Keeps up to 10,000 response metadata records and 10,000
+  compaction sizes in `$HERMES_HOME/talaria/observations.db`: identifiers, model
+  names, token counts, timings and completion status. These records contain no
+  message bodies or credentials. Deleting a session removes its records; archiving
+  keeps them. Disabling the plugin leaves this file in place.
 - **Network:** Chat and compression use Hermes's configured providers; model
   inventory refreshes use its provider and catalog sources. These requests may
   incur provider charges. The plugin adds no analytics or telemetry.
@@ -54,7 +55,7 @@ alone.
 
 ## Integration and validation
 
-The plugin registers an `api_server` platform handler and the three hooks listed
+The plugin registers an `api_server` platform handler and the hooks listed
 in [plugin.yaml](plugin.yaml). It registers no tools or middleware and does not
 replace Hermes core methods. Manual `/compress` calls Hermes's own compression
 implementation.

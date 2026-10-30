@@ -1,9 +1,13 @@
 {
+  "About {percent} context used · estimated after compression": "コンテキスト使用量 約{percent} · 圧縮後の推定値",
   "/{command} command": "/{command}コマンド",
   "A Hermes event exceeded the display limit.": "Hermesのイベントが表示上限を超えました。",
   "A moment for your approval": "承認をお願いします",
   "A tool needs your permission to continue.": "ツールを続行するには許可が必要です。",
   "API key": "APIキー",
+  "About {count} token · estimated after compression": {
+    "other": "約{count}トークン · 圧縮後の推定値"
+  },
   "Accent color": "アクセントカラー",
   "Add a profile to connect to another Hermes address or profile.": "別のHermesアドレスやプロファイルに接続するには、プロファイルを追加してください。",
   "Add profile": "プロファイルを追加",

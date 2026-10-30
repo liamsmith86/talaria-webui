@@ -339,6 +339,15 @@ def test_compaction_is_shown_on_every_device_after_reloads_and_hours_away(page, 
         expect(indicator).to_have_attribute(
             "aria-label", "Context compressed · usage updates after the next reply"
         )
+        peer.discovery_overrides[f"/talaria/v1/sessions/{sid}/context"] = (
+            {"context": {"used": 1200, "maximum": 128000, "estimated": True}},
+            200,
+        )
+        third.reload()
+        expect(indicator).to_have_attribute(
+            "aria-label", "About 1% context used · estimated after compression"
+        )
+        del peer.discovery_overrides[f"/talaria/v1/sessions/{sid}/context"]
         peer.messages[sid].extend(turns(2, start=5))
         third.evaluate("async sid => (await import('/static/store.js')).refreshHistory(sid)", sid)
         expect(indicator).to_have_attribute("aria-label", "9% context used · last request")
