@@ -393,6 +393,12 @@ class Chat:
         self.store(SETTLED, timeout)
         expect(self.page.locator(".conversation-content .working")).to_have_count(0)
 
+    def confirm(self, name):
+        """Accept the open dialog, which closes once its action has been admitted."""
+        dialog = self.page.get_by_role("dialog")
+        dialog.get_by_role("button", name=name, exact=True).click()
+        expect(dialog).to_have_count(0)
+
     def send(self, text, timeout=REPLY_TIMEOUT):
         self.submit(text)
         self.settle(timeout)

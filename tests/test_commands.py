@@ -211,6 +211,8 @@ def test_commands_talaria_cannot_run_stay_out_of_the_picker_and_help(page, live_
     expect(options).to_have_count(0)
     live_app[1].command_catalog = [*CATALOG, {**CATALOG[0], "name": "help", "mode": "web"}]
     page.reload()
+    # A reload restores the draft, which must not land in the middle of typing.
+    expect(composer).to_have_value("/cl")
     composer.fill("/help")
     page.get_by_role("button", name="Send message", exact=True).click()
     output = page.locator(".command-output")

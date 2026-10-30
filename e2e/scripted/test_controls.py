@@ -38,7 +38,7 @@ def test_edit_and_resend_replaces_the_turn(chat):
     chat.page.get_by_role("button", name="Edit and resend", exact=True).last.click()
     dialog = chat.page.get_by_role("dialog", name="Edit and resend", exact=True)
     dialog.get_by_role("textbox", name="Edit message", exact=True).fill(plan("two"))
-    dialog.get_by_role("button", name="Edit and resend", exact=True).click()
+    chat.confirm("Edit and resend")
     chat.settle()
     expect(chat.page.locator(".message.user")).to_have_count(1)
     expect(chat.page.locator(".message.user")).to_contain_text("two")
@@ -47,8 +47,11 @@ def test_edit_and_resend_replaces_the_turn(chat):
 
 def test_regenerating_keeps_one_reply(chat):
     chat.send(plan("lion"))
+    first = chat.value("state.history.at(-1).id")
     chat.page.get_by_role("button", name="Regenerate response", exact=True).last.click()
+    chat.confirm("Regenerate response")
     chat.settle()
+    assert chat.value("state.history.at(-1).id") != first
     expect(chat.page.locator(".message.user")).to_have_count(1)
     expect(chat.page.locator(".message.assistant")).to_have_count(1)
 
@@ -57,7 +60,7 @@ def test_deleting_the_last_turn(chat):
     chat.send(plan("first"))
     chat.send(plan("second"))
     chat.page.get_by_role("button", name="Delete turn", exact=True).last.click()
-    chat.page.get_by_role("dialog").get_by_role("button", name="Delete turn", exact=True).click()
+    chat.confirm("Delete turn")
     expect(chat.page.locator(".message.user")).to_have_count(1)
     expect(chat.page.locator(".conversation-content")).not_to_contain_text("second")
 
