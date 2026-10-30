@@ -2,7 +2,7 @@
 
 import pytest
 from playwright.sync_api import expect
-from scripted_model import ECHO, plan, terminal, tool
+from scripted_model import ECHO, plan, reasoned, terminal, tool
 
 
 def test_consecutive_commands_fold_into_one_group(chat, token):
@@ -44,6 +44,11 @@ def test_a_failed_step_stays_marked_after_a_reload(chat):
     expect(chat.page.locator(".tool-status.failed")).to_be_visible()
     chat.assert_reload_matches()
     expect(chat.page.locator(".tool-status.failed")).to_be_visible()
+
+
+def test_reasoning_appears_once_the_reply_is_done(chat):
+    assert chat.send(plan(reasoned("Weighing it up.", "done"))) == "done"
+    expect(chat.page.locator(".reasoning")).to_contain_text("Weighing it up.")
 
 
 def test_long_output_is_readable_text(chat):

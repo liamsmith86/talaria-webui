@@ -1,4 +1,4 @@
-"""That a real provider works: its streams, tools, reasoning and summaries.
+"""That a real provider works: its streams, tools and summaries.
 
 Everything else is in scripted/. These follow what a real model chooses to do, so keep
 them few, and only ask for what no model has a reason to do differently.
@@ -18,15 +18,6 @@ def test_a_follow_up_keeps_the_conversation_context(chat):
     reply = chat.send("What was the code word? Reply with only the word.")
     assert "heliotrope" in reply.lower()
     expect(chat.page.locator(".message.user")).to_have_count(2)
-
-
-def test_reasoning_appears_once_the_reply_is_done(chat):
-    chat.send(
-        "Do not use any tools. Think carefully in your reasoning about which is larger, "
-        "9^(9^9) or 10^(9^8), checking your work twice. Then reply in one short sentence."
-    )
-    assert chat.value("state.history.some((row) => row.role === 'assistant' && row.reasoning)")
-    expect(chat.page.locator(".reasoning")).not_to_have_count(0)
 
 
 def test_a_terminal_step_shows_its_command_and_output(chat, token):

@@ -36,6 +36,10 @@ def cut_off(text):
     return {"cut_off": text}
 
 
+def reasoned(reasoning, text):
+    return {"reasoning": reasoning, "text": text}
+
+
 def planned(content):
     try:
         steps = json.loads(content)
@@ -65,6 +69,12 @@ def answer(step, results):
         calls = [{"index": 0, "id": f"call_{secrets.token_hex(4)}", "type": "function"}]
         calls[0]["function"] = call
         return {"role": "assistant", "tool_calls": calls}, "tool_calls"
+    if isinstance(step, dict) and "reasoning" in step:
+        return {
+            "role": "assistant",
+            "reasoning_content": step["reasoning"],
+            "content": step["text"],
+        }, "stop"
     if isinstance(step, dict) and "cut_off" in step:
         return {"role": "assistant", "content": step["cut_off"]}, None
     text = "\n".join(results) if step == ECHO else step
