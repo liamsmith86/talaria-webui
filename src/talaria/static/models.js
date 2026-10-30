@@ -111,7 +111,7 @@ export function reasoningOptions(model) {
           Object.hasOwn(reasoningNames, v) &&
           !["auto", "none"].includes(v),
       )
-    : ["low", "medium", "high"];
+    : ["low", "medium", "high", "xhigh", "max"];
   return [
     "auto",
     ...(model?.capabilities?.can_disable_reasoning === true ? ["none"] : []),

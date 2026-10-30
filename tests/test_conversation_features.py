@@ -261,6 +261,19 @@ def test_reasoning_is_session_scoped_and_catalog_is_inherited(page, live_app):
     assert list(live_app[1].runs.values())[-1]["model_options"] is None
 
 
+def test_model_without_published_levels_offers_the_full_reasoning_range(page, live_app):
+    page.get_by_role("button", name="Choose reasoning", exact=True).click()
+    for level in ("Low", "Medium", "High", "Extra high", "Maximum"):
+        expect(page.get_by_role("button", name=level, exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Ultra", exact=True)).to_have_count(0)
+    expect(
+        page.get_by_text("Hermes may adjust the level to match the model’s supported settings.")
+    ).to_be_visible()
+    page.get_by_role("button", name="Maximum", exact=True).click()
+    send(page, "Think as hard as you can")
+    assert next(iter(live_app[1].runs.values()))["model_options"]["reasoning"]["effort"] == "max"
+
+
 def test_catalog_warnings_prices_and_unavailable_models(page, live_app):
     peer = live_app[1]
     peer.discovery_overrides["/api/model/options"] = (
