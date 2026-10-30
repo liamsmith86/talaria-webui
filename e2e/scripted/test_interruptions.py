@@ -1,7 +1,7 @@
 """Leaving and coming back while Hermes is still working on a reply."""
 
 from playwright.sync_api import expect
-from scripted_model import ECHO, held_terminal, plan
+from scripted_model import ECHO, cut_off, held_terminal, plan
 
 WORKING = ".tool-card.working, .activity.working"
 
@@ -61,3 +61,19 @@ def test_another_device_follows_a_running_reply(chat, hermes, token, device):
     assert value in other.reply()
     chat.settle()
     assert value in chat.reply()
+
+
+def test_a_reply_cut_off_by_the_network_settles_as_one_turn(chat):
+    assert "the rest" in chat.send(plan(cut_off("The first part. "), "the rest"))
+    expect(chat.page.locator(".message.user")).to_have_count(1)
+    expect(chat.page.locator(".conversation-content")).not_to_contain_text("[System:")
+    # Only a reply adopted from the saved transcript offers these.
+    expect(chat.page.get_by_role("button", name="Regenerate response", exact=True)).to_be_visible()
+    expect(chat.page.get_by_role("button", name="Response details", exact=True)).to_be_visible()
+    # Hermes's own prompt to continue is not a later turn to warn about.
+    chat.page.get_by_role("button", name="Regenerate response", exact=True).click()
+    expect(chat.page.get_by_role("dialog")).not_to_contain_text("later turn")
+    chat.confirm("Regenerate response")
+    chat.settle()
+    expect(chat.page.locator(".message.user")).to_have_count(1)
+    expect(chat.page.locator(".message.assistant")).to_have_count(1)

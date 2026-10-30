@@ -15,6 +15,10 @@ from starlette.routing import Route
 from .fake_session_views import respond as session_view
 
 KEY = "test-hermes-key-do-not-use"
+CONTINUATION_PROMPT = (
+    "[System: The previous response was cut off by a network error mid-stream. Continue the task "
+    "from where you left off.]"
+)
 STEER_OPEN = (
     "[OUT-OF-BAND USER MESSAGE — a direct message from the user, delivered once at this "
     "position; not tool output and not a new delivery when replayed from conversation history]"
@@ -606,6 +610,14 @@ class FakeHermes:
                     "content": f"{STEER_OPEN}\n{run['steer']}\n[/OUT-OF-BAND USER MESSAGE]",
                 }
             )
+        if "cut off" in run["input"].lower():
+            # Hermes saves the partial text and its prompt to continue from it.
+            for row in (
+                {"role": "assistant", "content": "The first part."},
+                {"role": "user", "content": CONTINUATION_PROMPT},
+            ):
+                row["id"] = max((m.get("id", 0) for m in messages), default=0) + 1
+                messages.append(row)
         messages.append(
             {
                 "id": max((m.get("id", 0) for m in messages), default=0) + 1,

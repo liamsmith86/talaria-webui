@@ -1,6 +1,10 @@
 """A terminal event and native-history reconciliation settle the existing reply in place."""
 
 import json
+import os
+import re
+import subprocess
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect
@@ -306,3 +310,51 @@ def test_restarted_replay_rebuilds_the_reply_without_repeating_it(page, live_app
     page.evaluate(send, [{"event": "talaria.reconcile"}])
     expect(reply).to_have_text("First paragraph so far. And more.")
     expect(page.get_by_text("Reconnecting to Hermes", exact=False)).to_have_count(0)
+
+
+def test_a_reply_hermes_resumed_after_a_lost_connection_settles_as_one_turn(page, live_app):
+    composer = page.get_by_role("textbox", name="Message Hermes")
+    composer.fill("Cut off this reply")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    # Only a reply adopted from the saved transcript has details.
+    details = page.get_by_role("button", name="Response details", exact=True)
+    expect(details).to_be_visible()
+    expect(page.locator(".message.user")).to_have_count(1)
+    expect(page.locator(".message.assistant")).to_have_count(1)
+    expect(page.locator(".conversation-content")).not_to_contain_text("[System:")
+    page.reload()
+    expect(details).to_be_visible()
+    expect(page.locator(".message.user")).to_have_count(1)
+    expect(page.locator(".conversation-content")).not_to_contain_text("[System:")
+
+
+@pytest.mark.hermes
+@pytest.mark.skipif(not os.getenv("HERMES_SOURCE"), reason="Set HERMES_SOURCE for native checks")
+def test_hermes_recovery_prompts_are_all_recognised():
+    source = Path(os.environ["HERMES_SOURCE"])
+    script = """
+import json
+from agent import conversation_loop
+names = (
+    "_LENGTH_CONTINUATION_NETWORK_STUB", "_LEGACY_LENGTH_CONTINUATION_NETWORK_STUB",
+    "_LENGTH_CONTINUATION_OUTPUT_LIMIT", "_LENGTH_CONTINUATION_DROPPED_TOOLS_PREFIX",
+    "_CODEX_INCOMPLETE_NUDGE", "_CODEX_ACK_CONTINUATION_NUDGE", "_DEGENERATE_FINAL_NUDGE",
+    "_DROPPED_TOOLCALL_NUDGE_CONTENT", "_EMPTY_TOOL_RESPONSE_NUDGE",
+)
+prompts = [getattr(conversation_loop, name, None) for name in names]
+print(json.dumps([prompt for prompt in prompts if prompt]))
+"""
+    result = subprocess.run(
+        [str(source / "venv/bin/python3"), "-c", script],
+        env={**os.environ, "PYTHONPATH": str(source)},
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    content = Path(__file__).parents[1] / "src/talaria/static/content.js"
+    known = re.search(r"recoveryPrompts = \[(.*?)\];", content.read_text(), re.S).group(1)
+    recognised = tuple(json.loads(f"[{known.rstrip().rstrip(',')}]"))
+    prompts = json.loads(result.stdout)
+    assert prompts
+    assert not [prompt for prompt in prompts if not prompt.startswith(recognised)]

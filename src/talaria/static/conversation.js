@@ -34,7 +34,7 @@ import {
   loadOlderMessages,
   update,
 } from "./store.js";
-import { guidanceText, isGuidance, isNotice, plainContent, userMessage } from "./content.js";
+import { guidanceText, isGuidance, isNotice, isRecoveryPrompt, plainContent, userMessage } from "./content.js";
 import {
   currentImageMessage,
   messageImages,
@@ -369,7 +369,7 @@ function historyItems(history, live, excerpt = false) {
     .map((t) => [t.id, t]) : []);
   for (const [position, message] of history.entries()) {
     if (!message || typeof message !== "object") continue;
-    if (message.display_kind === "hidden") continue;
+    if (message.display_kind === "hidden" || isRecoveryPrompt(message)) continue;
     if (message.role === "tool") {
       let call = calls.get(message.tool_call_id);
       if (!call && excerpt) {

@@ -31,6 +31,11 @@ def plan(*steps):
     return json.dumps({"plan": steps})
 
 
+def cut_off(text):
+    """Stream `text`, then lose the connection before the response ends."""
+    return {"cut_off": text}
+
+
 def planned(content):
     try:
         steps = json.loads(content)
@@ -60,6 +65,8 @@ def answer(step, results):
         calls = [{"index": 0, "id": f"call_{secrets.token_hex(4)}", "type": "function"}]
         calls[0]["function"] = call
         return {"role": "assistant", "tool_calls": calls}, "tool_calls"
+    if isinstance(step, dict) and "cut_off" in step:
+        return {"role": "assistant", "content": step["cut_off"]}, None
     text = "\n".join(results) if step == ECHO else step
     return {"role": "assistant", "content": text}, "stop"
 
@@ -73,13 +80,17 @@ class Handler(BaseHTTPRequestHandler):
         if request.get("stream"):
             choice = {"index": 0, "delta": message, "finish_reason": finish}
             chunk = body | {"object": "chat.completion.chunk", "choices": [choice]}
-            payload, kind = f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n", "text/event-stream"
+            end = "data: [DONE]\n\n" if finish else ""
+            payload, kind = f"data: {json.dumps(chunk)}\n\n{end}", "text/event-stream"
         else:
             choice = {"index": 0, "message": message, "finish_reason": finish}
             completion = body | {"object": "chat.completion", "choices": [choice]}
             payload, kind = json.dumps(completion), "application/json"
         self.send_response(200)
         self.send_header("Content-Type", kind)
+        if not finish:
+            # Promise more than is sent, so closing reads as a lost connection.
+            self.send_header("Content-Length", str(len(payload.encode()) + 1024))
         self.end_headers()
         self.wfile.write(payload.encode())
 
