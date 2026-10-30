@@ -17,9 +17,10 @@ async def test_native_replay_gap_requests_history_before_retained_events():
 
     channel = relay.Channel("native-replay")
     await relay.Relay(Upstream()).observe(channel)
-    events = [json.loads(event) for _, event in channel.events]
+    events = [json.loads(entry.encoded) for entry in channel.events]
     assert events == [
-        {"event": "talaria.reconcile"},
+        # The replay restarts part way through, so clients rebuild rather than append.
+        {"event": "talaria.reconcile", "replay": True},
         {"event": "message.delta", "delta": "Retained tail", "seq": 100},
         {"event": "run.completed", "output": "Final answer", "seq": 101},
     ]
@@ -54,7 +55,7 @@ async def test_polling_clears_only_the_last_pending_approval(monkeypatch, replac
     monkeypatch.setattr(relay, "asyncio", SimpleNamespace(sleep=no_delay))
     channel = relay.Channel("isolated-approval")
     await relay.Relay(Upstream()).poll(channel)
-    events = [json.loads(event) for _, event in channel.events]
+    events = [json.loads(entry.encoded) for entry in channel.events]
     requested = [event for event in events if event["event"] == "approval.request"]
     assert requested == [
         {**question, "event": "approval.request"}
@@ -88,7 +89,7 @@ async def test_polling_replays_and_settles_session_authority_prompts(monkeypatch
     monkeypatch.setattr(relay, "asyncio", SimpleNamespace(sleep=no_delay))
     channel = relay.Channel("authority-prompts")
     await relay.Relay(Upstream()).poll(channel)
-    events = [json.loads(event) for _, event in channel.events]
+    events = [json.loads(entry.encoded) for entry in channel.events]
     assert [(event["event"], event.get("prompt_id")) for event in events] == [
         ("clarify.request", "question"),
         ("approval.request", "approval"),
@@ -142,7 +143,7 @@ async def test_turns_lost_in_a_restart_wait_for_a_decision_without_false_failure
     ):
         channel = relay.Channel(run_id)
         await relay.Relay(Upstream()).observe(channel)
-        assert [json.loads(event) for _, event in channel.events] == expected
+        assert [json.loads(entry.encoded) for entry in channel.events] == expected
         assert channel.finished and not statuses[run_id]
 
 

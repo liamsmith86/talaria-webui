@@ -79,8 +79,15 @@ def test_unknown_context_is_hidden_even_when_session_totals_exist(page, live_app
         {"context": context},
         status,
     )
+    # The plugin reports context from its observation of each reply, so it has
+    # no usage for the newest reply either.
+    peer.discovery_overrides[f"/talaria/v1/sessions/{sid}/response"] = ({"usage": None}, 200)
     page.reload()
-    with page.expect_response(lambda response: f"/api/sessions/{sid}/context?" in response.url):
+    with page.expect_response(
+        lambda response: (
+            f"/api/sessions/{sid}/context?" in response.url and "&reply=" in response.url
+        )
+    ):
         page.get_by_role("link", name="Design notes", exact=True).click()
     for width in (1280, 390, 320):
         page.set_viewport_size({"width": width, "height": 844})
@@ -112,6 +119,54 @@ def test_edit_resend_reuses_run_transport_and_removes_following_turns(page, live
     assert peer.messages[sid][0]["content"] == "An edited question"
     assert "Message 002" not in json.dumps(peer.messages[sid])
     assert list(peer.runs.values())[-1]["session_id"] == sid
+    # A sent edit leaves no copy behind.
+    expect(page.get_by_label("Message Hermes")).to_have_value("")
+    page.reload()
+    expect(page.get_by_label("Message Hermes")).to_have_value("")
+
+
+def test_edit_that_fails_to_send_after_the_rewind_is_kept(page, live_app):
+    peer = live_app[1]
+    open_seed(page, peer)
+    page.route(
+        "**/api/runs",
+        lambda route: (
+            route.fulfill(status=400, json={"error": "Provider refused the request."})
+            if route.request.method == "POST"
+            else route.fallback()
+        ),
+    )
+    page.get_by_role("button", name="Edit and resend", exact=True).first.click()
+    dialog = page.get_by_role("dialog", name="Edit and resend", exact=True)
+    page.get_by_label("Edit message", exact=True).fill("An edited question")
+    dialog.get_by_role("button", name="Edit and resend", exact=True).click()
+    expect(dialog.get_by_role("alert")).to_be_visible()
+    assert peer.rewinds == 1
+    # The original turn is archived; the edit is kept until Hermes accepts it.
+    dialog.get_by_role("button", name="Close", exact=True).click()
+    composer = page.get_by_label("Message Hermes")
+    expect(composer).to_have_value("An edited question")
+    page.reload()
+    expect(composer).to_have_value("An edited question")
+
+
+def test_turns_a_compaction_archived_offer_no_changes(page, live_app):
+    peer = live_app[1]
+    peer.extension = {}
+    sid = seed(peer, count=4)
+    peer.sessions[sid]["source"] = "api_server"
+    # Hermes keeps archived turns visible but rewinds only its active rows.
+    for row in peer.messages[sid][:2]:
+        row["active"] = False
+    page.reload()
+    page.get_by_role("link", name="Design notes", exact=True).click()
+    messages = page.locator(".message")
+    expect(messages).to_have_count(4)
+    expect(messages.nth(0).get_by_role("button", name="Edit and resend")).to_have_count(0)
+    expect(messages.nth(1).get_by_role("button", name="Regenerate response")).to_have_count(0)
+    expect(messages.nth(1).get_by_role("button", name="Delete turn")).to_have_count(0)
+    expect(messages.nth(2).get_by_role("button", name="Edit and resend")).to_have_count(1)
+    expect(messages.nth(3).get_by_role("button", name="Regenerate response")).to_have_count(1)
 
 
 def test_stale_edits_and_missing_images_never_rewind(page, live_app):
@@ -181,6 +236,25 @@ def test_replacement_validation_precedes_native_mutation(live_app):
             client.post(url, json={"message_id": 1}, headers={"X-CSRF-Token": "bad"}).status_code
             == 403
         )
+
+
+@pytest.mark.parametrize(
+    ("reply", "expected"),
+    [
+        ("4", {"used": 12000, "maximum": None, "model": "actual-response-model"}),
+        ("", None),
+        ("nonsense", None),
+    ],
+)
+def test_context_uses_the_reply_ending_the_conversation_after_a_rewind(live_app, reply, expected):
+    url, peer, _ = live_app
+    peer.extension = {}
+    sid = seed(peer, count=4)
+    with signed_in(url) as client:
+        # The plugin lost its newest observation when a rewind removed that reply.
+        peer.discovery_overrides[f"/talaria/v1/sessions/{sid}/context"] = ({"context": None}, 200)
+        response = client.get(f"/api/sessions/{sid}/context", params={"reply": reply})
+        assert response.json() == {"context": expected}
 
 
 def test_extended_model_limits_and_standard_catalog_fallback(page, live_app):

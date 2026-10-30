@@ -128,6 +128,7 @@ Some features require the Talaria WebUI helper plugin installed on your Hermes A
 | --- | --- |
 | Connection, login, listener, public URL | `~/.config/talaria/config.json` |
 | Additional Hermes connections | `~/.config/talaria/profiles.json` |
+| Command results and per-session model choices | `~/.config/talaria/config.state.db` |
 | API key from an environment variable (initial profile) | `TALARIA_HERMES_API_KEY` |
 | Custom configuration file | `talaria --config PATH` |
 

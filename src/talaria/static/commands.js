@@ -1,5 +1,4 @@
-import { html, randomId, useEffect, useState } from "./lib.js";
-import { commandRunning } from "./command-activity.js";
+import { html, randomId, useEffect, useRef, useState } from "./lib.js";
 import { api } from "./api.js";
 import { update, newConversation } from "./store.js";
 import { msg, t } from "./i18n.js";
@@ -23,33 +22,52 @@ export function useCommands(app, draft, choose, controls, activity) {
   const matches = query === undefined || dismissed ? [] : catalog.filter((c) =>
     [c.name, ...c.aliases].some((name) => name.startsWith(query)));
   const index = Math.min(selected, Math.max(0, matches.length - 1));
-  const busy = commandRunning(activity.current) && activity.current.session === (app.active || "");
+  const busy = activity.busy;
+  const loading = useRef(null);
+  // One request serves the picker and a command sent before the picker loaded.
+  // A failed load is tried again when needed, never taken as an empty catalog.
+  function loadCatalog() {
+    loading.current ??= api("/commands").then((data) => (data.commands || []).toSorted((a, b) =>
+      Number(a.mode === "unavailable") - Number(b.mode === "unavailable")))
+      .catch((error) => {
+        loading.current = null;
+        throw error;
+      });
+    return loading.current;
+  }
   useEffect(() => {
     setSelected(0);
     setDismissed(false);
   }, [draft, app.active]);
+  // Another plugin release may offer other commands.
+  const release = app.caps.talaria_extensions?.release?.version;
   useEffect(() => {
-    let current = true;
     setCatalog([]);
-    if (enabled) api("/commands").then((data) => {
-      if (current) setCatalog((data.commands || []).toSorted((a, b) =>
-        Number(a.mode === "unavailable") - Number(b.mode === "unavailable")));
+    loading.current = null;
+  }, [enabled, release]);
+  // Opening the picker, on "/", asks again for a catalog that failed to load.
+  const picking = query !== undefined;
+  useEffect(() => {
+    if (!enabled || catalog.length || loading.current) return;
+    const request = loadCatalog();
+    request.then((list) => {
+      if (loading.current === request) setCatalog(list);
     }).catch(() => {});
-    return () => { current = false; };
-  }, [enabled, app.caps.talaria_extensions?.release?.version]);
+  }, [enabled, release, picking, catalog.length]);
   async function submit(text, attachments) {
     const match = /^\/([a-z][\w-]*)(?:\s+([\s\S]*))?$/i.exec(text);
     if (!match) return false;
     if (attachments.length) throw new Error(msg("Send attachments separately from commands."));
     if (!enabled) throw new Error(msg("Install or update the Talaria plugin to use slash commands."));
-    const command = catalog.find((c) => [c.name, ...c.aliases].includes(match[1].toLowerCase()));
+    const commands = catalog.length ? catalog : await loadCatalog();
+    const command = commands.find((c) => [c.name, ...c.aliases].includes(match[1].toLowerCase()));
     if (!command) throw new Error(msg("Unknown command. Type / to see Hermes commands."));
     if (command.mode === "unavailable") throw new Error(command.reason);
     const args = (match[2] || "").trim();
     if (controls.active && !["help", "commands", "version", "profile", "egress", "bundles", "status"].includes(command.name))
       throw new Error(msg("Wait for this response to finish before running the command."));
     if (["help", "commands"].includes(command.name)) {
-      activity.show({ id: randomId(), command: command.name, status: "completed", afterId: app.history.at(-1)?.id || 0, session: app.active || "", commands: catalog });
+      activity.show({ id: randomId(), command: command.name, status: "completed", session: app.active || "", commands });
     } else if (command.mode === "web") {
       webCommand(command.name, args, app, controls);
     } else {

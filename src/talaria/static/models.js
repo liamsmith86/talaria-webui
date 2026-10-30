@@ -118,39 +118,9 @@ export function reasoningOptions(model) {
     ...efforts,
   ];
 }
-function readChoices(key, valid) {
-  try {
-    return Object.fromEntries(
-      Object.entries(JSON.parse(readStorage(key, "{}")))
-        .slice(-200)
-        .filter(([, value]) => valid(value)),
-    );
-  } catch {
-    return {};
-  }
-}
-function saveChoice(key, choices, id, value) {
-  const next = { ...choices };
-  delete next[id];
-  next[id] = value;
-  const bounded = Object.fromEntries(Object.entries(next).slice(-200));
-  writeStorage(key, JSON.stringify(bounded));
-  return bounded;
-}
-export function readReasoningChoices() {
-  return readChoices(
-    "session-reasoning",
-    (value) =>
-      typeof value === "string" && Object.hasOwn(reasoningNames, value),
-  );
-}
-export function saveReasoningChoice(choices, id, value) {
-  return saveChoice(
-    "session-reasoning",
-    choices,
-    id,
-    Object.hasOwn(reasoningNames, value) ? value : "auto",
-  );
+// Only the identity of a choice is saved; the catalog supplies the rest.
+export function reasoningChoice(value) {
+  return Object.hasOwn(reasoningNames, value) ? value : "auto";
 }
 export function sessionReasoning(app) {
   const choice = app.active
@@ -173,19 +143,35 @@ function valid(model) {
   );
 }
 
-export function readModelChoices() {
-  return readChoices(
-    "session-models",
-    (model) => model === null || valid(model),
-  );
+export function modelChoice(model) {
+  return valid(model) ? { id: model.id, provider: model.provider } : null;
 }
-export function saveModelChoice(choices, id, model) {
-  return saveChoice(
-    "session-models",
-    choices,
-    id,
-    valid(model) ? { id: model.id, provider: model.provider } : null,
-  );
+
+// Talaria 0.3.20 and earlier kept these choices, and a running command, in
+// each browser's storage for the profile. Hand the choices to Talaria's server
+// once, which keeps any choice another device already saved. Its own record of
+// commands replaces the rest.
+export async function importBrowserChoices(api) {
+  const read = (key) => {
+    try {
+      const value = JSON.parse(readStorage(key, "{}"));
+      return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    } catch {
+      return {};
+    }
+  };
+  const models = read("session-models"), reasoning = read("session-reasoning");
+  const sessions = {};
+  for (const [id, model] of Object.entries(models).slice(-200))
+    if (model === null || valid(model)) sessions[id] = { model: modelChoice(model) };
+  for (const [id, value] of Object.entries(reasoning).slice(-200))
+    if (typeof value === "string" && Object.hasOwn(reasoningNames, value))
+      sessions[id] = { ...sessions[id], reasoning: value };
+  const imported = Object.keys(sessions).length > 0;
+  if (imported) await api("/preferences/import", { method: "POST", body: { sessions } });
+  for (const key of ["session-models", "session-reasoning", "command.pending"])
+    if (readStorage(key)) writeStorage(key, "");
+  return imported;
 }
 
 export function sessionModel(app) {

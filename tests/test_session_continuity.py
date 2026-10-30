@@ -1,5 +1,7 @@
 """Tab navigation and refresh through the real UI and a synthetic Hermes server."""
 
+from urllib.parse import urljoin
+
 import pytest
 from playwright.sync_api import expect
 
@@ -53,10 +55,21 @@ def test_session_link_opens_independent_tab(page, live_app):
     page.evaluate("import('/static/store.js').then(s => s.refreshSessions())")
     link = page.get_by_role("link", name="Design notes", exact=True)
     expect(link).to_have_attribute("href", "/?session=linked")
-    with page.context.expect_page() as opened:
-        link.click(button="middle")
-    other = opened.value
+    # A middle or modified click is the browser's to open in a new tab. Whether a
+    # headless browser does so is its own timing, so check that the page leaves
+    # these clicks alone, then open the link's address as that tab would.
+    page.evaluate("""() => {
+        window.prevented = [];
+        for (const type of ["click", "auxclick"])
+            window.addEventListener(type, (event) => window.prevented.push(event.defaultPrevented));
+    }""")
+    link.click(button="middle")
+    link.click(modifiers=["ControlOrMeta"])
+    assert page.evaluate("window.prevented") == [False, False]
+    wait_for_store(page, "s => s.active === null")
+    other = page.context.new_page()
     try:
+        other.goto(urljoin(page.url, link.get_attribute("href")))
         expect(other.get_by_label("Message Hermes")).to_be_visible()
         wait_for_store(other, "s => s.active === 'linked'")
         wait_for_store(page, "s => s.active === null")
@@ -121,6 +134,44 @@ def test_focus_catches_external_changes_without_erasing_draft_or_selection(page,
     )
     assert len([url for url in calls if "/external/messages" in url]) == 1
     assert history_ids(page) == list(range(3, 132))
+
+
+@pytest.mark.clock
+def test_open_session_follows_other_devices_without_focus(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "watched", count=2)
+    open_session(page, sid)
+    expect(page.get_by_text("Message 001", exact=True)).to_be_visible()
+    finished = []
+    page.on("requestfinished", lambda request: finished.append(request.url))
+
+    def revalidate():
+        # Skip ahead to the next check and let its reads finish. A check
+        # schedules the next one only after its own reads, so skip again
+        # until one runs.
+        del finished[:]
+        for _ in range(10):
+            page.clock.fast_forward(15001)
+            for _ in range(20):
+                if any(url.endswith(f"/api/sessions/{sid}") for url in finished) and any(
+                    "/api/sessions?" in url for url in finished
+                ):
+                    return
+                page.wait_for_timeout(50)
+        raise AssertionError(finished)
+
+    # Nothing changed: the check never reloads the transcript.
+    revalidate()
+    page.clock.run_for(1000)
+    assert not [url for url in finished if "/messages" in url]
+    peer.messages[sid].append(
+        {"id": 3, "role": "assistant", "content": "Answered on another laptop", "timestamp": 5.0}
+    )
+    peer.sessions[sid]["title"] = "Renamed on another laptop"
+    # An untouched, visible page shows it at its next check.
+    revalidate()
+    expect(page.get_by_text("Answered on another laptop", exact=True)).to_be_visible()
+    expect(page.get_by_role("link", name="Renamed on another laptop", exact=True)).to_be_visible()
 
 
 def test_refresh_compaction_uses_canonical_session_and_carries_draft(page, live_app):
@@ -395,3 +446,27 @@ def test_a_hidden_page_releases_its_stream_and_resumes_when_shown(page, live_app
     page.wait_for_function("() => window.openStreams().some((url) => url.includes('after='))")
     expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_hidden(timeout=20000)
     expect(page.get_by_text("What would you like to explore next?")).to_have_count(1)
+
+
+def test_session_deleted_elsewhere_opens_a_new_session(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "deleted-elsewhere", count=2)
+    open_session(page, sid)
+    expect(page.get_by_text("Message 001", exact=True)).to_be_visible()
+    page.get_by_label("Message Hermes").fill("Unsent words")
+    del peer.sessions[sid], peer.messages[sid]
+    page.evaluate("window.dispatchEvent(new Event('focus'))")
+    expect(page.get_by_text("This session was deleted.", exact=True)).to_be_visible()
+    wait_for_store(page, "s => s.active === null")
+    expect(page.get_by_text("Message 001", exact=True)).to_have_count(0)
+    expect(page.locator(".alert")).to_have_count(0)
+    assert "session=deleted-elsewhere" not in page.url
+    # Reopening the remembered session never lands on the deleted one either.
+    sid = seed(peer, "deleted-while-away", count=2)
+    open_session(page, sid)
+    expect(page.get_by_text("Message 001", exact=True)).to_be_visible()
+    del peer.sessions[sid], peer.messages[sid]
+    page.goto(live_app[0])
+    expect(page.get_by_text("This session was deleted.", exact=True)).to_be_visible()
+    wait_for_store(page, "s => s.active === null && !s.loading")
+    expect(page.locator(".alert")).to_have_count(0)

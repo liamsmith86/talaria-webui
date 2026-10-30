@@ -61,7 +61,8 @@ def start_reply(page, live_app, text, *, prefix="", reasoning=""):
       const {update}=await import('/static/store.js');
       const {applyEvent,subscribe}=await import('/static/runs.js');
       let live={id:'settling-run',requestId:'settling-request',status:'running',
-        text:'',tools:[],userText:'Read this reply',baseHistoryLength:0,baseMessageId:0};
+        text:'',tools:[],userText:'Read this reply',baseHistoryLength:0,baseMessageId:0,
+        createdAt:Date.now()};
       for(const event of events) live=applyEvent(live,event);
       update({active:'settling',history:[],loading:false,historyHasMore:false,
         sessions:[{id:'settling',title:'Settling reply',source:'api_server'}],
@@ -279,3 +280,30 @@ def test_tool_only_completion_uses_the_same_reserved_footer(page, live_app):
     page.wait_for_timeout(150)
     expect(page.locator(".tool-card")).to_have_count(20)
     assert page.locator(".conversation-viewport").evaluate("el=>el.scrollTop") == before
+
+
+def test_restarted_replay_rebuilds_the_reply_without_repeating_it(page, live_app):
+    start_reply(page, live_app, "First paragraph so far.", prefix="Checking the date.")
+    send = """events => { for (const event of events)
+      settlingSource.onmessage({data: JSON.stringify(event)}); }"""
+    # Talaria restarted: the stream reconnects and replays the response from its start.
+    page.evaluate("settlingSource.onerror()")
+    page.evaluate(
+        send,
+        [
+            {"event": "talaria.reconcile", "replay": True},
+            {"event": "message.delta", "delta": "Checking the date."},
+            {"event": "tool.started", "tool": "terminal", "tool_call_id": "a", "preview": "date"},
+            {"event": "tool.completed", "tool_call_id": "a"},
+            {"event": "message.delta", "delta": "First paragraph so far."},
+            {"event": "message.delta", "delta": " And more."},
+        ],
+    )
+    reply = page.locator(".message.assistant .message-text").last
+    expect(reply).to_have_text("First paragraph so far. And more.")
+    assert page.get_by_text("Checking the date.", exact=True).count() == 1
+    expect(page.get_by_text("Reconnecting to Hermes", exact=False)).to_have_count(0)
+    # Hermes's own stream was lost: keep the text, and let the saved transcript finish it.
+    page.evaluate(send, [{"event": "talaria.reconcile"}])
+    expect(reply).to_have_text("First paragraph so far. And more.")
+    expect(page.get_by_text("Reconnecting to Hermes", exact=False)).to_have_count(0)

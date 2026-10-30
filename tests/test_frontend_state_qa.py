@@ -1,5 +1,9 @@
 """Frontend regressions using isolated browsers and the simulated Hermes service."""
 
+import asyncio
+import json
+import time
+
 import pytest
 from playwright.sync_api import expect
 
@@ -376,6 +380,97 @@ def test_session_refresh_supersedes_stale_pagination(module_page):
         }
     }""")
     assert result == {"requests": 2, "ids": ["current"], "offset": 100, "more": False}
+
+
+def test_periodic_revalidation_reads_only_the_first_page(module_page):
+    result = module_page.evaluate("""async () => {
+        const store = await import('/static/store.js');
+        const fetch = window.fetch;
+        const requests = [];
+        let page;
+        window.fetch = (url, options) => {
+            if (!String(url).startsWith('/api/sessions?offset=')) return fetch(url, options);
+            requests.push(String(url));
+            return Promise.resolve(Response.json(page));
+        };
+        const ids = () => store.state.sessions.map(s => s.id);
+        try {
+            // Two pages loaded: the second stays as it was.
+            store.update({sessions:[{id:'a'},{id:'b'},{id:'deep'}], sessionsOffset:200,
+              hasMore:true});
+            page = {data:[{id:'new'},{id:'a'}], limit:100, has_more:true};
+            await store.revalidateSessions(undefined, true);
+            const deeper = {requests:[...requests], ids:ids(), offset:store.state.sessionsOffset,
+              more:store.state.hasMore};
+            // One page loaded: the first page is the whole list.
+            requests.length = 0;
+            store.update({sessions:[{id:'a'},{id:'gone'}], sessionsOffset:100, hasMore:false});
+            page = {data:[{id:'a'}], limit:100, has_more:false};
+            await store.revalidateSessions(undefined, true);
+            return {deeper, first:{requests, ids:ids()}};
+        } finally {
+            window.fetch = fetch;
+        }
+    }""")
+    assert result == {
+        "deeper": {
+            "requests": ["/api/sessions?offset=0"],
+            "ids": ["new", "a", "b", "deep"],
+            "offset": 200,
+            "more": True,
+        },
+        "first": {"requests": ["/api/sessions?offset=0"], "ids": ["a"]},
+    }
+
+
+def test_session_details_read_before_a_choice_settled_never_undo_it(module_page):
+    result = module_page.evaluate("""async () => {
+        const store = await import('/static/store.js');
+        const fetch = window.fetch;
+        const pending = [];
+        window.fetch = (url, options) => new Promise(resolve =>
+            pending.push({method: options?.method || 'GET', resolve}));
+        const respond = (method, body) => pending.find(r => r.method === method)
+            .resolve(Response.json(body));
+        try {
+            const details = store.refreshSessionDetails('chosen');
+            const saving = store.chooseReasoning('high', 'chosen');
+            respond('PUT', {ok: true});
+            await saving;
+            respond('GET', {session: {id: 'chosen'}, talaria_preferences: {reasoning: 'low'}});
+            await details;
+            return store.state.reasoningChoices.chosen;
+        } finally {
+            window.fetch = fetch;
+        }
+    }""")
+    assert result == "high"
+
+
+def test_background_revalidation_keeps_a_page_being_loaded(module_page):
+    result = module_page.evaluate("""async () => {
+        const store = await import('/static/store.js');
+        const fetch = window.fetch;
+        const requests = [];
+        window.fetch = (url, options) => String(url).startsWith('/api/sessions?offset=')
+            ? new Promise(resolve => requests.push({url, resolve}))
+            : fetch(url, options);
+        try {
+            store.update({sessions:[{id:'first'}], sessionsOffset:100, hasMore:true});
+            const more = store.refreshSessions(true);
+            const revalidation = store.revalidateSessions();
+            requests[0].resolve(Response.json({data:[{id:'second'}], limit:100, has_more:false}));
+            for (const request of requests.slice(1))
+                request.resolve(Response.json({data:[{id:'first'}], limit:100, has_more:true}));
+            await Promise.all([more, revalidation]);
+            return {
+                requests:requests.map(r => r.url), ids:store.state.sessions.map(s => s.id),
+            };
+        } finally {
+            window.fetch = fetch;
+        }
+    }""")
+    assert result == {"requests": ["/api/sessions?offset=100"], "ids": ["first", "second"]}
 
 
 def test_session_pagination_waits_for_an_inflight_refresh(module_page):
@@ -854,3 +949,179 @@ def test_failed_thumbnail_recovers_when_the_image_changes(module_page):
         IMAGE,
     )
     assert result == {"failed": True, "restored": True}
+
+
+def test_tabs_keep_each_others_saved_runs(page, live_app):
+    sid = seed(live_app[1], "this-tab", count=2)
+    page.evaluate("async sid => (await import('/static/store.js')).openSession(sid)", sid)
+    # Another tab of this browser saved a send whose confirmation was lost.
+    record = {"requestId": "other-request", "userText": "Sent from the other tab", "payload": {}}
+    page.evaluate(
+        """async record => (await import('/static/lib.js'))
+            .writeStorage('runs', JSON.stringify({'other-tab': record}))""",
+        record,
+    )
+    page.get_by_label("Message Hermes").fill("Sent from this tab")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
+    wait_for_store(page, f"s => s.lives[{sid!r}]?.status === 'completed'")
+    saved = page.evaluate(
+        "async () => JSON.parse((await import('/static/lib.js')).readStorage('runs', '{}'))"
+    )
+    assert saved == {"other-tab": record}
+
+
+@pytest.mark.parametrize("sender", ["here", "elsewhere"])
+def test_guidance_that_arrives_too_late_returns_to_the_message_box(
+    page, live_app, monkeypatch, sender
+):
+    peer = live_app[1]
+    sid = seed(peer, "late-guidance", count=2)
+
+    async def events(run):
+        yield "data: " + json.dumps({"event": "message.delta", "delta": "Working"}) + "\n\n"
+        for _ in range(500):
+            if run.get("steer"):
+                break
+            await asyncio.sleep(0.02)
+        output = "Finished before your guidance."
+        peer.messages[sid].append(
+            {"id": 10, "role": "assistant", "content": output, "timestamp": time.time()}
+        )
+        run["status"], run["output"] = "completed", output
+        completed = {"event": "run.completed", "output": output, "pending_steer": run["steer"]}
+        yield "data: " + json.dumps(completed) + "\n\n"
+
+    monkeypatch.setattr(peer, "events", events)
+    page.evaluate("async sid => (await import('/static/store.js')).openSession(sid)", sid)
+    composer = page.get_by_label("Message Hermes")
+    composer.fill("Start the work")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    if sender == "elsewhere":
+        wait_for_store(page, f"s => !!s.lives[{sid!r}]?.id")
+        list(peer.runs.values())[-1]["steer"] = "Also check the logs"
+        expect(page.get_by_text("Finished before your guidance.", exact=True)).to_be_visible()
+        # Every device says Hermes missed it; only the sender gets it back.
+        expect(
+            page.get_by_text("Hermes did not receive this guidance", exact=False)
+        ).to_contain_text("Also check the logs")
+        wait_for_store(page, f"s => s.lives[{sid!r}]?.persisted === true")
+        page.wait_for_timeout(1000)  # Settling finishes after the saved reply appears.
+        expect(composer).to_have_value("")
+        expect(page.get_by_text("It is back in the message box.", exact=False)).to_have_count(0)
+        return
+    composer.fill("Also check the logs")
+    page.get_by_role("button", name="Send guidance", exact=True).click()
+    expect(page.get_by_text("Finished before your guidance.", exact=True)).to_be_visible()
+    # Hermes never saw it, so it is back in the message box, ready to send.
+    expect(composer).to_have_value("Also check the logs")
+    expect(page.get_by_text("It is back in the message box.", exact=False)).to_be_visible()
+    page.reload()
+    expect(composer).to_have_value("Also check the logs")
+
+
+@pytest.mark.parametrize("finished", [True, False])
+def test_reply_saved_while_away_is_shown_as_finished(page, live_app, finished):
+    peer = live_app[1]
+    sid = seed(peer, "away-for-hours")
+    peer.sessions[sid]["source"] = "api_server"
+    reply = (
+        {"content": "All done while you were away.", "finish_reason": "stop"}
+        if finished
+        # The provider failed after this tool call: not a finished reply.
+        else {
+            "content": "All done while you were away.",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{"id": "call-1", "function": {"name": "terminal", "arguments": "{}"}}],
+        }
+    )
+    peer.messages[sid] = [
+        {"id": 1, "role": "user", "content": "Run the long task", "timestamp": 100.0},
+        {"id": 2, "role": "assistant", "timestamp": 200.0, **reply},
+    ]
+    # Hours later Hermes no longer reports the run this browser saved.
+    page.evaluate(
+        """async sid => {
+          const {writeStorage} = await import('/static/lib.js');
+          writeStorage('runs', JSON.stringify({[sid]: {
+            id: 'forgotten-run', requestId: 'request-1', userText: 'Run the long task',
+            baseMessageId: 0, createdAt: 100000,
+          }}));
+        }""",
+        sid,
+    )
+    page.goto(f"{live_app[0]}?session={sid}")
+    expect(page.get_by_text("All done while you were away.", exact=True)).to_be_visible()
+    wait_for_store(page, f"s => s.lives[{sid!r}]?.persisted === true")
+    status = page.evaluate(f"import('/static/store.js').then(s => s.state.lives[{sid!r}].status)")
+    notice = page.get_by_text("Live updates expired", exact=False)
+    if finished:
+        assert status == "completed"
+        expect(page.locator(".run-error")).to_have_count(0)
+        expect(notice).to_have_count(0)
+    else:
+        assert status == "interrupted"
+        expect(notice).to_be_visible()
+
+
+@pytest.mark.parametrize(
+    ("status", "outcome"),
+    [
+        ("failed", "The provider rejected the request."),
+        ("cancelled", "You stopped this response."),
+    ],
+)
+def test_how_a_response_ended_elsewhere_is_shown_here(page, live_app, status, outcome):
+    peer = live_app[1]
+    sid = seed(peer, "ended-elsewhere")
+    peer.sessions[sid]["source"] = "api_server"
+    peer.messages[sid] = [
+        {"id": 1, "role": "user", "content": "Summarize the logs", "timestamp": 100.0}
+    ]
+    peer.runs["run-elsewhere"] = {
+        "run_id": "run-elsewhere",
+        "session_id": sid,
+        "status": status,
+        "created_at": 99.0,
+        **({"error": outcome} if status == "failed" else {}),
+    }
+    peer.extension = {"session_activity": True}
+    peer.discovery_overrides["/talaria/v1/activity"] = (
+        {
+            "data": [
+                {"session_id": sid, "run_id": "run-elsewhere", "status": status, "created_at": 99.0}
+            ]
+        },
+        200,
+    )
+    page.goto(f"{live_app[0]}?session={sid}")
+    expect(page.get_by_text("Summarize the logs", exact=True)).to_be_visible()
+    expect(page.get_by_text(outcome, exact=True)).to_be_visible()
+    page.reload()
+    expect(page.get_by_text(outcome, exact=True)).to_be_visible()
+    expect(page.get_by_text("Summarize the logs", exact=True)).to_have_count(1)
+
+
+def test_cached_images_follow_messages_compaction_or_a_branch_resaved(module_page):
+    result = module_page.evaluate(
+        """async url => {
+            const cache = await import('/static/attachments.js');
+            const content = 'Look at this\\n[screenshot]';
+            const sent = {id: 5, role: 'user', timestamp: 100.5, content};
+            await cache.cacheMessageImages('qa-compacted', sent.id, [{url, name: 'Chart'}], null,
+                cache.imageFingerprint(sent));
+            const found = async (session, message) =>
+                !!(await cache.withCachedImages(session, [message]))[0].browserImages;
+            return {
+                // In-place compaction re-saved it under a new ID.
+                compacted: await found('qa-compacted', {...sent, id: 9}),
+                // A branch copied it into another session.
+                branch: await found('qa-branch', {...sent, id: 3}),
+                // Different text sent at another time is never matched.
+                other: await found('qa-compacted', {...sent, id: 10, timestamp: 300.25}),
+                edited: await found('qa-branch', {...sent, id: 4, content: 'Other\\n[screenshot]'}),
+            };
+        }""",
+        IMAGE,
+    )
+    assert result == {"compacted": True, "branch": True, "other": False, "edited": False}

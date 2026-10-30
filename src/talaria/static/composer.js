@@ -11,7 +11,7 @@ import {
 } from "./lib.js";
 import { useCommands } from "./commands.js";
 import { sendMessage, stopRun, running } from "./runs.js";
-import { fail, supports, navigationVersion, state } from "./store.js";
+import { fail, supports, navigationVersion, state, update } from "./store.js";
 import {
   prepareImage,
   beginPendingImages,
@@ -110,6 +110,19 @@ export function Composer({
     setImages(currentImages.current);
     consumePendingImages(key, [...submitted].map((id) => ({ id }))).catch(() => {});
   }, [live?.recovered, live?.requestId, live?.recoveredImageIds, key, loadingImages, attaching]);
+  useEffect(() => {
+    const restored = app.restoredDraft;
+    if (restored?.key !== key) return;
+    update({ restoredDraft: null });
+    // Never replace what someone has typed since; the draft is saved either way.
+    if (readStorage(key) !== restored.text) return;
+    currentDraft.current = restored.text;
+    setDraft(restored.text);
+    if (restored.images?.length && !currentImages.current.length) {
+      currentImages.current = restored.images;
+      setImages(restored.images);
+    }
+  }, [app.restoredDraft, key]);
   useEffect(() => {
     if (draftSuggestion && !app.active) {
       setDraft(draftSuggestion.text);

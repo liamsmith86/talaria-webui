@@ -134,7 +134,7 @@ function App() {
   const app = useStore();
   const demo = app.environment === "demo";
   const commandActivity = useCommandActivity(app);
-  const command = commandActivity.current?.session === (app.active || "") ? commandActivity.current : null;
+  const commands = commandActivity.activities;
   const activeSession = app.sessionDetails || app.sessions.find((s) => s.id === app.active);
   const external = app.active ? externalSource(activeSession) : "";
   const mobile = useMediaQuery("(max-width: 700px)");
@@ -209,7 +209,7 @@ function App() {
       onClick=${() => update({ sidebar: false })}
     />`}
     <main
-      class=${`main-panel ${!app.active && !command ? "is-new" : ""}`}
+      class=${`main-panel ${!app.active && !commands.length ? "is-new" : ""}`}
       inert=${mobile && app.sidebar}
     >
       <header class="topbar">
@@ -282,8 +282,8 @@ function App() {
       html`<div class="connection-banner" role="status">
         ${t("Update Hermes to a version that supports sessions and chat through its API.")}
       </div>`}
-      ${app.active || command
-        ? html`<${Conversation} key=${app.active} app=${app} command=${app.searchWindow ? null : command} onDismissCommand=${commandActivity.dismiss} />`
+      ${app.active || commands.length
+        ? html`<${Conversation} key=${app.active} app=${app} commands=${app.searchWindow ? [] : commands} onDismissCommand=${commandActivity.dismiss} />`
         : html`<${Welcome} onSuggestion=${setSuggestion} />`}
       ${app.searchWindow
         ? html`<div class="child-return"><span>${t("Search result · surrounding messages")}</span>

@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import html
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,7 +16,18 @@ from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import auth, extensions, installation, metadata, routes, session_views, transcripts, updates
+from . import (
+    auth,
+    extensions,
+    installation,
+    metadata,
+    routes,
+    session_commands,
+    session_preferences,
+    session_views,
+    transcripts,
+    updates,
+)
 from .auth_sessions import Revocations
 from .config import Settings
 from .hermes import APIError, Hermes, valid_api_key
@@ -24,8 +36,12 @@ from .profiles import listing as profile_listing
 from .profiles import remove as profile_remove
 from .proxy import PublicPath
 from .relay import Relay
+from .session_commands import CommandFollowers
+from .session_state import SessionState, StateUnavailable
 
 STATIC = Path(__file__).parent / "static"
+STATE_UNAVAILABLE = "Talaria could not use its data folder. Check that it is writable."
+log = logging.getLogger(__name__)
 
 
 class SecurityHeaders:
@@ -132,6 +148,11 @@ async def api_error(request, exc: APIError):
     return JSONResponse({"error": exc.message, "code": exc.code}, status_code=exc.status)
 
 
+async def state_unavailable(request, exc: StateUnavailable):
+    log.warning("Talaria session state is unavailable: %s", exc)
+    return await api_error(request, APIError(STATE_UNAVAILABLE, 503, "state_unavailable"))
+
+
 def create_app(
     settings: Settings,
     config_path: Path,
@@ -143,14 +164,20 @@ def create_app(
 ) -> Starlette:
     @asynccontextmanager
     async def lifespan(app):
+        await app.state.command_followers.resume()
         try:
             yield {"talaria_stop_streams": app.state.profiles.stop_streams}
         finally:
+            await app.state.command_followers.close()
             await app.state.profiles.close()
 
     app = Starlette(
         lifespan=lifespan,
-        exception_handlers={APIError: api_error, Exception: unexpected_error},
+        exception_handlers={
+            APIError: api_error,
+            StateUnavailable: state_unavailable,
+            Exception: unexpected_error,
+        },
         routes=[
             Route("/", index),
             Route("/robots.txt", robots),
@@ -167,8 +194,11 @@ def create_app(
             Route("/api/connection/test", routes.connection, methods=["POST"]),
             Route("/api/capabilities", routes.capabilities),
             Route("/api/models", routes.model_options),
-            Route("/api/commands", extensions.commands, methods=["GET", "POST"]),
-            Route("/api/commands/{command_id}", extensions.commands),
+            Route("/api/commands", session_commands.commands, methods=["GET", "POST"]),
+            Route(
+                "/api/commands/{command_id}", session_commands.command, methods=["GET", "DELETE"]
+            ),
+            Route("/api/preferences/import", session_preferences.import_choices, methods=["POST"]),
             Route("/api/agent", metadata.details),
             Route("/api/readiness", metadata.readiness),
             Route("/api/search", session_views.view),
@@ -182,6 +212,12 @@ def create_app(
                 "/api/sessions/{session_id}/rewind", extensions.session_extension, methods=["POST"]
             ),
             Route("/api/sessions/{session_id}/export", transcripts.download),
+            Route("/api/sessions/{session_id}/commands", session_commands.session_commands),
+            Route(
+                "/api/sessions/{session_id}/preferences",
+                session_preferences.update,
+                methods=["PUT"],
+            ),
             Route("/api/sessions/{session_id}/fork", routes.fork, methods=["POST"]),
             Route("/api/sessions/{session_id}", routes.session, methods=["GET", "PATCH", "DELETE"]),
             Route("/api/runs", routes.start_run, methods=["POST"]),
@@ -215,9 +251,18 @@ def create_app(
     app.state.limiter = auth.LoginLimiter(settings.trusted_proxies)
     app.state.connection_lock = asyncio.Lock()
     app.state.capabilities = {}
-    app.state.extensions = {}
+    app.state.extensions = extensions.Extensions()
     app.state.profile_id = profile_id
     app.state.profiles = profiles or Profiles(app, transport)
+    # One record of session activity serves every profile; rows carry the profile ID.
+    app.state.session_state = (
+        profiles.app.state.session_state if profiles else SessionState(config_path)
+    )
+    app.state.command_followers = (
+        profiles.app.state.command_followers
+        if profiles
+        else CommandFollowers(app.state.session_state, app.state.profiles)
+    )
     if profiles is None:
         app.add_middleware(ProfileRouter, profiles=app.state.profiles)
         app.add_middleware(BrowserBoundary)

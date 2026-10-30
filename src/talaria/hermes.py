@@ -91,6 +91,8 @@ async def event_lines(response):
 class APIError(Exception):
     def __init__(self, message: str, status: int = 502, code: str = "upstream_error"):
         self.message, self.status, self.code = message, status, code
+        # The plugin's own refusal text, for routes whose plugin errors are written for people.
+        self.upstream_message = ""
         super().__init__(message)
 
 
@@ -123,10 +125,14 @@ def response_error(status: int, body: dict | None = None) -> APIError:
             status,
             code,
         )
-    return APIError(
+    error = APIError(
         messages.get(status, "Hermes is temporarily unavailable. Try again shortly."),
         status if status in messages else 502,
     )
+    detail = (body or {}).get("error")
+    if isinstance(detail, str) and 0 < len(detail) <= 500:
+        error.upstream_message = detail
+    return error
 
 
 class Hermes:

@@ -14,12 +14,19 @@ def test_compress_shows_its_result_below_the_conversation(chat):
     for word in ("red", "green", "blue"):
         chat.send(f"Reply with one short sentence that mentions the colour {word}.")
     chat.submit("/compress")
-    card = chat.page.locator(".command-card").last
-    expect(card).to_be_visible()
-    expect(card).not_to_have_class(re.compile("is-running"), timeout=300_000)
-    expect(card).to_be_in_viewport()
-    rows = chat.page.locator(".conversation-content > :is(.message, .command-card)")
-    assert rows.last.evaluate("node => node.matches('.command-card')")
+    page = chat.page
+    expect(page.locator(".command-card.is-running")).to_be_visible()
+    expect(page.locator(".command-card.is-running")).to_have_count(0, timeout=300_000)
+    # A compaction that changed the transcript becomes part of the conversation;
+    # anything else leaves its result card. Either way it ends the conversation.
+    rows = page.locator(".conversation-content > :is(.message, .command-card)")
+    expect(rows.last).to_be_in_viewport()
+    assert rows.last.evaluate("node => node.matches('.command-card, .message.notice')")
+    if rows.last.evaluate("node => node.matches('.message.notice')"):
+        expect(rows.last).to_contain_text("Context compressed")
+        # Another device, or this one after a reload, shows the same.
+        page.reload()
+        expect(rows.last).to_contain_text("Context compressed")
     reply = chat.send("Which colours did I mention? Reply with only the colour names.")
     assert "blue" in reply.lower()
 

@@ -68,3 +68,21 @@ def test_activity_pauses_hidden_tabs_and_coalesces_focus(page, live_app):
     page.clock.run_for(200)
     expect(page.get_by_label("Needs input", exact=True)).to_be_visible()
     assert len([call for call in peer.calls if call[1] == "/talaria/v1/activity"]) == before + 1
+
+
+@pytest.mark.clock
+def test_one_activity_check_serves_the_sidebar_and_the_open_session(page, live_app):
+    peer = live_app[1]
+    seed(peer)
+    endpoint = "/talaria/v1/activity"
+    run = {"session_id": "notes", "run_id": "done", "status": "completed", "created_at": 1}
+    peer.discovery_overrides[endpoint] = ({"data": [run]}, 200)
+    enable(page, peer)
+    page.get_by_role("link", name="Design notes", exact=True).click()
+    expect(page.locator(".session-row").get_by_label("Finished", exact=True)).to_be_visible()
+    page.wait_for_timeout(300)
+    before = len([call for call in peer.calls if call[1] == endpoint])
+    for _ in range(4):
+        page.clock.fast_forward(15001)
+        page.wait_for_timeout(300)
+    assert len([call for call in peer.calls if call[1] == endpoint]) - before <= 4

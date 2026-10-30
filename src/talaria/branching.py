@@ -87,15 +87,30 @@ def branch_points(messages):
 
 
 async def mark_branch_points(client, sid, rows):
-    candidates = [
-        row["id"] for row in rows if row.get("role") == "assistant" and type(row.get("id")) is int
+    """Mark which rows can start a branch, and which turns Hermes can still rewind.
+
+    Hermes rewinds and forks only this session's active rows. Turns a compaction
+    archived stay visible but cannot change, so they offer neither.
+    """
+    turns = [
+        row["id"]
+        for row in rows
+        if row.get("role") in {"user", "assistant"} and type(row.get("id")) is int
     ]
-    points = set()
-    if candidates:
+    points, active = set(), None
+    if turns:
         # Optional controls must never make the transcript unavailable.
         with contextlib.suppress(APIError):
-            points = branch_points(await active_messages(client, sid, earliest=min(candidates)))
-    return [{**row, "branchable": row.get("id") in points} for row in rows]
+            messages = await active_messages(client, sid, earliest=min(turns))
+            points = branch_points(messages)
+            active = {row["id"] for row in messages if row["owned"]}
+    marked = []
+    for row in rows:
+        row = {**row, "branchable": row.get("id") in points}
+        if active is not None and row.get("role") in {"user", "assistant"}:
+            row["rewindable"] = row.get("id") in active
+        marked.append(row)
+    return marked
 
 
 async def preview(client, sid, mid):

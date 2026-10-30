@@ -312,7 +312,7 @@ ${request.command ||
         disabled=${busy || unavailable}
         onClick=${() => respond("session")}
       >
-        ${t("Allow for session")}
+        ${t("Allow for this response")}
       </button>`}${choices.includes("once") &&
       html`<button
         class="button primary"
@@ -521,17 +521,16 @@ function historyItems(history, live, excerpt = false) {
   return turns.filter((item) => item.role !== "assistant" || item.parts.length);
 }
 
-// In-place compaction re-inserts the rows it keeps with new IDs, so IDs do not
-// follow display order. Find the turn after the anchor row's display position.
-function nextTurnAfter(rows, items, afterId) {
-  const anchor = rows.findIndex((row) => row?.id === afterId);
-  if (anchor < 0)
-    return items.findIndex((item) => item.role === "user" && Number(item.record?.id) > afterId);
-  const later = new Set(rows.slice(anchor + 1));
-  return items.findIndex((item) => item.role === "user" && later.has(item.record));
+// Where a command result belongs: before the first row Hermes saved after the
+// command began. In-place compaction re-saves kept rows with new IDs, so
+// Hermes's timestamps, which it keeps, order them.
+function anchorIndex(items, anchor, end) {
+  if (anchor === null) return end;
+  const index = items.findIndex((item) => Number(item.time ?? item.record?.timestamp) > anchor);
+  return index < 0 ? end : Math.min(index, end);
 }
 
-export function Conversation({ app, command, onDismissCommand }) {
+export function Conversation({ app, commands = [], onDismissCommand }) {
   const { locale, formatLocale } = useLanguage();
   const scroll = useRef();
   const replyStart = useReplyJump(scroll, app.active);
@@ -648,7 +647,8 @@ export function Conversation({ app, command, onDismissCommand }) {
             matched=${app.searchWindow && m.messageIds.some((id) => String(id) === String(app.searchWindow))}
             matchId=${app.searchWindow}
             detailsEnabled=${!app.searchWindow}
-            canChange=${canChange && typeof m.record?.id === "number"}
+            canChange=${canChange && typeof m.record?.id === "number" &&
+              (m.turnRecord || m.record).rewindable !== false}
             canBranch=${canBranch && m.role === "assistant" && m.record?.branchable === true}
             responseStatus=${m === savedTurn && !live.outcomeUnknown ? live.status : null}
           />`,
@@ -667,7 +667,31 @@ export function Conversation({ app, command, onDismissCommand }) {
       setOlderBusy(false);
     }
   }
-  const transcript = [...(history || [])];
+  const saved = history || [];
+  const anchored = [], trailing = [];
+  for (const activity of commands) {
+    const key = `command:${activity.id}`;
+    const node = activity.compaction
+      ? html`<${Notice} key=${key} kind="compaction" text=${activity.text} time=${activity.finished} />`
+      : html`<${CommandCard} key=${key} activity=${activity} onDismiss=${() => onDismissCommand(activity)} />`;
+    // A settled reply can still live outside history while reconciliation is
+    // pending. A command begun after it stays below it.
+    const afterLive = live && !live.persisted && Number.isFinite(live.createdAt) &&
+      activity.started >= live.createdAt;
+    if (commandRunning(activity) || afterLive) {
+      trailing.push(node);
+      continue;
+    }
+    const index = anchorIndex(items, activity.anchor, saved.length);
+    // Before the first loaded row, it belongs to history not loaded yet.
+    if (index > 0 || !app.historyHasMore) anchored.push([index, node]);
+  }
+  anchored.sort((a, b) => a[0] - b[0]);
+  const transcript = [];
+  for (let index = 0, next = 0; index <= saved.length; index++) {
+    while (next < anchored.length && anchored[next][0] === index) transcript.push(anchored[next++][1]);
+    if (index < saved.length) transcript.push(saved[index]);
+  }
   if (showUser)
     transcript.push(html`<${Message}
       key=${`${liveKey}:user`}
@@ -691,16 +715,7 @@ export function Conversation({ app, command, onDismissCommand }) {
       reasoning=${live.reasoning}
       parts=${live.parts}
     />`);
-  if (command) {
-    const next = commandRunning(command) || command.afterId == null
-      ? -1 : nextTurnAfter(app.history, items, command.afterId);
-    // A settled reply can still live outside history while reconciliation is
-    // pending. Keep its later command below it, and above a subsequent run.
-    const position = next >= 0 ? next : commandRunning(command) ||
-      (live?.id && command.afterRunId === live.id) ? transcript.length : (history || []).length;
-    transcript.splice(position, 0,
-      html`<${CommandCard} key=${`command:${command.id}`} activity=${command} onDismiss=${onDismissCommand} />`);
-  }
+  transcript.push(...trailing);
   return html`${app.findOpen &&
     html`<${ConversationFind}
       key=${app.active}
@@ -813,7 +828,7 @@ export function Conversation({ app, command, onDismissCommand }) {
         html`<div class="run-notice">${t("You stopped this response.")}</div>`}
         ${live?.pendingSteer &&
         html`<div class="run-notice">
-          ${t("Guidance arrived after this response: {guidance}", { guidance: live.pendingSteer })}
+          ${t("Hermes did not receive this guidance before the response finished: {guidance}", { guidance: live.pendingSteer })}
         </div>`}
         <div ref=${bottom} class="scroll-anchor" />
       </div>

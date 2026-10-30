@@ -258,7 +258,7 @@ def test_expired_live_updates_use_the_same_saved_turn_reconciliation(page, live_
     peer.sessions["expired"] = {"id": "expired", "title": "Expired updates", "source": "api_server"}
     peer.messages["expired"] = [
         {"id": 3, "role": "user", "content": "Question"},
-        {"id": 4, "role": "assistant", "content": "The saved answer"},
+        {"id": 4, "role": "assistant", "content": "The saved answer", "finish_reason": "stop"},
     ]
     page.evaluate("""async () => {
       const {update}=await import('/static/store.js');
@@ -278,6 +278,8 @@ def test_expired_live_updates_use_the_same_saved_turn_reconciliation(page, live_
     wait_for_store(page, "state => state.lives.expired.persisted")
     expect(page.locator(".message.assistant")).to_have_count(1)
     expect(page.locator(".message.assistant")).to_contain_text("The saved answer")
+    # Talaria stopped following; Hermes did not say the run ended, so no guess.
+    expect(page.locator(".run-error")).to_contain_text("Live updates expired.")
     assert page.evaluate("expiredSource.closed")
     assert (
         page.evaluate("""async () => (await import('/static/store.js'))

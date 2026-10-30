@@ -1,13 +1,18 @@
 import {
-  state, openSession, newConversation, refreshSessions, refreshHistory,
-  refreshSessionDetails, navigationVersion, navigationSignal, fail, update, beforeHistoryUpdate,
+  state, openSession, newConversation, revalidateSessions, refreshHistory, refreshCommands,
+  refreshActivity, refreshSessionDetails, navigationVersion, navigationSignal, fail, update,
+  beforeHistoryUpdate,
 } from "./store.js";
 import { selectedSession, selectedMessage } from "./session-navigation.js";
-import { followRun, refreshStreams, running } from "./runs.js";
+import { followRun, refreshStreams, running, showOutcome } from "./runs.js";
 import { plainContent } from "./content.js";
-import { api } from "./api.js";
 
 const BACKGROUND_WAIT = 30 * 60 * 1000;
+// A visible page keeps up with other devices without waiting for focus.
+const REVALIDATE_MS = 15000;
+// What Hermes reports when a session's transcript changes.
+const changes = (session) => session ? JSON.stringify([session.message_count, session.last_active,
+  session.ended_at, session.end_reason]) : "";
 
 // Hermes saves a background subagent's result into an API session without
 // starting a turn. Whether a recent dispatch in this history still awaits it.
@@ -59,7 +64,7 @@ export function observePage() {
     const abort = () => controller.abort();
     signal.addEventListener("abort", abort, { once: true });
     const current = () => !stopped && !controller.signal.aborted && generation === navigationVersion();
-    const tasks = [refreshSessions(false, controller.signal)];
+    const tasks = [revalidateSessions(controller.signal), followElsewhere()];
     // A local stream already owns its live-to-saved transition. Revalidation
     // catches up idle/external sessions without disturbing that transition.
     if (id && !state.searchWindow && !running(id)) {
@@ -107,20 +112,22 @@ export function observePage() {
     if (!stopped && state.active && pendingDelegation(state.history))
       waiting = setTimeout(schedule, 10000);
   }
-  // Another device or tab may be answering here. Its reply streams here too.
+  // Another device or tab may be answering here. Its reply streams here too,
+  // and a reply that failed or stopped there says why here.
   let checking = false, recheck = false;
   async function followElsewhere() {
-    const id = state.active;
-    if (stopped || !id || state.loading || state.searchWindow || running(id) ||
-        !state.caps.talaria_extensions?.session_activity) return;
+    if (stopped || !state.caps.talaria_extensions?.session_activity) return;
     if (checking) {
       recheck = true;
       return;
     }
     checking = true;
     try {
-      const run = (await api("/activity")).data?.find((item) => item?.session_id === id);
-      if (run && !stopped && state.active === id && !state.loading) followRun(id, run);
+      await refreshActivity();
+      const id = state.active;
+      const run = id && Object.hasOwn(state.activity, id) ? state.activity[id] : null;
+      if (run && !stopped && !state.loading && !state.searchWindow && !running(id) && !followRun(id, run))
+        await showOutcome(id, run);
     } catch {
       /* The next refresh checks again. */
     } finally {
@@ -131,6 +138,33 @@ export function observePage() {
       }
     }
   }
+  // Between focus changes, cheap checks follow other devices: recent sessions,
+  // every session's runs, and the open session's commands and details. Its
+  // transcript reloads only when Hermes reports that it changed.
+  let ticking;
+  async function tick() {
+    const id = state.active, generation = navigationVersion();
+    try {
+      if (stopped || pending || !visible() || !state.auth || !state.connected || state.loading ||
+          !state.caps.features?.session_resources) return;
+      const tasks = [revalidateSessions(undefined, true), followElsewhere()];
+      if (id && !state.searchWindow) {
+        tasks.push(refreshCommands(id));
+        if (!running(id)) {
+          const before = changes(state.sessionDetails);
+          tasks.push(refreshSessionDetails(id).then((session) => {
+            if (before && changes(session) !== before && !stopped && !running(id))
+              return refreshHistory(id, () => !stopped && generation === navigationVersion());
+          }));
+        }
+      }
+      await Promise.allSettled(tasks);
+    } finally {
+      clearTimeout(ticking);
+      if (!stopped) ticking = setTimeout(tick, REVALIDATE_MS);
+    }
+  }
+  ticking = setTimeout(tick, REVALIDATE_MS);
   const unwatch = beforeHistoryUpdate(() => queueMicrotask(() => {
     refreshStreams();
     awaitBackground();
@@ -147,6 +181,7 @@ export function observePage() {
     stopped = true;
     clearTimeout(timer);
     clearTimeout(waiting);
+    clearTimeout(ticking);
     unwatch();
     pending?.abort();
     window.removeEventListener("popstate", navigate);

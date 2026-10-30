@@ -101,7 +101,7 @@ async def details(request):
         read("/health/detailed"),
         discover(state.hermes),
     )
-    state.extensions = extended
+    extended = state.extensions.adopt(extended)
     health = health if isinstance(health, dict) and text(health.get("status")) else None
     platforms = (health or {}).get("platforms", {})
     return JSONResponse(

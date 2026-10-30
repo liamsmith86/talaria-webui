@@ -15,6 +15,7 @@ from urllib.request import ProxyHandler, build_opener
 
 from .auth_sessions import revocation_path
 from .deployment import Deployment, DeploymentError, default_directory, locked, run
+from .session_state import state_path
 from .setup import terminal
 from .setup_services import service_plan
 
@@ -72,6 +73,8 @@ def uninstall(root, *, yes=False, prompts=None):
     files = [
         config,
         revocation_path(config),
+        state_path(config),
+        state_path(config).with_name(state_path(config).name + "-journal"),
         *(
             config.parent / name
             for name in (
