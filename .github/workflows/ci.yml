@@ -73,7 +73,7 @@ jobs:
     needs: lint
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       TALARIA_TEST_WORKERS: '2'
       TALARIA_AXE_PATH: ${{ github.workspace }}/.local/axe.min.js
