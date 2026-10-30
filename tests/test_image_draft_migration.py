@@ -95,15 +95,17 @@ def test_compaction_waits_for_attachment_preparation_before_switching(
         f"**/api/sessions/{sid}/messages",
         lambda route: route.fulfill(json={"session_id": continued, "data": []}),
     )
-    page.evaluate(
-        """async (sid) => {
-      const {openSession} = await import('/static/store.js');
-      window.movingDraft = openSession(sid);
-    }""",
-        sid,
-    )
+    with page.expect_response(f"**/api/sessions/{sid}/messages"):
+        page.evaluate(
+            """async (sid) => {
+          const {openSession} = await import('/static/store.js');
+          window.movingDraft = openSession(sid);
+        }""",
+            sid,
+        )
     expect(page.get_by_role("button", name="Attach files", exact=True)).to_be_disabled()
     assert page.evaluate("async () => (await import('/static/store.js')).state.active") == sid
+    page.wait_for_function("() => !!window.finishImageDecode")
     page.evaluate("window.finishImageDecode()")
     page.evaluate("window.movingDraft")
     expect(page.get_by_role("button", name="Remove preparing.png", exact=True)).to_be_visible()
@@ -123,15 +125,16 @@ def test_navigation_away_during_draft_migration_does_not_switch_back(page, live_
         f"**/api/sessions/{sid}/messages",
         lambda route: route.fulfill(json={"session_id": continued, "data": []}),
     )
-    page.evaluate(
-        """async (sid) => {
-      const {beginPendingImages} = await import('/static/attachments.js');
-      const {openSession} = await import('/static/store.js');
-      window.finishDraftWork = beginPendingImages(`draft.${sid}`);
-      window.movingDraft = openSession(sid);
-    }""",
-        sid,
-    )
+    with page.expect_response(f"**/api/sessions/{sid}/messages"):
+        page.evaluate(
+            """async (sid) => {
+          const {beginPendingImages} = await import('/static/attachments.js');
+          const {openSession} = await import('/static/store.js');
+          window.finishDraftWork = beginPendingImages(`draft.${sid}`);
+          window.movingDraft = openSession(sid);
+        }""",
+            sid,
+        )
     page.evaluate("async (sid) => (await import('/static/store.js')).openSession(sid)", other)
     page.get_by_role("textbox", name="Message Hermes").fill("Other session draft")
     page.evaluate("window.finishDraftWork()")

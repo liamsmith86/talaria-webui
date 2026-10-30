@@ -76,18 +76,19 @@ def test_restoration_prioritizes_visible_run_with_bounded_concurrency(module_pag
 
 def test_mobile_network_reconnect_replays_without_duplicate_messages(page, live_app):
     page.set_viewport_size({"width": 390, "height": 844})
-    page.get_by_label("Message Hermes").fill("A slow mobile reconnect")
+    page.get_by_label("Message Hermes").fill("Hold a mobile reconnect")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_role("heading", name="A thoughtful place to start")).to_be_visible()
     page.context.set_offline(True)
-    page.wait_for_timeout(250)
+    page.wait_for_timeout(250)  # Fixed wait: only the length of the outage.
     page.context.set_offline(False)
+    live_app[1].release()
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible(
         timeout=20000
     )
     expect(page.get_by_role("button", name="Stop response")).to_have_count(0)
     expect(page.get_by_role("heading", name="A thoughtful place to start")).to_have_count(1)
-    expect(page.locator(".message.user .message-text")).to_have_text(["A slow mobile reconnect"])
+    expect(page.locator(".message.user .message-text")).to_have_text(["Hold a mobile reconnect"])
     assert len(live_app[1].runs) == 1
 
 
@@ -194,7 +195,8 @@ def test_find_reindexes_only_changed_dom_and_keeps_highlights_attached(page):
     }""")
     expect(page.locator(".find-count")).to_have_text("1 of 101")
     assert page.evaluate("findScans") == 1
-    assert page.evaluate("""() => [...CSS.highlights.get('talaria-find')].every(range=>
+    # Highlights are applied in an effect, after the count above has painted.
+    page.wait_for_function("""() => [...CSS.highlights.get('talaria-find')].every(range=>
       range.startContainer.isConnected && range.toString()==='needle')""")
     page.get_by_label("Find text in session").fill("another")
     expect(page.locator(".find-count")).to_have_text("1 of 1")

@@ -98,6 +98,11 @@ class FakeHermes:
         self.commands[request_id]["result"] = {"status": "completed", **result}
         return self.commands[request_id]["payload"]
 
+    def release(self):
+        """Let every run held by a "hold" input finish."""
+        for run in self.runs.values():
+            run["released"] = True
+
     async def handle(self, request: Request):
         if request.headers.get("authorization") != f"Bearer {self.api_key}":
             return JSONResponse({"error": "Unauthorized"}, 401)
@@ -517,7 +522,6 @@ class FakeHermes:
             )
 
         approval = "approval" in run["input"].lower()
-        slow = "slow" in run["input"].lower()
         yield event("tool.started", tool="read_file", preview="Reading the project notes")
         await asyncio.sleep(0.15)
         yield event("tool.completed", tool="read_file", duration=0.15)
@@ -586,18 +590,18 @@ class FakeHermes:
             "```python\ndef hello(name):\n    return f'Hello, {name}'\n```\n\n"
             "What would you like to explore next?"
         )
-        # Runs until stopped, for a test whose steps must happen during a response.
-        if "hold" in run["input"].lower():
-            for _ in range(600):
-                if run["status"] == "cancelled":
-                    break
-                await asyncio.sleep(0.1)
         for i in range(0, len(output), 15):
+            # Part way through, for a test whose steps must happen during a response.
+            if i == 45 and "hold" in run["input"].lower():
+                for _ in range(600):
+                    if run["status"] == "cancelled" or run.get("released"):
+                        break
+                    await asyncio.sleep(0.1)
             if run["status"] == "cancelled":
                 yield event("run.cancelled")
                 return
             yield event("message.delta", delta=output[i : i + 15])
-            await asyncio.sleep(0.25 if slow else 0.015)
+            await asyncio.sleep(0.015)
         run["status"], run["output"] = "completed", output
         messages = self.messages[run["session_id"]]
         if run.get("steer"):

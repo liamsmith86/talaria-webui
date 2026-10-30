@@ -11,6 +11,7 @@ from playwright.sync_api import expect
 from talaria import plugin_status
 from talaria.hermes_plugin.release import LOADED_REVISION, PLUGIN_VERSION
 
+from .conftest import wait_for_store
 from .test_app import signed_in
 
 
@@ -59,6 +60,8 @@ def test_connection_detects_releases_and_offers_native_installation(page, live_a
     link = page.get_by_role("link", name="Server installation instructions")
     install_url = "https://github.com/liamsmith86/talaria-webui#hermes-plugin"
     expect(link).to_have_attribute("href", install_url)
+    # Opening settings also reads the plugin, and would overwrite a newer check.
+    wait_for_store(page, "s => !!s.agentInfo")
     peer.extension = {"plugin_version": "1.0.0", "revision": "b" * 64}
     page.get_by_role("button", name="Check again", exact=True).click()
     expect(page.get_by_role("tabpanel")).to_contain_text("Plugin update available")

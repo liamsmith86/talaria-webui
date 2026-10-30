@@ -7,7 +7,7 @@ import time
 import pytest
 from playwright.sync_api import expect
 
-from .conftest import wait_for_store
+from .conftest import wait_for_store, wait_in_browser
 from .test_conversation_features import IMAGE, seed
 
 
@@ -996,6 +996,8 @@ def test_guidance_that_arrives_too_late_returns_to_the_message_box(
     page.evaluate("async sid => (await import('/static/store.js')).openSession(sid)", sid)
     composer = page.get_by_label("Message Hermes")
     composer.fill("Start the work")
+    readiness = []
+    page.on("request", lambda r: "/api/readiness" in r.url and readiness.append(r))
     page.get_by_role("button", name="Send message", exact=True).click()
     if sender == "elsewhere":
         wait_for_store(page, f"s => !!s.lives[{sid!r}]?.id")
@@ -1006,7 +1008,8 @@ def test_guidance_that_arrives_too_late_returns_to_the_message_box(
             page.get_by_text("Hermes did not receive this guidance", exact=False)
         ).to_contain_text("Also check the logs")
         wait_for_store(page, f"s => s.lives[{sid!r}]?.persisted === true")
-        page.wait_for_timeout(1000)  # Settling finishes after the saved reply appears.
+        # Settling asks for this just before it returns any guidance.
+        wait_in_browser(page, lambda: readiness)
         expect(composer).to_have_value("")
         expect(page.get_by_text("It is back in the message box.", exact=False)).to_have_count(0)
         return

@@ -1,7 +1,9 @@
 """Search unloaded history through the public API without losing live navigation or drafts."""
 
 import re
+from datetime import UTC, datetime, timedelta
 
+import pytest
 from playwright.sync_api import expect
 
 from .conftest import wait_for_store
@@ -44,15 +46,19 @@ def test_search_opens_exact_unloaded_message_and_preserves_draft(page, live_app)
     expect(page).to_have_url(re.compile("message=21"))
 
 
+@pytest.mark.clock
 def test_search_debounces_recovers_and_does_not_render_markup(page, live_app):
     peer = live_app[1]
     seed(peer, count=40)
     peer.messages["notes"][0]["content"] = '<img src=x onerror="window.bad=true">'
     enable(page, peer)
     search = page.get_by_label("Search sessions")
+    # However long these take, only the last survives the debounce once time resumes.
+    page.clock.pause_at(datetime.now(UTC) + timedelta(seconds=1))
     search.fill("Message 01")
     search.fill("Message 02")
     search.fill("onerror")
+    page.clock.resume()
     hit = page.locator(".history-search-hit")
     expect(hit).to_have_count(1)
     expect(hit).to_contain_text("<img")

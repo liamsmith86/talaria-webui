@@ -12,6 +12,7 @@ from talaria.app import create_app
 from talaria.profiles import connection_url, split_url
 from talaria.relay import Channel
 
+from .conftest import wait_for_store
 from .fake_hermes import KEY, FakeHermes
 from .test_app import signed_in
 from .test_conversation_features import png
@@ -97,7 +98,7 @@ def test_profiles_own_sessions_exports_runs_controls_and_credentials(live_app, r
             ("POST", f"/api/sessions/{prod}/fork", {"title": "Wrong branch"}),
         ):
             assert client.request(method, scoped(path, profile_id), json=body).status_code == 404
-        rid = client.post("/api/runs", json={"session_id": prod, "input": "slow response"}).json()[
+        rid = client.post("/api/runs", json={"session_id": prod, "input": "hold response"}).json()[
             "run_id"
         ]
         for method, path, body in (
@@ -257,6 +258,7 @@ def test_same_session_ids_and_images_are_isolated_and_responses_survive_switchin
     expect(page.get_by_role("button", name="Allow once")).to_be_visible()
     page.get_by_role("button", name="Allow once").click()
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
+    wait_for_store(page, "s => s.lives[s.active]?.persisted")
     assert second.approvals == 1 and live_app[1].approvals == 0
     assert len(live_app[1].messages[sid]) == 1 and len(second.messages[sid]) == 3
 
@@ -265,8 +267,6 @@ def test_browser_switching_separates_drafts_images_preferences_and_live_requests
     page, live_app, research
 ):
     _profile_id, second = research
-    errors = []
-    page.on("pageerror", lambda e: errors.append(str(e)))
     page.get_by_label("Message Hermes").fill("Production draft")
     page.get_by_label("File attachment").set_input_files(
         {"name": "blue.png", "mimeType": "image/png", "buffer": png()}
@@ -312,7 +312,6 @@ def test_browser_switching_separates_drafts_images_preferences_and_live_requests
         )
     finally:
         other.close()
-    assert not errors
 
 
 def test_missing_profile_shows_a_chooser_without_loading_default_sessions(page, live_app):

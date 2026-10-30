@@ -72,7 +72,10 @@ def test_a_reply_cut_off_by_the_network_settles_as_one_turn(chat):
     expect(chat.page.get_by_role("button", name="Response details", exact=True)).to_be_visible()
     # Hermes's own prompt to continue is not a later turn to warn about.
     chat.page.get_by_role("button", name="Regenerate response", exact=True).click()
-    expect(chat.page.get_by_role("dialog")).not_to_contain_text("later turn")
+    # It stays disabled until the check for later turns has finished.
+    dialog = chat.page.get_by_role("dialog")
+    expect(dialog.get_by_role("button", name="Regenerate response", exact=True)).to_be_enabled()
+    expect(dialog).not_to_contain_text("later turn")
     chat.confirm("Regenerate response")
     chat.settle()
     expect(chat.page.locator(".message.user")).to_have_count(1)

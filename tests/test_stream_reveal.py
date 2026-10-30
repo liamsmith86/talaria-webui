@@ -110,20 +110,24 @@ def test_fades_do_not_replay_or_replace_settled_text(reveal):
     result = reveal.evaluate(r"""async () => {
       const original=Element.prototype.animate;
       const seen=new Set();let replay=false,calls=0;
+      const revealed=async text=>{
+        for(let i=0;i<1000&&revealTest.text().trim()!==text.trim();i++)
+          await new Promise(resolve=>setTimeout(resolve,10));
+      };
       Element.prototype.animate=function(...args) {
         if(seen.has(this)) replay=true;
         seen.add(this);calls++;return original.apply(this,args);
       };
       try {
         revealTest.render('Hello '+ 'Readable words. '.repeat(12));
-        await new Promise(resolve=>setTimeout(resolve,350));
+        await revealed('Hello '+ 'Readable words. '.repeat(12));
         const first=document.querySelector('#reveal-test p span span');
         const range=document.createRange();range.selectNodeContents(first);
         getSelection().removeAllRanges();getSelection().addRange(range);
         const selected=getSelection().toString();
-        const full='Hello '+ 'Readable words. '.repeat(30);
+        const full='Hello '+ 'Readable words. '.repeat(27);
         revealTest.render(full);
-        await new Promise(resolve=>setTimeout(resolve,350));
+        await revealed(full);
         revealTest.render(full,false);
         return {calls,replay,stable:first===document.querySelector('#reveal-test p span span'),
           selected:getSelection().toString()===selected,

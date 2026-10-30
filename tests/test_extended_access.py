@@ -121,8 +121,8 @@ def test_edit_resend_reuses_run_transport_and_removes_following_turns(page, live
     assert list(peer.runs.values())[-1]["session_id"] == sid
     # A sent edit leaves no copy behind.
     expect(page.get_by_label("Message Hermes")).to_have_value("")
-    page.reload()
-    expect(page.get_by_label("Message Hermes")).to_have_value("")
+    saved = "async sid => (await import('/static/lib.js')).readStorage(`draft.${sid}`, '')"
+    assert page.evaluate(saved, sid) == ""
 
 
 def test_edit_that_fails_to_send_after_the_rewind_is_kept(page, live_app):

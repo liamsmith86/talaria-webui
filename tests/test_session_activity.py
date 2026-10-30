@@ -3,8 +3,11 @@
 import pytest
 from playwright.sync_api import expect
 
+from .conftest import fire_timers, wait_for_store, wait_for_timer
 from .test_conversation_features import seed
 from .test_session_search import enable
+
+REVALIDATE = 15000
 
 
 @pytest.mark.clock
@@ -70,7 +73,6 @@ def test_activity_pauses_hidden_tabs_and_coalesces_focus(page, live_app):
     assert len([call for call in peer.calls if call[1] == "/talaria/v1/activity"]) == before + 1
 
 
-@pytest.mark.clock
 def test_one_activity_check_serves_the_sidebar_and_the_open_session(page, live_app):
     peer = live_app[1]
     seed(peer)
@@ -79,10 +81,12 @@ def test_one_activity_check_serves_the_sidebar_and_the_open_session(page, live_a
     peer.discovery_overrides[endpoint] = ({"data": [run]}, 200)
     enable(page, peer)
     page.get_by_role("link", name="Design notes", exact=True).click()
-    expect(page.locator(".session-row").get_by_label("Finished", exact=True)).to_be_visible()
-    page.wait_for_timeout(300)
+    wait_for_store(page, "s => s.active === 'notes' && !s.loading && !!s.sessionDetails")
     before = len([call for call in peer.calls if call[1] == endpoint])
     for _ in range(4):
-        page.clock.fast_forward(15001)
-        page.wait_for_timeout(300)
-    assert len([call for call in peer.calls if call[1] == endpoint]) - before <= 4
+        # Each check starts the wait for the next once its own reads finish.
+        wait_for_timer(page, REVALIDATE)
+        fire_timers(page, REVALIDATE)
+    wait_for_timer(page, REVALIDATE)
+    # The check from opening the session may land after the count above.
+    assert 0 < len([call for call in peer.calls if call[1] == endpoint]) - before <= 5

@@ -14,6 +14,18 @@ pytestmark = pytest.mark.quality
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_every_fixed_wait_says_why_it_cannot_race():
+    # Tests wait on conditions. A fixed wait is for a window where nothing may change.
+    unexplained = [
+        f"{path.relative_to(ROOT)}:{number}"
+        for folder in ("tests", "e2e/scripted")
+        for path in (ROOT / folder).rglob("test_*.py")
+        for number, line in enumerate(path.read_text().splitlines(), 1)
+        if "wait_for_timeout(" in line and "# Fixed wait: " not in line
+    ]
+    assert not unexplained
+
+
 def prepare_gate_repo(destination):
     for name in (
         "pyproject.toml",

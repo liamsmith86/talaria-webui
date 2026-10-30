@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import socket
@@ -21,6 +22,28 @@ from talaria.config import Settings
 
 from .fake_hermes import KEY, FakeHermes
 
+# Behavior that can differ between browser engines: streaming and reconnecting,
+# input and gestures, scrolling and layout, images and storage, and locale formats.
+# Releases run these on Firefox and WebKit too; the rest run there nightly.
+CROSS_BROWSER = {
+    "test_browser.py",
+    "test_conversation_features.py",
+    "test_frontend_recovery.py",
+    "test_frontend_ui_qa.py",
+    "test_i18n.py",
+    "test_image_draft_migration.py",
+    "test_keyboard_continuity.py",
+    "test_markdown_streaming.py",
+    "test_message_submission.py",
+    "test_native_interactions.py",
+    "test_reply_navigation.py",
+    "test_reply_settlement.py",
+    "test_resilience.py",
+    "test_response_turns.py",
+    "test_sidebar_collapse.py",
+    "test_stream_reveal.py",
+}
+
 
 def pytest_addoption(parser):
     parser.addoption("--fail-on-skip", action="store_true", help="Fail CI on missing test setup")
@@ -42,10 +65,13 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "playwright_runtime" in item.fixturenames:
             item.add_marker(pytest.mark.browser)
+            if item.path.name in CROSS_BROWSER:
+                item.add_marker(pytest.mark.cross_browser)
     if shard := config.getoption("--browser-shard"):
-        if config.option.markexpr != "browser":
-            raise pytest.UsageError("--browser-shard requires '-m browser'")
-        selected = browser_shard([item for item in items if "browser" in item.keywords], shard)
+        mark = config.option.markexpr
+        if mark not in {"browser", "cross_browser"}:
+            raise pytest.UsageError("--browser-shard requires '-m browser' or '-m cross_browser'")
+        selected = browser_shard([item for item in items if mark in item.keywords], shard)
         selected_set = set(selected)
         config.hook.pytest_deselected(items=[item for item in items if item not in selected_set])
         items[:] = selected
@@ -103,7 +129,10 @@ def live_app(tmp_path):
 
 @pytest.fixture(scope="session")
 def playwright_runtime():
-    from playwright.sync_api import Frame, Page, sync_playwright
+    from playwright.sync_api import Frame, Page, expect, sync_playwright
+
+    # A ceiling only: a met condition returns at once, and a CI runner can stall.
+    expect.set_options(timeout=15_000)
 
     def checked_wait(original):
         @wraps(original)
@@ -150,6 +179,8 @@ def page(browser, live_app, request):
         page = context.new_page()
         if request.node.get_closest_marker("clock"):
             page.clock.install()
+        else:
+            hold_timers(page, *BACKGROUND_TIMERS)
         page.goto(live_app[0])
         page.get_by_label("Password", exact=True).fill("test-password")
         page.get_by_role("button", name="Sign in").click()
@@ -209,6 +240,46 @@ def capture_browser_errors(context):
       }));
     })()""")
     return errors
+
+
+# The periodic check, and what a toast, scroll controls and copy feedback wait
+# for before leaving. Run on real time, a slow test step loses a race with them.
+BACKGROUND_TIMERS = (15000, 3500, 2000, 1800)
+
+HOLD_TIMERS = """delays => {
+  if (window.heldTimers) return delays.forEach((delay) => heldDelays.add(delay));
+  window.heldTimers = new Map();
+  window.heldDelays = new Set(delays);
+  const {setTimeout: start, clearTimeout: cancel} = window;
+  let next = -1;
+  window.setTimeout = (run, delay, ...args) => {
+    if (!heldDelays.has(delay)) return start(run, delay, ...args);
+    heldTimers.set(next, {delay, run: () => run(...args)});
+    return next--;
+  };
+  window.clearTimeout = (id) => { heldTimers.delete(id); cancel(id); };
+  window.fireHeldTimers = (delay) => {
+    for (const [id, timer] of heldTimers) {
+      if (delay != null && timer.delay !== delay) continue;
+      heldTimers.delete(id);
+      timer.run();
+    }
+  };
+}"""
+
+
+def hold_timers(page, *delays):
+    """Keep timers of these lengths from firing until fire_timers, across reloads too."""
+    page.add_init_script(f"({HOLD_TIMERS})({json.dumps(delays)})")
+    page.evaluate(HOLD_TIMERS, list(delays))
+
+
+def fire_timers(page, delay=None):
+    page.evaluate("delay => fireHeldTimers(delay)", delay)
+
+
+def wait_for_timer(page, delay):
+    page.wait_for_function("d => [...heldTimers.values()].some((t) => t.delay === d)", arg=delay)
 
 
 def wait_for_store(page, predicate):

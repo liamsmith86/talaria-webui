@@ -76,6 +76,7 @@ def test_theme_accessibility(page, live_app, theme, monkeypatch):
         page.evaluate("document.documentElement.dataset.palette = 'blue'")
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), name
 
+    expect(page.get_by_role("button", name="Choose model")).to_be_enabled()
     audit("welcome")
     page.get_by_role("button", name="Switch profile").click()
     expect(page.get_by_role("dialog", name="Choose a profile")).to_be_visible()
@@ -86,6 +87,8 @@ def test_theme_accessibility(page, live_app, theme, monkeypatch):
     audit("settings")
     for section in ("Appearance", "Connection", "Talaria"):
         page.get_by_role("tab", name=section, exact=True).click()
+        if section == "Connection":
+            expect(page.get_by_label("API key", exact=True)).to_be_visible()
         audit("settings-" + section)
         if section == "Connection":
             page.get_by_role("button", name="Add profile", exact=True).click()

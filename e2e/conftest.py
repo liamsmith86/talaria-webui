@@ -31,6 +31,7 @@ from pathlib import Path
 
 import pytest
 import uvicorn
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect, sync_playwright
 from scripted_model import scripted_model
 
@@ -283,9 +284,11 @@ def serve_talaria(hermes, tmp_path_factory):
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning", access_log=False))
     thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
-    for _ in range(250):
-        if server.started:
-            break
+    # A ceiling only: a healthy start returns at once.
+    deadline = time.monotonic() + 30
+    while not server.started:
+        if time.monotonic() > deadline:
+            raise RuntimeError("Talaria did not start")
         time.sleep(0.02)
     try:
         yield f"http://127.0.0.1:{sock.getsockname()[1]}"
@@ -417,17 +420,22 @@ class Chat:
         self.store(SETTLED, 60_000)
         if history:
             self.store("s => !!s.active && s.history.length > 0", 60_000)
-        self.page.wait_for_timeout(500)
 
     def assert_reload_matches(self):
         settled = self.snapshot()
         self.reload(history=bool(settled))
-        reloaded = self.snapshot()
-        if settled != reloaded:
-            diff = "\n".join(
-                difflib.unified_diff(settled, reloaded, "settled", "reloaded", lineterm="")
+        # What arrives after the history, such as a stopped turn's outcome, gets time to load.
+        try:
+            self.page.wait_for_function(
+                f"want => JSON.stringify(({SNAPSHOT})()) === JSON.stringify(want)", arg=settled
             )
-            raise AssertionError(f"The reloaded session differs from the settled view:\n{diff}")
+        except PlaywrightTimeoutError:
+            diff = "\n".join(
+                difflib.unified_diff(settled, self.snapshot(), "settled", "reloaded", lineterm="")
+            )
+            raise AssertionError(
+                f"The reloaded session differs from the settled view:\n{diff}"
+            ) from None
 
 
 def sign_in(browser, talaria, problems, width=1280, height=900):

@@ -5,10 +5,12 @@ import time
 
 from playwright.sync_api import expect
 
-from .conftest import wait_for_store
+from .conftest import fire_timers, hold_timers, wait_for_store, wait_for_timer
 from .fake_hermes import STEER_OPEN
 from .test_conversation_features import seed
 from .test_session_continuity import open_session
+
+BACKGROUND_CHECK = 10000
 
 
 def call(call_id, name, **arguments):
@@ -371,7 +373,7 @@ def test_a_notice_after_the_prompt_does_not_unsettle_the_reply(page, live_app):
     open_session(page, sid)
     page.get_by_label("Message Hermes").fill("Check the build")
     page.get_by_role("button", name="Send message", exact=True).click()
-    expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_hidden(timeout=10000)
+    wait_for_store(page, "s => s.lives[s.active]?.persisted")
     # A subagent result lands after the prompt while the reply is saved.
     rows = peer.messages[sid]
     rows.insert(
@@ -458,13 +460,14 @@ def test_guidance_sent_while_working_stays_in_the_saved_reply(page, live_app):
     peer = live_app[1]
     sid = seed(peer, "live-steer")
     open_session(page, sid)
-    page.get_by_label("Message Hermes").fill("Check the build slowly")
+    page.get_by_label("Message Hermes").fill("Hold the build check")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.locator(".message.assistant .message-text")).to_be_visible()
     page.get_by_label("Message Hermes").fill("Also run the tests.")
     page.get_by_role("button", name="Send guidance", exact=True).click()
     guidance = page.locator(".message.assistant .guidance")
     expect(guidance).to_have_text("Your guidance Also run the tests.")
+    peer.release()
     expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_hidden(timeout=20000)
     # The saved rows replace the live reply once: no second prompt or reply.
     wait_for_store(page, "s => s.lives[s.active]?.persisted")
@@ -491,8 +494,10 @@ def test_a_background_result_appears_while_the_session_is_open(page, live_app):
         {"id": 3, **result("d1", dispatched), "timestamp": time.time()},
         {"id": 4, "role": "assistant", "content": "Dispatched; I will report back."},
     ]
+    hold_timers(page, BACKGROUND_CHECK)
     open_session(page, sid)
     expect(page.locator(".message.assistant")).to_have_count(1)
+    wait_for_timer(page, BACKGROUND_CHECK)
     # Hermes saves the result without a turn; nothing else prompts a refresh.
     peer.messages[sid].append(
         {
@@ -503,8 +508,7 @@ def test_a_background_result_appears_while_the_session_is_open(page, live_app):
             "content": "[ASYNC DELEGATION BATCH COMPLETE] Checked.",
         }
     )
+    fire_timers(page, BACKGROUND_CHECK)
     expect(page.locator(".message.notice")).to_be_visible(timeout=20000)
-    requests = []
-    page.on("request", lambda request: "/messages" in request.url and requests.append(request))
-    page.wait_for_timeout(12000)
-    assert not requests, "Polling continued after the result arrived"
+    held = "d => [...heldTimers.values()].some((t) => t.delay === d)"
+    assert not page.evaluate(held, BACKGROUND_CHECK), "Polling continued after the result arrived"

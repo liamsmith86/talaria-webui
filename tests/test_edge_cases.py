@@ -38,6 +38,7 @@ def test_ambiguous_submission_without_idempotency_cannot_repeat(page, live_app):
     page.get_by_label("Message Hermes").fill("Do not send a duplicate")
     expect(page.get_by_role("button", name="Send message", exact=True)).to_be_disabled()
     page.reload()
+    expect(page.get_by_text("The submission confirmation was lost.", exact=False)).to_be_visible()
     expect(page.get_by_role("button", name="Retry submission")).to_have_count(0)
     assert len(live_app[1].runs) == 1
 
@@ -68,7 +69,7 @@ def test_mobile_sidebar_keyboard_focus(page):
 
 
 def test_subagent_lifecycle_keeps_its_name(page):
-    page.get_by_label("Message Hermes").fill("Delegate a slow review")
+    page.get_by_label("Message Hermes").fill("Delegate and hold a review")
     page.get_by_role("button", name="Send message", exact=True).click()
     card = page.locator(".tool-card").filter(has_text="Subagent")
     expect(card).to_have_count(1)

@@ -147,7 +147,7 @@ def test_finishing_reply_keeps_each_frame_at_the_reading_position(
     for route in routes:
         route.continue_()
     wait_for_store(page, "s => s.lives.settling.persisted")
-    page.wait_for_timeout(300)
+    page.wait_for_timeout(300)  # Fixed wait: a recording window, asserting no flash in it.
     result = page.evaluate("""() => {
       recordSettling=false;
       return {disconnected:settlingFrames.some(frame=>!frame.connected),
@@ -241,7 +241,7 @@ def test_native_reconciliation_preserves_visible_prose_when_unsaved_reasoning_di
     expect(page.get_by_role("link", name="The saved reference")).to_have_attribute(
         "href", "https://example.com/saved"
     )
-    page.wait_for_timeout(250)
+    page.wait_for_timeout(250)  # Fixed wait: a recording window, asserting no flash in it.
     result = page.evaluate("""() => {
       recordSettling=false;
       return {retained:settlingAnchor.isConnected,
@@ -280,7 +280,7 @@ def test_tool_only_completion_uses_the_same_reserved_footer(page, live_app):
     before = page.locator(".conversation-viewport").evaluate("el=>el.scrollTop")
     finish_reply(page, "")
     wait_for_store(page, "s=>s.lives.settling.persisted")
-    page.wait_for_timeout(150)
+    page.wait_for_timeout(150)  # Fixed wait: the place must not move during it.
     expect(page.locator(".tool-card")).to_have_count(20)
     assert page.locator(".conversation-viewport").evaluate("el=>el.scrollTop") == before
 
@@ -308,6 +308,8 @@ def test_restarted_replay_rebuilds_the_reply_without_repeating_it(page, live_app
     expect(page.get_by_text("Reconnecting to Hermes", exact=False)).to_have_count(0)
     # Hermes's own stream was lost: keep the text, and let the saved transcript finish it.
     page.evaluate(send, [{"event": "talaria.reconcile"}])
+    # It takes effect on the next frame; before then the text below would prove nothing.
+    page.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
     expect(reply).to_have_text("First paragraph so far. And more.")
     expect(page.get_by_text("Reconnecting to Hermes", exact=False)).to_have_count(0)
 

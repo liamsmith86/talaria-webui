@@ -12,6 +12,7 @@ from playwright.sync_api import expect
 
 from talaria.hermes import APIError
 
+from .conftest import wait_for_store
 from .test_app import signed_in
 from .test_browser import screenshot
 
@@ -211,7 +212,9 @@ def test_pins_and_source_labels_across_pagination(page, live_app):
     expect(page.get_by_text("Pinned", exact=True)).to_have_count(0)
     assert peer.sessions["saved-0"]["pinned"] is False
     page.get_by_role("button", name="Options for Saved note 114", exact=True).click()
-    page.get_by_role("button", name="Pin session", exact=True).click()
+    # The row moves at once; a reload could abort or outrun the save.
+    with page.expect_response(lambda r: r.request.method == "PATCH"):
+        page.get_by_role("button", name="Pin session", exact=True).click()
     expect(page.locator(".session-select").first).to_have_accessible_name("Saved note 114")
     page.reload()
     expect(page.locator(".session-group").first).to_have_text("Pinned")
@@ -325,8 +328,9 @@ def test_image_draft_history_display_and_download(page, live_app):
     expect(page.locator(".attachment-chip img")).to_have_count(1)
     send(page, "Explain this diagram")
     expect(page.locator(".message-image img")).to_have_count(1)
-    assert page.locator(".message-image img").evaluate(
-        "img => img.complete && img.naturalWidth === 48"
+    page.wait_for_function(
+        "document.querySelector('.message-image img').complete"
+        " && document.querySelector('.message-image img').naturalWidth === 48"
     )
     assert not page.evaluate("JSON.stringify(localStorage).includes('data:image')")
     page.reload()
@@ -471,7 +475,7 @@ def test_native_image_preview_survives_reload_during_a_run_and_stop(page, live_a
         {"name": "ongoing.png", "mimeType": "image/png", "buffer": png()}
     )
     expect(page.locator(".attachment-chip")).to_have_count(1)
-    page.get_by_label("Message Hermes").fill("A slow image review")
+    page.get_by_label("Message Hermes").fill("Hold this image review")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_role("button", name="Stop response")).to_be_visible()
     page.reload()
@@ -560,7 +564,7 @@ def test_image_resize_removal_and_image_only_message(page, live_app):
     )
     expect(page.locator(".attachment-chip")).to_have_count(2)
     expect(page.locator(".attachment-chip").first).to_contain_text("Resized")
-    assert page.locator(".attachment-chip img").first.evaluate("img => img.naturalWidth") == 2560
+    page.wait_for_function("document.querySelector('.attachment-chip img').naturalWidth === 2560")
     page.get_by_role("button", name="Remove small.png", exact=True).click()
     expect(page.locator(".attachment-chip")).to_have_count(1)
     page.reload()
@@ -626,6 +630,8 @@ def test_child_details_and_read_only_transcript(page, live_app):
     page.reload()
     page.get_by_role("link", name="Design notes", exact=True).click()
     send(page, "Delegate this review")
+    # Saving replaces the card, which would close it after this opens it.
+    wait_for_store(page, "s => s.lives[s.active]?.persisted === true")
     card = page.locator(".tool-card").filter(has_text="Subagent")
     expect(card).to_have_count(1)
     card.locator("summary").click()
