@@ -15,7 +15,7 @@ async def submit(request):
     root = installation.managed_root()
     if root is None or not (root / control.SOCKET).exists():
         raise APIError("Start Talaria with its managed launcher to enable updates.", 409)
-    if request.path_params["action"] not in {"check", "update"}:
+    if request.path_params["action"] not in {"check", "update", "channel"}:
         raise APIError("Unknown update action.", 404)
     data = await body(request)
     operation = {**data, "action": request.path_params["action"]}

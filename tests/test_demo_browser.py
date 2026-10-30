@@ -171,6 +171,7 @@ def test_demo_uses_real_readonly_settings_and_search(demo_page, width):
     page.get_by_role("tab", name="Talaria", exact=True).click()
     expect(dialog).to_contain_text("Up to date")
     expect(dialog.get_by_role("button", name="Check for updates", exact=True)).to_be_disabled()
+    expect(dialog.get_by_label("Update channel")).to_be_disabled()
     expect(page.get_by_role("button", name="Sign out", exact=True)).to_have_count(0)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.get_by_role("button", name="Close dialog", exact=True).click()

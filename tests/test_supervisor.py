@@ -130,10 +130,10 @@ def test_real_launcher_update_failure_and_rollback(installed_launcher):
     module.write_text(module.read_text() + "\n# A new release.\n")
     second = commit()
 
-    def operation(client, action, expect=None):
-        body = {"id": secrets.token_hex(16)}
-        if expect:
-            body["expect"] = expect
+    run(["git", "-C", remote, "branch", "stable", first])
+
+    def operation(client, action, **fields):
+        body = {"id": secrets.token_hex(16), **fields}
         response = client.post(f"/api/installation/{action}", json=body)
         assert response.status_code == 202, response.text
         return eventually(
@@ -150,7 +150,21 @@ def test_real_launcher_update_failure_and_rollback(installed_launcher):
         assert client.get("/api/installation").json()["can_update"]
         assert operation(client, "check")["status"] == "completed"
         assert client.get("/api/installation").json()["update"]["latest_commit"] == second
-        assert operation(client, "update", second)["status"] == "completed"
+        assert operation(client, "channel", channel="stable")["status"] == "completed"
+        info = client.get("/api/installation").json()
+        assert (info["channel"], info["branch"]) == ("stable", "stable")
+        assert info["update"]["latest_commit"] == first and not info["update"]["available"]
+        check_health(address, first)
+        switch = operation(client, "channel", channel="nightly")
+        assert switch["status"] == "completed"
+        reused = client.post(
+            "/api/installation/channel", json={"id": switch["id"], "channel": "stable"}
+        )
+        assert reused.status_code == 409
+        info = client.get("/api/installation").json()
+        assert (info["channel"], info["branch"]) == ("nightly", "main")
+        assert info["update"]["latest_commit"] == second and info["update"]["available"]
+        assert operation(client, "update", expect=second)["status"] == "completed"
         eventually(lambda: selected(root, "supervisor") == f"releases/{second}")
         check_health(address, second)
         assert process.poll() is None  # Launcher upgraded through exec, preserving its PID.
@@ -163,14 +177,14 @@ def test_real_launcher_update_failure_and_rollback(installed_launcher):
         module.write_text("raise RuntimeError('Synthetic broken release')\n")
         broken = commit()
         assert operation(client, "check")["status"] == "completed"
-        assert operation(client, "update", broken)["status"] == "failed"
+        assert operation(client, "update", expect=broken)["status"] == "failed"
         check_health(address, second)
         assert selected(root, "current") == f"releases/{second}"
         module.write_text(good)
         (remote / "src/talaria/supervisor.py").unlink()
         incompatible = commit()
         assert operation(client, "check")["status"] == "completed"
-        assert operation(client, "update", incompatible)["status"] == "failed"
+        assert operation(client, "update", expect=incompatible)["status"] == "failed"
         check_health(address, second)
         run([root / "bin/talaria", "rollback", "--directory", root])
         check_health(address, first)

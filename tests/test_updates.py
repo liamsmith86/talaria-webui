@@ -14,7 +14,7 @@ from talaria.deployment import read_json
 from talaria.supervisor_worker import execute
 
 from .test_app import signed_in
-from .test_deployment import A, B, release
+from .test_deployment import A, B, C, release
 from .test_deployment import deployment as deployment_fixture
 
 deployment = deployment_fixture
@@ -28,6 +28,11 @@ deployment = deployment_fixture
         {"action": "update", "id": "a" * 32},
         {"action": "update", "id": "a" * 32, "expect": "--command"},
         {"action": "check", "id": "a" * 32, "repository": "elsewhere"},
+        {"action": "check", "id": "a" * 32, "channel": "nightly"},
+        {"action": "channel", "id": "a" * 32},
+        {"action": "channel", "id": "a" * 32, "channel": "main"},
+        {"action": "channel", "id": "a" * 32, "channel": ["stable"]},
+        {"action": "channel", "id": "a" * 32, "channel": "stable", "expect": "b" * 40},
     ],
 )
 def test_control_rejects_unrecognized_or_unbounded_operations(data):
@@ -63,6 +68,15 @@ def test_update_routes_require_login_csrf_and_fixed_action(live_app, tmp_path, m
         assert not calls
         assert client.post("/api/installation/update", json=payload).status_code == 202
         assert calls == [{**payload, "action": "update"}]
+        channel = {"id": secrets.token_hex(16), "channel": "nightly"}
+        assert (
+            client.post(
+                "/api/installation/channel", json={**channel, "channel": "main"}
+            ).status_code
+            == 400
+        )
+        assert client.post("/api/installation/channel", json=channel).status_code == 202
+        assert calls[-1] == {**channel, "action": "channel"}
         live_app[2].state.development = True
         assert client.post("/api/installation/update", json=payload).status_code == 409
 
@@ -89,6 +103,18 @@ def test_failed_activation_reports_failure_and_restores_old_release(deployment, 
     assert state["status"] == "finishing" and "private" not in json.dumps(state)
 
 
+def test_channel_operation_reports_completion_without_installing(deployment, monkeypatch):
+    from talaria.deployment import Deployment, selected
+
+    monkeypatch.setattr(Deployment, "fetch", lambda self, branch: B)
+    operation = {"action": "channel", "id": "c" * 32, "channel": "stable"}
+    execute(deployment.root, operation, lambda: pytest.fail("A switch must not restart Talaria"))
+    state = read_json(deployment.root / control.JOB)
+    assert (state["status"], state["phase"]) == ("finishing", "completed")
+    assert read_json(deployment.root / "deployment.json")["branch"] == "stable"
+    assert selected(deployment.root, "current") == f"releases/{A}"
+
+
 @pytest.fixture
 def update_ui(page, monkeypatch):
     info = {
@@ -97,7 +123,8 @@ def update_ui(page, monkeypatch):
         "commit": A,
         "managed": True,
         "can_update": True,
-        "branch": "main",
+        "branch": "stable",
+        "channel": "stable",
         "update": {
             "error": None,
             "available": True,
@@ -189,6 +216,93 @@ def test_update_check_never_claims_to_install_an_update(page, update_ui, trigger
     assert finishing_polls == [calls[-1]["id"]]
     assert len(calls) == 2
     assert not updates
+
+
+def test_channel_switch_offers_the_new_commit_without_installing(page, update_ui):
+    info, _ = update_ui
+    switches, updates = [], []
+
+    def switch(route):
+        body = route.request.post_data_json
+        switches.append(body)
+        info["operation"] = {**body, "action": "channel", "status": "running", "phase": "checking"}
+        route.fulfill(json=info["operation"])
+
+    def update(route):
+        updates.append(route.request.post_data_json)
+        info["operation"] = {
+            **updates[-1],
+            "action": "update",
+            "status": "failed",
+            "error": "Stop.",
+        }
+        route.fulfill(json=info["operation"])
+
+    page.route("**/api/installation/channel", switch)
+    page.route("**/api/installation/update", update)
+    channel = page.get_by_label("Update channel")
+    status = page.locator(".installation-status")
+    expect(channel).to_have_value("stable")
+    expect(page.get_by_role("tabpanel")).not_to_contain_text("Branch")
+    channel.focus()
+    channel.select_option("nightly")
+
+    expect(status).to_have_text("Checking for updates…")
+    expect(channel).to_have_value("nightly")
+    expect(channel).to_be_focused()
+    expect(page.get_by_role("tabpanel")).to_contain_text("Things may break")
+    assert page.evaluate(
+        "[...document.querySelectorAll('.select-control option')]"
+        ".map((option) => [option.value, option.disabled])"
+    ) == [["stable", True], ["nightly", False]]
+    assert len(switches) == 1 and switches[0]["channel"] == "nightly"
+    assert set(switches[0]) == {"id", "channel"}
+
+    info["channel"], info["branch"] = "nightly", "main"
+    info["update"]["latest_commit"] = C
+    info["operation"]["status"] = "completed"
+    expect(status).to_have_text("Update available")
+    expect(channel).to_have_value("nightly")
+    assert not updates
+    page.get_by_role("button", name="Update", exact=True).click()
+    expect(page.get_by_role("alert")).to_have_text("Stop.")
+    assert updates[0]["expect"] == C
+
+
+def test_failed_channel_switch_keeps_the_current_channel_usable(page, update_ui):
+    info, _ = update_ui
+
+    def switch(route):
+        info["operation"] = {
+            **route.request.post_data_json,
+            "action": "channel",
+            "status": "failed",
+            "error": "Update operation failed.",
+        }
+        route.fulfill(json=info["operation"])
+
+    page.route("**/api/installation/channel", switch)
+    channel = page.get_by_label("Update channel")
+    channel.select_option("nightly")
+    expect(page.get_by_role("alert")).to_have_text(
+        "Could not switch the update channel. Nothing changed."
+    )
+    expect(channel).to_have_value("stable")
+    expect(page.locator(".installation-status")).to_have_text("Update available")
+    expect(page.get_by_role("button", name="Update", exact=True)).to_be_enabled()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [{"branch": "work/mine", "channel": None}, {"can_update": False}],
+    ids=["custom-branch", "no-launcher"],
+)
+def test_installations_that_cannot_switch_show_their_branch(page, update_ui, changes):
+    info, _ = update_ui
+    info.update(changes)
+    page.get_by_role("tab", name="Talaria", exact=True).click()
+    expect(page.get_by_role("tabpanel")).to_contain_text(info["branch"])
+    expect(page.get_by_label("Update channel")).to_have_count(0)
 
 
 def test_connection_can_sync_linked_plugin_without_a_talaria_update(page, update_ui):

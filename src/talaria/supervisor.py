@@ -141,7 +141,7 @@ class Launcher:
         operation = validate(operation)
         state = read_json(self.root / JOB)
         if state.get("id") == operation["id"]:
-            if any(state.get(key) != operation.get(key) for key in ("action", "expect")):
+            if any(state.get(key) != operation.get(key) for key in ("action", "expect", "channel")):
                 raise ControlError("Update identifier was already used for another operation.")
             return state
         if self.worker is not None:
