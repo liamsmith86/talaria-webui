@@ -167,7 +167,7 @@ def test_demo_uses_real_readonly_settings_and_search(demo_page, width):
     expect(dialog.get_by_role("button", name="Save connection", exact=True)).to_be_disabled()
     expect(dialog.get_by_role("button", name="Test connection", exact=True)).to_be_disabled()
     expect(dialog).to_contain_text("Connected · Talaria plugin")
-    expect(dialog).to_contain_text(f"{PLUGIN_VERSION} · Matches this Talaria release")
+    expect(dialog).to_contain_text(f"{PLUGIN_VERSION} · Up to date")
     page.get_by_role("tab", name="Talaria", exact=True).click()
     expect(dialog).to_contain_text("Up to date")
     expect(dialog.get_by_role("button", name="Check for updates", exact=True)).to_be_disabled()

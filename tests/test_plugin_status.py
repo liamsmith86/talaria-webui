@@ -69,7 +69,7 @@ def test_connection_detects_releases_and_offers_native_installation(page, live_a
     expect(link).to_have_count(0)
     peer.extension = {"plugin_version": PLUGIN_VERSION, "revision": LOADED_REVISION}
     page.get_by_role("button", name="Check again", exact=True).click()
-    expect(page.get_by_role("tabpanel")).to_contain_text("Matches this Talaria release")
+    expect(page.get_by_role("tabpanel")).to_contain_text("Up to date")
 
 
 @pytest.mark.hermes
