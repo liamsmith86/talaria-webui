@@ -470,7 +470,7 @@
   "System language": "システムの言語",
   "Table": "表",
   "Talaria could not complete this request. Please try again.": "Talariaはこのリクエストを完了できませんでした。再試行してください。",
-  "Talaria could not use its data folder. Check that it is writable.": "Talariaはデータフォルダーを使用できませんでした。書き込めるか確認してください。",
+  "Talaria could not use its saved session data. Its server log has the reason.": "Talaria は保存済みのセッションデータを使用できませんでした。理由はサーバーログに記録されています。",
   "Talaria home": "Talariaホーム",
   "Talaria plugin not detected": "Talariaプラグインが見つかりません",
   "Talaria: {status}": "Talaria：{status}",

@@ -478,7 +478,7 @@
   "System language": "Idioma do sistema",
   "Table": "Tabela",
   "Talaria could not complete this request. Please try again.": "O Talaria não conseguiu concluir esta solicitação. Tente novamente.",
-  "Talaria could not use its data folder. Check that it is writable.": "O Talaria não conseguiu usar a pasta de dados. Verifique se ela permite gravação.",
+  "Talaria could not use its saved session data. Its server log has the reason.": "O Talaria não conseguiu usar os dados de sessão salvos. O motivo está no log do servidor.",
   "Talaria home": "Início do Talaria",
   "Talaria plugin not detected": "Plugin Talaria não detectado",
   "Talaria: {status}": "Talaria: {status}",

@@ -470,7 +470,7 @@
   "System language": "系统语言",
   "Table": "表格",
   "Talaria could not complete this request. Please try again.": "Talaria 未能完成此请求。请重试。",
-  "Talaria could not use its data folder. Check that it is writable.": "Talaria 无法使用其数据文件夹。请检查它是否可写。",
+  "Talaria could not use its saved session data. Its server log has the reason.": "Talaria 无法使用已保存的会话数据。原因请查看服务器日志。",
   "Talaria home": "Talaria 首页",
   "Talaria plugin not detected": "未检测到 Talaria 插件",
   "Talaria: {status}": "Talaria：{status}",
