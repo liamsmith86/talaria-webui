@@ -284,7 +284,7 @@
   max-width: 362px;
   margin-top: 40px;
 }
-.language-control {
+.select-control {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -292,13 +292,13 @@
   gap: 12px;
   font-size: 12px;
 }
-.language-control > span {
+.select-control > span {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   color: var(--muted);
 }
-.language-control select {
+.select-control select {
   min-width: 0;
   max-width: 100%;
   padding: 8px 10px;

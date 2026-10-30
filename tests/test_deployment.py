@@ -120,6 +120,69 @@ def test_check_and_expected_commit_never_activate(deployment, monkeypatch):
     assert selected(deployment.root, "current") == f"releases/{A}"
 
 
+@pytest.mark.skipif(not shutil.which("git"), reason="Needs Git")
+def test_channels_follow_their_branches_and_switching_installs_nothing(deployment):
+    remote = Path(deployment.config["repository"])
+    remote.mkdir()
+    run(["git", "init", "-b", "stable", remote])
+    run(["git", "-C", remote, "config", "user.email", "test@example.invalid"])
+    run(["git", "-C", remote, "config", "user.name", "Channel test"])
+
+    def commit():
+        run(["git", "-C", remote, "commit", "--allow-empty", "-m", "Test commit"])
+        return run(["git", "-C", remote, "rev-parse", "HEAD"])
+
+    def on_record():
+        return (
+            read_json(deployment.root / "deployment.json")["branch"],
+            read_json(deployment.root / "update.json")["latest_commit"],
+        )
+
+    released = commit()
+    run(["git", "-C", remote, "switch", "-c", "main"])
+    merged = commit()
+
+    deployment.switch_channel("stable")
+    assert on_record() == ("stable", released)
+    deployment.switch_channel("nightly")
+    assert on_record() == ("main", merged)
+    assert deployment.state["available"]
+    assert selected(deployment.root, "current") == f"releases/{A}"
+
+    # Reopening the installation keeps following the chosen branch.
+    newer = commit()
+    Deployment(deployment.root, report=lambda text: None).update(check=True)
+    assert on_record() == ("main", newer)
+
+    deployment.switch_channel("stable")
+    assert on_record() == ("stable", released)
+
+
+def test_failed_channel_switch_changes_nothing(deployment, monkeypatch):
+    root = deployment.root
+    deployment.record(latest_commit=B, available=True, error=None)
+
+    def saved():
+        return (root / "deployment.json").read_bytes(), (root / "update.json").read_bytes()
+
+    before = saved()
+
+    def fail(branch):
+        raise DeploymentError("Simulated missing branch")
+
+    monkeypatch.setattr(deployment, "fetch", fail)
+    with pytest.raises(DeploymentError, match="missing branch"):
+        deployment.switch_channel("stable")
+    assert saved() == before
+    assert deployment.config["branch"] == "main"
+
+    monkeypatch.setattr(deployment, "fetch", lambda branch: C)
+    write_json(root / "activation.json", {"current": f"releases/{A}", "previous": None})
+    with pytest.raises(DeploymentError, match="activation is incomplete"):
+        deployment.switch_channel("stable")
+    assert saved() == before
+
+
 @pytest.mark.parametrize("failure", ["restart", "health"])
 def test_failed_activation_restores_and_checks_previous(deployment, monkeypatch, failure):
     root = deployment.root

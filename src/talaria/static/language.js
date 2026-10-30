@@ -7,7 +7,7 @@ export function LanguageSelector() {
   const [failed, setFailed] = useState(false);
   const request = useRef(0);
   return html`<div>
-    <label class="language-control">
+    <label class="select-control">
       <span><${Icon} name="globe" size=${16} />${t("Language")}</span>
       <select value=${selection ?? language.preference} aria-busy=${selection !== null}
         onChange=${async (event) => {

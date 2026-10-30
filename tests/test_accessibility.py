@@ -2,6 +2,7 @@
 
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -30,9 +31,14 @@ def test_theme_accessibility(page, live_app, theme, monkeypatch):
             "commit": "a" * 40,
             "managed": True,
             "branch": "main",
+            "channel": "nightly",
             "installed_at": "2026-09-08T20:00:00Z",
-            "can_update": False,
-            "update": {"error": None, "available": True, "checked_at": "2026-09-08T21:00:00Z"},
+            "can_update": True,
+            "update": {
+                "error": None,
+                "available": True,
+                "checked_at": datetime.now(UTC).isoformat(),
+            },
         },
     )
     page.context.add_init_script(path=AXE)

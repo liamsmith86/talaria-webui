@@ -159,7 +159,7 @@ export async function enableDemo(signal, version, pluginVersion) {
     if (method === "GET" && Object.hasOwn(resources, parts[0])) return structuredClone(resources[parts[0]]);
     if (method === "GET" && parts[0] === "installation") return {
       version,
-      managed: true, branch: "stable", can_update: true,
+      managed: true, branch: "stable", channel: "stable", can_update: true,
       update: { available: false, checked_at: new Date().toISOString() },
     };
     if (parts[0] === "sessions" && parts.length === 1) {

@@ -33,6 +33,8 @@ def execute(root, operation, restart):
         deployment = Deployment(root, report=report, restart=restart)
         if operation["action"] == "rollback":
             deployment.rollback()
+        elif operation["action"] == "channel":
+            deployment.switch_channel(operation["channel"])
         else:
             deployment.update(check=operation["action"] == "check", expect=operation.get("expect"))
         state.update(status="finishing", phase="completed", finished_at=now())

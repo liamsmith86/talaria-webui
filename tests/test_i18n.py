@@ -63,7 +63,7 @@ def test_shipped_languages_cover_login_and_mobile_settings(browser, live_app, lo
         screenshot(page, f"i18n-{locale}-settings")
         selector.select_option("en")
         expect(page.get_by_role("dialog", name="Settings", exact=True)).to_be_visible()
-        page.locator(".language-control select").select_option(locale)
+        page.locator(".select-control select").select_option(locale)
         expect(page.locator("html")).to_have_attribute("lang", locale)
         assert len(requested) == (0 if locale == "en" else 1)
         page.reload()
@@ -427,7 +427,7 @@ def test_language_selector_can_change_a_pending_choice(page, previous_fails):
 
     page.route(CATALOG_ROUTE, respond)
     open_appearance(page)
-    select = page.locator(".language-control select")
+    select = page.locator(".select-control select")
     select.focus()
     with page.expect_request("**/de.json"):
         select.select_option("de")

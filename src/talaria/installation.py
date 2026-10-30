@@ -9,7 +9,7 @@ from pathlib import Path
 from starlette.responses import JSONResponse
 
 from . import __version__
-from .control import JOB, SOCKET
+from .control import CHANNELS, JOB, SOCKET
 
 
 def read_json(path: Path) -> dict:
@@ -55,8 +55,10 @@ def public_info(development: bool) -> dict:
     if root:
         config = read_json(root / "deployment.json")
         state = read_json(root / "update.json")
+        branch = str(config.get("branch", "main"))[:120]
         data.update(
-            branch=str(config.get("branch", "main"))[:120],
+            branch=branch,
+            channel=next((name for name, value in CHANNELS.items() if value == branch), None),
             installed_at=release_info(root / "current")["installed_at"],
             can_update=(root / SOCKET).exists(),
             updates_local_plugin=isinstance(config.get("hermes_plugin"), dict),

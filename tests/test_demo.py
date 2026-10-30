@@ -56,6 +56,7 @@ async def test_demo_is_readonly_and_never_opens_private_configuration(
             "login",
             "installation/update",
             "installation/check",
+            "installation/channel",
             "runs",
             "commands",
             f"sessions/{sid}",

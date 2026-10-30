@@ -9,6 +9,8 @@ SOCKET = "control.sock"
 JOB = "maintenance.json"
 TOKEN = re.compile(r"[0-9a-f]{32}\Z")
 COMMIT = re.compile(r"[0-9a-f]{40,64}\Z")
+# Browsers choose a channel by name and can never name a branch themselves.
+CHANNELS = {"stable": "stable", "nightly": "main"}
 
 
 class ControlError(Exception):
@@ -48,12 +50,13 @@ def request(root: Path, data):
 def validate(data):
     if (
         not isinstance(data.get("action"), str)
-        or set(data) - {"action", "id", "expect"}
+        or set(data) - {"action", "id", "expect", "channel"}
         or data.get("action")
         not in {
             "check",
             "update",
             "rollback",
+            "channel",
         }
     ):
         raise ControlError("Choose a supported update operation.")
@@ -64,4 +67,10 @@ def validate(data):
         raise ControlError("Check for updates again before installing.")
     if data["action"] == "update" and expect is None:
         raise ControlError("Check for updates before installing.")
+    channel = data.get("channel")
+    if data["action"] == "channel":
+        if expect is not None or not isinstance(channel, str) or channel not in CHANNELS:
+            raise ControlError("Choose a supported update channel.")
+    elif channel is not None:
+        raise ControlError("Choose a supported update operation.")
     return data

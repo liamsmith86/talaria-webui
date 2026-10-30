@@ -19,6 +19,14 @@ const phases = {
   recovering: msg("Restoring previous release…"),
 };
 
+const channels = {
+  stable: { label: msg("Stable"), help: msg("Installs tested releases.") },
+  nightly: {
+    label: msg("Nightly"),
+    help: msg("Installs every change as soon as it's merged, before release. Things may break."),
+  },
+};
+
 function delay(signal) {
   return new Promise((resolve, reject) => {
     const aborted = () => {
@@ -39,6 +47,8 @@ export function Installation({ pluginOnly = false, readOnly = false }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
   const [phase, setPhase] = useState(msg("Loading…"));
+  const [selection, setSelection] = useState(null);
+  const [channelFailed, setChannelFailed] = useState(false);
   const control = useRef(null);
   const acting = useRef(false);
 
@@ -73,7 +83,7 @@ export function Installation({ pluginOnly = false, readOnly = false }) {
           throw new Error(msg("Could not confirm the update request. Check again before retrying."));
         continue;
       }
-      setPhase(operation.action === "check" ? phases.checking
+      setPhase(["check", "channel"].includes(operation.action) ? phases.checking
         : job.phase === "checking" && operation.action === "update"
           ? phases.building : phases[job.phase] || msg("Updating Talaria…"));
       if (job.status === "failed") throw new Error(job.error || msg("Update failed."));
@@ -89,13 +99,14 @@ export function Installation({ pluginOnly = false, readOnly = false }) {
     if (!signal.aborted) throw new Error(msg("The update is taking longer than expected. Check again shortly."));
   }
 
-  async function submit(action, current, signal) {
+  async function submit(action, current, signal, channel) {
     const id = randomId();
     const operation = { id, action };
     const body = { id: operation.id };
     if (action === "update") body.expect = operation.expect = current.update.latest_commit;
-    if (action === "check") lastCheckAttempt = Date.now();
-    setPhase(action === "check" ? phases.checking : phases.building);
+    if (action === "channel") body.channel = channel;
+    if (action !== "update") lastCheckAttempt = Date.now();
+    setPhase(action === "update" ? phases.building : phases.checking);
     try {
       const accepted = await api(`/installation/${action}`, {
         method: "POST", body,
@@ -110,19 +121,27 @@ export function Installation({ pluginOnly = false, readOnly = false }) {
     await follow(operation, signal);
   }
 
-  async function act(action) {
+  async function act(action, channel) {
     if (acting.current) return;
     acting.current = true;
     setBusy(true);
     setError("");
+    setChannelFailed(false);
+    setSelection(channel ?? null);
     const signal = control.current.signal;
     try {
-      await submit(action, info, signal);
+      await submit(action, info, signal, channel);
     } catch (failure) {
-      if (!signal.aborted) setError(failure.message);
+      if (signal.aborted) return;
+      // A failed switch changes nothing, so updating from the current channel still works.
+      if (channel) setChannelFailed(true);
+      else setError(failure.message);
     } finally {
       acting.current = false;
-      if (!signal.aborted) setBusy(false);
+      if (!signal.aborted) {
+        setBusy(false);
+        setSelection(null);
+      }
     }
   }
 
@@ -157,6 +176,8 @@ export function Installation({ pluginOnly = false, readOnly = false }) {
   const problem = error || info?.update?.error;
   const status = busy ? t(phase) : problem ? t("Update unavailable") : available
     ? t("Update available") : info?.update?.checked_at ? t("Up to date") : t("Not checked");
+  const channel = !pluginOnly && info?.can_update ? info.channel : null;
+  const shownChannel = selection ?? channel;
   if (pluginOnly && !info?.updates_local_plugin) return null;
   return html`${!pluginOnly && html`<div class="section-heading">
       <h3>Talaria ${info && html`<span class="installation-version" aria-label=${t("Version {version}", { version: info.version })}>${info.version}</span>`}</h3>
@@ -164,9 +185,19 @@ export function Installation({ pluginOnly = false, readOnly = false }) {
     </div>
     ${info && html`<dl class="installation-details">
       <div><dt>${t("Build")}</dt><dd>${development ? t("Working checkout") : info.commit?.slice(0, 10) || t("Installed package")}</dd></div>
-      ${info.managed && html`<div><dt>${t("Branch")}</dt><dd>${info.branch}</dd></div>`}
+      ${info.managed && !channel && html`<div><dt>${t("Branch")}</dt><dd>${info.branch}</dd></div>`}
     </dl>`}`}
     ${!development && html`<section class="installation-update" aria-label=${t("Updates")}>
+      ${channel && html`<label class="select-control">
+        <span>${t("Update channel")}</span>
+        <select value=${shownChannel} disabled=${readOnly} aria-busy=${busy}
+          onChange=${(event) => act("channel", event.target.value)}>
+          ${Object.entries(channels).map(([value, { label }]) => html`<option key=${value} value=${value}
+            disabled=${busy && value !== shownChannel}>${t(label)}</option>`)}
+        </select>
+      </label>
+      <p class="field-help">${t(channels[shownChannel].help)}</p>
+      ${channelFailed && html`<p class="form-error" role="alert">${t("Could not switch the update channel. Nothing changed.")}</p>`}`}
       <p class="installation-status" role="status">${pluginOnly && !busy ? t("Talaria: {status}", { status }) : status}</p>
       ${problem && !busy && html`<p class="form-error" role="alert">${t(problem)}</p>`}
       ${info?.updates_local_plugin && html`<p class="field-help">${t("Linked local Hermes restarts if its plugin changes.")}</p>`}

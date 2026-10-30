@@ -49,6 +49,8 @@ curl -fsSL https://raw.githubusercontent.com/liamsmith86/talaria-webui/stable/in
 
 Follow the prompts, then open the URL printed by the installer.
 
+Update from Settings → Talaria. Its update channel defaults to Stable, which installs tested releases. Nightly installs each change merged to `main`, before it's released.
+
 ### Install via Docker
 
 With [Docker](https://docs.docker.com/get-started/get-docker/) installed:

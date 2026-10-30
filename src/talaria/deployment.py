@@ -25,11 +25,12 @@ from urllib.error import URLError
 from urllib.request import ProxyHandler, build_opener
 
 from .config import default_path, load
+from .control import CHANNELS
 from .installation import managed_root, read_json, release_info
 from .maintenance import DeploymentError, locked
 
 REPOSITORY = "https://github.com/liamsmith86/talaria-webui.git"
-DEFAULT_BRANCH = "stable"
+DEFAULT_BRANCH = CHANNELS["stable"]
 COMMIT = re.compile(r"[0-9a-f]{40,64}")
 PROBE = """
 import socket, sys
@@ -234,8 +235,18 @@ class Deployment:
         self.state.update(changes)
         write_json(self.root / "update.json", self.state)
 
-    def fetch(self) -> str:
-        branch = self.config["branch"]
+    def record_latest(self, commit: str) -> bool:
+        """Remember what the branch offers, and whether it differs from the current release."""
+        available = commit != release_info(self.root / "current")["commit"]
+        self.record(checked_at=now(), latest_commit=commit, available=available, error=None)
+        return available
+
+    def refuse_incomplete_activation(self):
+        if (self.root / "activation.json").exists():
+            raise DeploymentError("An activation is incomplete. Run talaria update to recover it.")
+
+    def fetch(self, branch: str | None = None) -> str:
+        branch = branch or self.config["branch"]
         repo = self.root / "repository.git"
         run(["git", "check-ref-format", f"refs/heads/{branch}"])
         if not repo.exists():
@@ -540,17 +551,14 @@ class Deployment:
 
     def update(self, *, check=False, expect=None):
         with locked(self.root):
-            if check and (self.root / "activation.json").exists():
-                raise DeploymentError(
-                    "An activation is incomplete. Run talaria update to recover it."
-                )
+            if check:
+                self.refuse_incomplete_activation()
             self.recover()
             self.report(f"Checking {self.config['branch']}…")
             try:
                 commit = self.fetch()
                 current = release_info(self.root / "current")["commit"]
-                available = commit != current
-                self.record(checked_at=now(), latest_commit=commit, available=available, error=None)
+                available = self.record_latest(commit)
                 if expect and expect != commit:
                     raise DeploymentError(
                         "The branch has moved from the expected commit. Review its new head first."
@@ -584,6 +592,17 @@ class Deployment:
             self.report(message)
             if current and not self.config.get("service"):
                 self.report("Restart your Talaria process to use the selected release.")
+
+    def switch_channel(self, channel: str):
+        """Follow another branch once Git can reach it. Only an update installs from it."""
+        with locked(self.root):
+            self.refuse_incomplete_activation()
+            branch = CHANNELS[channel]
+            commit = self.fetch(branch)
+            updated = {**self.config, "branch": branch}
+            write_json(self.root / "deployment.json", updated)
+            self.config = updated
+            self.record_latest(commit)
 
     def rollback(self):
         with locked(self.root):

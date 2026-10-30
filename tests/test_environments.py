@@ -74,10 +74,14 @@ def test_installation_info_is_authenticated_and_contains_no_private_paths(
         assert response.status_code == 200
         data = response.json()
         assert data["managed"] and data["update"]["available"]
+        assert (data["channel"], data["branch"]) == ("nightly", "main")
         assert "update_command" not in data
         assert data["can_update"] is False
         for private in (str(root), "/private", "private-remote", "never-emit"):
             assert private not in response.text
+        for branch, channel in (("stable", "stable"), ("work/mine", None)):
+            (root / "deployment.json").write_text(json.dumps({"schema": 1, "branch": branch}))
+            assert client.get("/api/installation").json()["channel"] == channel
         (root / "deployment.json").write_text("invalid json")
         assert client.get("/api/installation").status_code == 200
 
