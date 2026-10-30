@@ -245,11 +245,110 @@ def test_only_successful_matching_revision_checks_are_reused(repo, monkeypatch):
     check.verify_revision(revision, ["app.py"])
     assert len(calls) == 3
     # Native dependencies are external to the Talaria revision and never cached.
+    # The earlier check already ran every backend test the installer needs.
     monkeypatch.setenv("HERMES_SOURCE", "/test/hermes")
     check.verify_revision(revision, ["src/talaria/setup.py"])
     check.verify_revision(revision, ["src/talaria/setup.py"])
-    assert len(calls) == 6  # One ordinary check and two fresh native checks.
+    assert len(calls) == 5
     assert calls[-2][-2:] == calls[-1][-2:] == ("-m", "hermes")
+
+
+def test_a_full_revision_check_covers_later_pushes_of_the_same_code(repo, monkeypatch):
+    (repo / "app.py").write_text("answer = 42\n")
+    revision = commit()
+    monkeypatch.setenv("HERMES_SOURCE", "/test/hermes")
+    calls = []
+    monkeypatch.setattr(check, "run", lambda *a, **kw: calls.append(a))
+    check.verify_revision(revision, None, full=True)
+    assert calls[0][-2:] == ("full", "--skip-native")
+    assert calls[1][-2:] == ("-m", "hermes")
+    # Rewording a commit keeps its code, so the evidence still applies.
+    subprocess.run(["git", "commit", "-q", "--amend", "-m", "fix: reworded"], check=True)
+    reworded = check.git("rev-parse", "HEAD")
+    assert reworded != revision
+    check.verify_revision(reworded, ["src/talaria/routes.py", "tests/test_commands.py"])
+    assert len(calls) == 2
+    check.verify_revision(reworded, ["src/talaria/setup.py"])
+    assert len(calls) == 3 and calls[-1][-2:] == ("-m", "hermes")
+
+
+def test_passing_checks_cover_narrower_checks_but_never_broader_ones(repo, monkeypatch):
+    (repo / "app.py").write_text("answer = 42\n")
+    revision = commit()
+    calls = []
+    monkeypatch.setattr(check, "run", lambda *a, **kw: calls.append(a))
+    check.verify_revision(revision, ["src/talaria/routes.py", "tests/test_commands.py"])
+    check.verify_revision(revision, ["src/talaria/static/runs.js"])
+    assert len(calls) == 1
+    check.verify_revision(revision, ["src/talaria/static/runs.js", "tests/test_sidebar.py"])
+    assert len(calls) == 2
+    # Together, the two passing checks ran both test files.
+    check.verify_revision(revision, ["tests/test_commands.py", "tests/test_sidebar.py"])
+    assert len(calls) == 2
+    # No focused check covers every browser.
+    monkeypatch.setenv("HERMES_SOURCE", "/test/hermes")
+    check.verify_revision(revision, None, full=True)
+    assert len(calls) == 4 and calls[2][-2:] == ("full", "--skip-native")
+
+
+def test_revision_checks_reuse_installed_javascript_tools(repo, monkeypatch):
+    (repo / "app.py").write_text("answer = 42\n")
+    revision = commit()
+    linked, checked = [], []
+    monkeypatch.setattr(check, "reuse_javascript", linked.append)
+    monkeypatch.setattr(check, "run", lambda *a, cwd, env: checked.append(cwd))
+    check.verify_revision(revision, ["app.py"])
+    assert linked == checked and len(linked) == 1
+
+
+def test_checks_started_with_or_without_uv_run_share_evidence(repo, monkeypatch):
+    (repo / "app.py").write_text("answer = 42\n")
+    revision = commit()
+    calls = []
+    monkeypatch.setattr(check, "run", lambda *a, **kw: calls.append(a))
+    monkeypatch.setenv("UV_RUN_RECURSION_DEPTH", "1")
+    check.verify_revision(revision, ["app.py"])
+    monkeypatch.delenv("UV_RUN_RECURSION_DEPTH")
+    check.verify_revision(revision, ["app.py"])
+    assert len(calls) == 1
+
+
+def test_checks_find_the_accessibility_engine_where_contributing_puts_it(repo, monkeypatch):
+    monkeypatch.delenv("TALARIA_AXE_PATH", raising=False)
+    assert "TALARIA_AXE_PATH" not in check.check_environment()
+    (repo / ".local").mkdir()
+    (repo / ".local/axe.min.js").write_text("axe")
+    found = str((repo / ".local/axe.min.js").resolve())
+    assert check.check_environment()["TALARIA_AXE_PATH"] == found
+    (repo / "app.py").write_text("answer = 42\n")
+    revision = commit()
+    calls = []
+    monkeypatch.setattr(check, "run", lambda *a, **kw: calls.append(a))
+    # A check run with the documented variable counts for a push without it.
+    monkeypatch.setenv("TALARIA_AXE_PATH", found)
+    check.verify_revision(revision, ["app.py"])
+    monkeypatch.delenv("TALARIA_AXE_PATH")
+    check.verify_revision(revision, ["app.py"])
+    assert len(calls) == 1
+    monkeypatch.setenv("TALARIA_AXE_PATH", "/elsewhere/axe.min.js")
+    assert check.check_environment()["TALARIA_AXE_PATH"] == "/elsewhere/axe.min.js"
+
+
+@pytest.mark.parametrize(
+    "command,paths", [("full", None), ("check", ["app.py"])], ids=["full", "focused"]
+)
+def test_revision_checks_verify_the_commit_with_its_changes(repo, monkeypatch, command, paths):
+    (repo / "app.py").write_text("answer = 42\n")
+    commit()
+    subprocess.run(["git", "branch", "-q", "-M", "main"], check=True)
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"], check=True)
+    (repo / "app.py").write_text("answer = 43\n")
+    revision = commit()
+    verified = []
+    monkeypatch.setattr(check, "verify_revision", lambda *a, **kw: verified.append((a, kw["full"])))
+    monkeypatch.setattr(sys, "argv", ["check.py", command, "--revision", "HEAD"])
+    check.main()
+    assert verified == [((revision, paths), command == "full")]
 
 
 def test_failed_native_check_does_not_discard_successful_local_evidence(repo, monkeypatch):

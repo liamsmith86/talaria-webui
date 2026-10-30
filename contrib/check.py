@@ -77,6 +77,12 @@ CHECK_FILES = {
     "package-lock.json",
     ".npmrc",
 }
+BROWSERS = ("chromium", "firefox", "webkit")
+# Where CONTRIBUTING.md puts the verified axe-core script.
+AXE = ".local/axe.min.js"
+# Passing checks of the same code count this long, for environment drift that
+# the identity cannot see, such as reinstalled browsers.
+EVIDENCE_SECONDS = 3600
 I18N_BROWSER = "tests/test_i18n.py"
 I18N_CATALOGS = "tests/test_i18n_catalogs.py"
 I18N_FILES = {
@@ -201,6 +207,34 @@ def pytest(*args, env=None):
     )
 
 
+def selection(scope, full=False):
+    """The tests a check runs after linting: {stage: files}, where [] is every test."""
+    tests = {}
+    if scope["backend"] is not None:
+        tests["backend"] = list(scope["backend"])
+    if scope["browsers"]:
+        if full:
+            tests.update({browser: [] for browser in BROWSERS})
+        else:
+            translated = [file for file in scope["extra_browser"] if file == I18N_BROWSER]
+            tests["chromium"] = list(dict.fromkeys(FOCUSED + scope["extra_browser"]))
+            tests["webkit"] = list(dict.fromkeys(STREAMING + translated))
+    return tests
+
+
+def covered(passed, needed):
+    """Whether passing runs of the same code together ran every test needed."""
+    if not passed:
+        return False
+    for stage, files in needed.items():
+        ran = [tests[stage] for tests in passed if stage in tests]
+        if [] in ran:
+            continue
+        if not files or not set(files) <= {file for run in ran for file in run}:
+            return False
+    return True
+
+
 def check(full=False, native=False, paths=None, skip_native=False):
     env = environment()
     scope = plan(None if full else paths)
@@ -214,27 +248,19 @@ def check(full=False, native=False, paths=None, skip_native=False):
         axe = Path(env.get("TALARIA_AXE_PATH", ""))
         digest = "c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1"
         if not axe.is_file() or hashlib.sha256(axe.read_bytes()).hexdigest() != digest:
-            raise SystemExit("Set TALARIA_AXE_PATH to the verified script in CONTRIBUTING.md.")
+            raise SystemExit(f"Save the verified axe-core script as {AXE} or set TALARIA_AXE_PATH.")
     lint(paths=None if full else paths)
-    if scope["backend"] is not None:
-        pytest(*scope["backend"], "-m", "not browser and not hermes", env=env)
-    browsers = ("chromium", "firefox", "webkit") if full else ("chromium", "webkit")
-    for browser in browsers if scope["browsers"] else ():
-        print(f"Browser checks: {browser}", flush=True)
-        browser_env = {**env, "TALARIA_TEST_BROWSER": browser}
-        if full:
-            pytest("-m", "browser", env=browser_env)
-        else:
-            files = (
-                FOCUSED + scope["extra_browser"]
-                if browser == "chromium"
-                else STREAMING + [file for file in scope["extra_browser"] if file == I18N_BROWSER]
-            )
+    tests = selection(scope, full)
+    if "backend" in tests:
+        pytest(*tests["backend"], "-m", "not browser and not hermes", env=env)
+    for browser in BROWSERS:
+        if browser in tests:
+            print(f"Browser checks: {browser}", flush=True)
             pytest(
-                *(file for file in dict.fromkeys(files) if Path(file).is_file()),
+                *(file for file in tests[browser] if Path(file).is_file()),
                 "-m",
                 "browser",
-                env=browser_env,
+                env={**env, "TALARIA_TEST_BROWSER": browser},
             )
     if scope["native"]:
         pytest(*scope["native"], "-m", "hermes", env=env)
@@ -250,14 +276,18 @@ def platform_check(full=False):
     )
 
 
-def pre_commit():
-    # Export the index, not HEAD or the working tree: partial staging must not
-    # hide violations, and deleting the last reference must reach Vulture.
+def reuse_javascript(root):
+    """Link the installed JavaScript tools into an export when its lockfile matches."""
     if __package__:
         from .quality import reuse_javascript
     else:
         from quality import reuse_javascript
+    reuse_javascript(root)
 
+
+def pre_commit():
+    # Export the index, not HEAD or the working tree: partial staging must not
+    # hide violations, and deleting the last reference must reach Vulture.
     tree = git("write-tree")
     with tempfile.TemporaryDirectory(prefix="talaria-commit-") as directory:
         root = Path(directory)
@@ -333,6 +363,7 @@ def changed_paths(base, revision=None):
 
 
 def check_environment():
+    """The environment, with prerequisites found where CONTRIBUTING.md puts them."""
     env = environment()
     if not env.get("HERMES_SOURCE"):
         source = subprocess.run(
@@ -342,21 +373,15 @@ def check_environment():
         ).stdout.strip()
         if source:
             env["HERMES_SOURCE"] = source
+    if not env.get("TALARIA_AXE_PATH") and Path(AXE).is_file():
+        env["TALARIA_AXE_PATH"] = str(Path(AXE).resolve())
     return env
 
 
-def verify_revision(commit, paths, *, fresh=False, native=False):
-    """Cache immutable local checks separately from mutable native Hermes inputs."""
-    env = check_environment()
-    scope = plan(paths)
-    if native:
-        scope["native"] = ["tests"]
-    if scope["native"] and not env.get("HERMES_SOURCE"):
-        raise SystemExit("Native checks need HERMES_SOURCE (see CONTRIBUTING.md).")
-    cache = Path(git("rev-parse", "--git-path", "talaria-checks.json"))
-    identity = [
+def identity(commit, env):
+    """What a check's result depends on besides the tests it ran."""
+    return [
         git("rev-parse", f"{commit}^{{tree}}"),
-        {**scope, "native": []},
         sys.version,
         sys.executable,
         platform.platform(),
@@ -368,47 +393,76 @@ def verify_revision(commit, paths, *, fresh=False, native=False):
             k: v
             for k, v in env.items()
             if k.startswith(("PYTEST_", "TALARIA_", "PLAYWRIGHT_", "NODE_", "UV_"))
+            # uv's own bookkeeping, set by `uv run`, never changes a result.
+            and k != "UV_RUN_RECURSION_DEPTH"
         },
     ]
-    key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
-    records = {}
-    with contextlib.suppress(OSError, ValueError, AttributeError):
-        records = {
-            k: v
-            for k, v in json.loads(cache.read_text()).items()
-            if isinstance(v, (int, float)) and 0 <= time.time() - v < 3600
-        }
-    cached = not fresh and key in records
+
+
+def read_evidence(cache):
+    """Recent passing checks: {identity digest: [{"time", "tests"}]}."""
+    now = time.time()
+    with contextlib.suppress(OSError, ValueError, TypeError, KeyError, AttributeError):
+        evidence = {}
+        for key, runs in json.loads(cache.read_text()).items():
+            recent = [run for run in runs if 0 <= now - run["time"] < EVIDENCE_SECONDS]
+            if recent and all(isinstance(run["tests"], dict) for run in recent):
+                evidence[key] = recent
+        return evidence
+    return {}
+
+
+def write_evidence(cache, evidence):
+    newest = sorted(evidence.items(), key=lambda item: max(run["time"] for run in item[1]))
+    try:
+        cache.write_text(json.dumps(dict(newest[-32:])))
+    except OSError:
+        print("The optional local check cache could not be saved.")
+
+
+def verify_revision(commit, paths, *, fresh=False, native=False, full=False):
+    """Check an exported revision, reusing recent passing checks of the same code.
+
+    A passing check counts for its tree and environment, whatever the commit or
+    comparison base, and covers any later check that needs only tests it ran.
+    Native Hermes checks always run: Hermes can change without a Talaria commit.
+    """
+    env = check_environment()
+    scope = plan(None if full else paths)
+    if native or full:
+        scope["native"] = ["tests"]
+    if scope["native"] and not env.get("HERMES_SOURCE"):
+        raise SystemExit("Native checks need HERMES_SOURCE (see CONTRIBUTING.md).")
+    needed = selection(scope, full)
+    cache = Path(git("rev-parse", "--git-path", "talaria-checks.json"))
+    key = hashlib.sha256(json.dumps(identity(commit, env), sort_keys=True).encode()).hexdigest()
+    evidence = read_evidence(cache)
+    if fresh and evidence.pop(key, None):
+        write_evidence(cache, evidence)
+    cached = covered([run["tests"] for run in evidence.get(key, [])], needed)
     if cached:
         print(f"Reusing successful local checks for {commit[:10]} (under one hour old).")
         if not scope["native"]:
             return
-    elif key in records:
-        del records[key]
-        cache.write_text(json.dumps(records))
     with tempfile.TemporaryDirectory(prefix="talaria-push-") as directory:
         root = Path(directory)
         export(commit, root)
         if not cached:
+            reuse_javascript(root)
             run(
                 "uv",
                 "run",
                 "--locked",
                 "python",
                 str(root / "contrib/check.py"),
-                "check",
+                "full" if full else "check",
                 "--skip-native",
-                *(["--paths", *paths] if paths else []),
+                *(["--paths", *paths] if paths and not full else []),
                 cwd=root,
                 env=env,
             )
-            records[key] = time.time()
-            records = dict(sorted(records.items(), key=lambda item: item[1])[-32:])
-            try:
-                cache.write_text(json.dumps(records))
-            except OSError:
-                print("Checks passed; the optional local result cache could not be saved.")
-        # Never cache native results: Hermes can change without a Talaria commit.
+            evidence.setdefault(key, []).append({"time": time.time(), "tests": needed})
+            write_evidence(cache, evidence)
         if scope["native"]:
             run(
                 "uv",
@@ -448,10 +502,10 @@ def pre_push():
         if not paths or docs_only(paths):
             print("Documentation-only push: no runtime checks needed.", flush=True)
             continue
-        selection = (commit, json.dumps(plan(paths), sort_keys=True))
-        if selection not in checked:
+        planned = (commit, json.dumps(plan(paths), sort_keys=True))
+        if planned not in checked:
             verify_revision(commit, paths)
-            checked.add(selection)
+            checked.add(planned)
 
 
 def cases(path):
@@ -508,18 +562,20 @@ def prove(base, selectors):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("pre-commit", "pre-push", "lint", "full"):
+    for name in ("pre-commit", "pre-push", "lint"):
         commands.add_parser(name)
-    command = commands.add_parser("check")
-    native_mode = command.add_mutually_exclusive_group()
-    native_mode.add_argument("--native", action="store_true")
-    native_mode.add_argument("--skip-native", action="store_true", help=argparse.SUPPRESS)
-    selection = command.add_mutually_exclusive_group()
-    selection.add_argument("--changed", action="store_true", help="Test the changed areas locally")
-    selection.add_argument("--revision", help="Check and cache an immutable committed revision")
-    selection.add_argument("--paths", nargs="+", help=argparse.SUPPRESS)
-    command.add_argument("--base", default="origin/main", help="Comparison base for focused checks")
-    command.add_argument("--fresh", action="store_true", help="Ignore cached revision results")
+    for name in ("check", "full"):
+        command = commands.add_parser(name)
+        native_mode = command.add_mutually_exclusive_group()
+        native_mode.add_argument("--skip-native", action="store_true", help=argparse.SUPPRESS)
+        source = command.add_mutually_exclusive_group()
+        source.add_argument("--revision", help="Check a commit's export; pushes reuse the result")
+        command.add_argument("--fresh", action="store_true", help="Ignore earlier passing checks")
+        if name == "check":
+            native_mode.add_argument("--native", action="store_true")
+            source.add_argument("--changed", action="store_true", help="Test the changed areas")
+            source.add_argument("--paths", nargs="+", help=argparse.SUPPRESS)
+            command.add_argument("--base", default="origin/main", help="Base for focused checks")
     command = commands.add_parser("platform", help="Portable install/runtime checks for CI")
     command.add_argument("--full", action="store_true", help="Include all backend logic")
     command = commands.add_parser("prove")
@@ -541,28 +597,29 @@ def main():
         prove(args.base, args.tests)
     elif args.command == "ci":
         ci_check(args.base, args.plan)
-    elif args.command == "check" and args.revision:
-        revision = git("rev-parse", f"{args.revision}^{{commit}}")
-        base = git("merge-base", args.base, revision)
-        paths = changed_paths(base, revision)
-        if args.native or (paths and not docs_only(paths)):
-            verify_revision(revision, paths, fresh=args.fresh, native=args.native)
-        else:
-            print("No runtime changes to check.")
     else:
+        full = args.command == "full"
+        native = getattr(args, "native", False)
+        if args.revision:
+            revision = git("rev-parse", f"{args.revision}^{{commit}}")
+            paths = None
+            if not full:
+                paths = changed_paths(git("merge-base", args.base, revision), revision)
+            if full or native or (paths and not docs_only(paths)):
+                verify_revision(revision, paths, fresh=args.fresh, native=native, full=full)
+            else:
+                print("No runtime changes to check.")
+            return
         paths = getattr(args, "paths", None)
         if getattr(args, "changed", False):
             paths = changed_paths(git("merge-base", args.base, "HEAD"))
-        # Share local prerequisite configuration with the isolated push runner.
-        env = check_environment()
-        if env.get("HERMES_SOURCE"):
-            os.environ["HERMES_SOURCE"] = env["HERMES_SOURCE"]
-        check(
-            full=args.command == "full",
-            native=getattr(args, "native", False),
-            paths=paths,
-            skip_native=getattr(args, "skip_native", False),
+        # The same prerequisites as checks of a revision.
+        os.environ.update(
+            (key, value)
+            for key, value in check_environment().items()
+            if key in {"HERMES_SOURCE", "TALARIA_AXE_PATH"}
         )
+        check(full=full, native=native, paths=paths, skip_native=args.skip_native)
 
 
 if __name__ == "__main__":

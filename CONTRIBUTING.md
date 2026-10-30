@@ -26,12 +26,16 @@ curl -fsSL https://cdn.jsdelivr.net/npm/axe-core@4.13.0/axe.min.js -o .local/axe
 
 ```sh
 uv run --locked python contrib/check.py check --changed
-TALARIA_AXE_PATH=$PWD/.local/axe.min.js uv run --locked python contrib/check.py full
+uv run --locked python contrib/check.py full --revision HEAD
 ```
 
-The first command checks only what your changes affect. The Git hooks also run
-checks on each commit and push. Every bug fix needs a test that fails without
-the fix. To confirm that it does, run
+The first command checks only what your changes affect. The second runs every
+check on a clean copy of a commit; without `--revision` it checks your working
+tree. The Git hooks also run checks on each commit and push. A push reuses
+passing checks of the same code from the last hour, so after a full check it
+reruns at most the native Hermes tests.
+
+Every bug fix needs a test that fails without the fix. Confirm that it does with
 `uv run --locked python contrib/check.py prove --base origin/main TEST...`.
 Keep real sessions and credentials out of tests. Don't bypass the lockfiles or
 the 7-day dependency cooldown.
