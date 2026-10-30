@@ -4,6 +4,8 @@ on:
   pull_request:
   schedule:
     - cron: '43 8 * * 1'
+    # Every browser test on every browser, which nothing else needs to wait for.
+    - cron: '17 7 * * *'
   workflow_call:
     inputs:
       full:
@@ -141,18 +143,20 @@ jobs:
 
   browsers:
     needs: lint
-    if: inputs.full || (github.event_name == 'workflow_dispatch' && inputs.browser != 'none' && inputs.browser != '')
+    if: inputs.full || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.browser != 'none' && inputs.browser != '')
     name: Browser (${{ matrix.browser }}, ${{ matrix.shard }}/2)
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     strategy:
       fail-fast: false
       matrix:
-        browser: ${{ fromJSON(inputs.full && '["chromium", "firefox", "webkit"]' || format('["{0}"]', inputs.browser)) }}
+        browser: ${{ fromJSON((inputs.full || github.event_name == 'schedule') && '["chromium", "firefox", "webkit"]' || format('["{0}"]', inputs.browser)) }}
         shard: [1, 2]
     env:
       TALARIA_TEST_BROWSER: ${{ matrix.browser }}
       TALARIA_TEST_SHARD: ${{ matrix.shard }}/2
+      # A release runs everything on Chromium, and what can differ on the others.
+      TALARIA_TEST_MARK: ${{ inputs.full && matrix.browser != 'chromium' && 'cross_browser' || 'browser' }}
       TALARIA_AXE_PATH: ${{ github.workspace }}/.local/axe.min.js
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -181,7 +185,7 @@ jobs:
           trap 'kill "$monitor" 2>/dev/null || true' EXIT
           # Leave time for artifact upload even if pytest or browser teardown stalls.
           timeout --kill-after=15s 10m bash -o pipefail <<'BROWSER'
-          uv run --locked pytest -v -n 2 --dist load --maxschedchunk=1 -m browser --browser-shard "$TALARIA_TEST_SHARD" --fail-on-skip --timeout=120 --timeout-method=thread --max-worker-restart=0 --maxfail=1 -o faulthandler_timeout=90 --durations=10 --junitxml=test-results/browser.xml 2>&1 | tee test-results/browser.log | awk '
+          uv run --locked pytest -v -n 2 --dist load --maxschedchunk=1 -m "$TALARIA_TEST_MARK" --browser-shard "$TALARIA_TEST_SHARD" --fail-on-skip --timeout=120 --timeout-method=thread --max-worker-restart=0 --maxfail=1 -o faulthandler_timeout=90 --durations=10 --junitxml=test-results/browser.xml 2>&1 | tee test-results/browser.log | awk '
             length($0) > 2000 { print substr($0, 1, 2000) "... [line shortened; see browser.log]"; fflush(); next }
             { print; fflush() }'
           BROWSER
@@ -226,7 +230,7 @@ jobs:
 
   hermes:
     needs: lint
-    if: inputs.full || inputs.hermes_latest || github.event_name == 'schedule'
+    if: inputs.full || inputs.hermes_latest || github.event.schedule == '43 8 * * 1'
     name: Native Hermes (${{ matrix.hermes.name }})
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -235,7 +239,7 @@ jobs:
       matrix:
         # Releases cover the oldest supported release and the current stable one,
         # whose session authority the baseline lacks. Main's lockfile targets 3.14.
-        hermes: ${{ fromJSON((inputs.hermes_latest || github.event_name == 'schedule') && '[{"name":"main","ref":"main","python":"3.14"}]' || '[{"name":"0.21.5","ref":"f97608f178d1ffeca59860195ab7da295f7c8e5f","python":"3.12"},{"name":"v0.22.5","ref":"bf0203a794a07aac3ff764972ab9087baa4e4f4e","python":"3.14"}]') }}
+        hermes: ${{ fromJSON((inputs.hermes_latest || github.event.schedule == '43 8 * * 1') && '[{"name":"main","ref":"main","python":"3.14"}]' || '[{"name":"0.21.5","ref":"f97608f178d1ffeca59860195ab7da295f7c8e5f","python":"3.12"},{"name":"v0.22.5","ref":"bf0203a794a07aac3ff764972ab9087baa4e4f4e","python":"3.14"}]') }}
     env:
       HERMES_SOURCE: ${{ github.workspace }}/.local/hermes
       HERMES_DISABLE_LAZY_INSTALLS: '1'
@@ -305,7 +309,7 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
           FULL: ${{ inputs.full || false }}
           PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
-          NATIVE: ${{ inputs.hermes_latest || github.event_name == 'schedule' }}
+          NATIVE: ${{ inputs.hermes_latest || github.event.schedule == '43 8 * * 1' }}
         run: |
           python3 - <<'PY'
           import json, os

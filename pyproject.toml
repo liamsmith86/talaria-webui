@@ -47,6 +47,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
     "browser: requires Playwright",
+    "cross_browser: browser tests that releases also run on Firefox and WebKit",
     "hermes: requires a native Hermes checkout",
     "quality: requires the developer JavaScript and lint toolchain",
     "clock: install Playwright's clock before application startup",

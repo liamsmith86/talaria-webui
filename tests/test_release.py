@@ -167,7 +167,8 @@ def test_browser_failure_stops_before_draining_a_large_worker_queue(tmp_path):
         line for line in script.splitlines() if line.startswith("uv run --locked pytest")
     )
     args = shlex.split(command.split(" 2>&1", 1)[0])[4:]
-    args = ["1/1" if arg == "$TALARIA_TEST_SHARD" else arg for arg in args]
+    values = {"$TALARIA_TEST_SHARD": "1/1", "$TALARIA_TEST_MARK": "browser"}
+    args = [values.get(arg, arg) for arg in args]
     (tmp_path / "conftest.py").write_text(
         "from tests.conftest import (pytest_addoption, pytest_collection_modifyitems, "
         "pytest_sessionfinish)\n"
@@ -360,7 +361,8 @@ def test_workflow_gates_publication_and_keeps_prs_lightweight():
         "webkit",
     ]
     assert ci["jobs"]["browsers"]["if"].startswith("inputs.full || ")
-    assert "inputs.full &&" in ci["jobs"]["browsers"]["strategy"]["matrix"]["browser"]
+    assert "inputs.full ||" in ci["jobs"]["browsers"]["strategy"]["matrix"]["browser"]
+    assert "'cross_browser'" in ci["jobs"]["browsers"]["env"]["TALARIA_TEST_MARK"]
     quality = next(
         step
         for step in ci["jobs"]["lint"]["steps"]
