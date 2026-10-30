@@ -1,5 +1,7 @@
 """Tab navigation and refresh through the real UI and a synthetic Hermes server."""
 
+from urllib.parse import urljoin
+
 import pytest
 from playwright.sync_api import expect
 
@@ -53,10 +55,21 @@ def test_session_link_opens_independent_tab(page, live_app):
     page.evaluate("import('/static/store.js').then(s => s.refreshSessions())")
     link = page.get_by_role("link", name="Design notes", exact=True)
     expect(link).to_have_attribute("href", "/?session=linked")
-    with page.context.expect_page() as opened:
-        link.click(button="middle")
-    other = opened.value
+    # A middle or modified click is the browser's to open in a new tab. Whether a
+    # headless browser does so is its own timing, so check that the page leaves
+    # these clicks alone, then open the link's address as that tab would.
+    page.evaluate("""() => {
+        window.prevented = [];
+        for (const type of ["click", "auxclick"])
+            window.addEventListener(type, (event) => window.prevented.push(event.defaultPrevented));
+    }""")
+    link.click(button="middle")
+    link.click(modifiers=["ControlOrMeta"])
+    assert page.evaluate("window.prevented") == [False, False]
+    wait_for_store(page, "s => s.active === null")
+    other = page.context.new_page()
     try:
+        other.goto(urljoin(page.url, link.get_attribute("href")))
         expect(other.get_by_label("Message Hermes")).to_be_visible()
         wait_for_store(other, "s => s.active === 'linked'")
         wait_for_store(page, "s => s.active === null")
