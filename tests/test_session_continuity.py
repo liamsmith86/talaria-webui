@@ -144,8 +144,6 @@ def test_open_session_follows_other_devices_without_focus(page, live_app):
     sid = seed(peer, "watched", count=2)
     open_session(page, sid)
     expect(page.get_by_text("Message 001", exact=True)).to_be_visible()
-    # A check without these yet has nothing to compare, and must read the transcript.
-    wait_for_store(page, f"s => s.sessionDetails?.id === {sid!r}")
     finished = []
     page.on("requestfinished", lambda request: finished.append(request.url))
 
@@ -164,7 +162,10 @@ def test_open_session_follows_other_devices_without_focus(page, live_app):
                 page.wait_for_timeout(50)  # Fixed wait: the interval of this poll.
         raise AssertionError(finished)
 
-    # Nothing changed: the check never reloads the transcript.
+    # The first check reads the transcript, which may have changed during the open.
+    with page.expect_event("requestfinished", lambda request: "/messages" in request.url):
+        revalidate()
+    # Nothing changed since: the check doesn't reload it.
     revalidate()
     page.clock.run_for(1000)
     assert not [url for url in finished if "/messages" in url]
@@ -188,14 +189,34 @@ def test_a_check_while_details_load_still_notices_a_changed_transcript(page, liv
     expect(page.get_by_text("Message 001", exact=True)).to_be_visible()
     wait_in_browser(page, lambda: details)
     # The next check starts knowing nothing yet, and reads the session after it changes.
-    page.clock.fast_forward(15001)
-    wait_in_browser(page, lambda: len(details) > 1)
+    wait_in_browser(page, lambda: page.clock.fast_forward(15001) or len(details) > 1)
     peer.messages[sid].append(
         {"id": 3, "role": "assistant", "content": "Answered meanwhile", "timestamp": 5.0}
     )
     for route in details:
         route.continue_()
     expect(page.get_by_text("Answered meanwhile", exact=True)).to_be_visible()
+
+
+@pytest.mark.clock
+def test_a_message_saved_while_a_session_opens_appears_at_the_next_check(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "watched", count=2)
+    details = []
+    page.route(f"**/api/sessions/{sid}", lambda route: details.append(route))
+    open_session(page, sid)
+    expect(page.get_by_text("Message 001", exact=True)).to_be_visible()
+    wait_in_browser(page, lambda: details)
+    # Saved after the transcript was read and before the details were.
+    peer.messages[sid].append(
+        {"id": 3, "role": "assistant", "content": "Answered meanwhile", "timestamp": 5.0}
+    )
+    for route in details:
+        route.continue_()
+    page.unroute(f"**/api/sessions/{sid}")
+    wait_for_store(page, f"s => s.sessionDetails?.id === {sid!r}")
+    answer = page.get_by_text("Answered meanwhile", exact=True)
+    wait_in_browser(page, lambda: page.clock.fast_forward(15001) or answer.count())
 
 
 def test_refresh_compaction_uses_canonical_session_and_carries_draft(page, live_app):
