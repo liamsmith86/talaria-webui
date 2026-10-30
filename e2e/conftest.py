@@ -1,14 +1,17 @@
-"""End-to-end checks: the real WebUI, a real Hermes gateway and a real model.
+"""End-to-end checks: the real WebUI and a real Hermes gateway.
 
 Each run starts a throwaway gateway with this checkout's plugin, serves Talaria
 against it and drives Chromium the way people use Talaria. Every test ends by
 comparing the settled conversation with a fresh reload of the same session.
 
+Tests in scripted/ use a loopback model that follows a plan, so they can only fail
+on Talaria and Hermes. test_real_model.py checks that a real provider works too.
+
     TALARIA_E2E_HERMES=/opt/hermes-agent/current OPENROUTER_API_KEY=... \\
         uv run --locked pytest e2e
 
-The model's tools run as the current user in a temporary workspace, so run the
-suite as an unprivileged user without credentials (see CONTRIBUTING.md).
+The tools run as the current user in a temporary workspace, so run the suite as an
+unprivileged user without credentials (see CONTRIBUTING.md).
 """
 
 import difflib
@@ -29,6 +32,7 @@ from pathlib import Path
 import pytest
 import uvicorn
 from playwright.sync_api import expect, sync_playwright
+from scripted_model import scripted_model
 
 from talaria.app import create_app
 from talaria.auth import hash_password
@@ -41,6 +45,7 @@ PROVIDER_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL = os.getenv("TALARIA_E2E_MODEL", "z-ai/glm-5.3-flash")
 PASSWORD = "e2e-password"
 REPLY_TIMEOUT = 240_000
+SCRIPTED_TESTS = Path(__file__).parent / "scripted"
 usage = {}
 
 
@@ -50,11 +55,11 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(config, items):
-    if HERMES and PROVIDER_KEY:
-        return
     skip = pytest.mark.skip(reason="Set TALARIA_E2E_HERMES and OPENROUTER_API_KEY")
     for item in items:
-        item.add_marker(skip)
+        scripted = item.path.is_relative_to(SCRIPTED_TESTS)
+        if not HERMES or not (PROVIDER_KEY or scripted):
+            item.add_marker(skip)
 
 
 @pytest.hookimpl(wrapper=True)
@@ -177,9 +182,10 @@ def gateway(tmp_path_factory, artifacts, **settings):
     } | settings
     (home / "config.yaml").write_text(json.dumps(config, indent=2))
     env_file = home / ".env"
-    env_file.write_text(
-        f"OPENROUTER_API_KEY={PROVIDER_KEY}\nAPI_SERVER_ENABLED=true\nAPI_SERVER_KEY={key}\n"
-    )
+    # Only a real model's gateway may spend: Hermes also uses this key for auxiliary tasks.
+    provider = config["model"]["provider"]
+    provider_key = f"OPENROUTER_API_KEY={PROVIDER_KEY}\n" if provider == "openrouter" else ""
+    env_file.write_text(f"{provider_key}API_SERVER_ENABLED=true\nAPI_SERVER_KEY={key}\n")
     env_file.chmod(0o600)
     target = home / "plugins/talaria-webui"
     target.mkdir(parents=True)
@@ -215,7 +221,7 @@ def gateway(tmp_path_factory, artifacts, **settings):
             "--external-supervisor",
         ],
         env=env,
-        log=artifacts / f"gateway-{os.getenv('PYTEST_XDIST_WORKER', 'main')}.log",
+        log=artifacts / f"gateway-{provider}-{os.getenv('PYTEST_XDIST_WORKER', 'main')}.log",
         version=version,
     )
     try:
@@ -244,7 +250,27 @@ def token(hermes):
 
 
 @pytest.fixture(scope="session")
-def talaria(hermes, tmp_path_factory):
+def scripted_hermes(tmp_path_factory, artifacts):
+    with (
+        scripted_model() as url,
+        gateway(
+            tmp_path_factory,
+            artifacts,
+            model={
+                "default": "scripted",
+                "provider": "custom",
+                "base_url": url,
+                "api_key": "none",
+                "context_length": 128_000,
+            },
+            auxiliary={"title_generation": {"enabled": False}},
+        ) as running,
+    ):
+        yield running
+
+
+@contextmanager
+def serve_talaria(hermes, tmp_path_factory):
     settings = Settings(
         hermes_url=hermes.url,
         api_key=hermes.key,
@@ -261,9 +287,23 @@ def talaria(hermes, tmp_path_factory):
         if server.started:
             break
         time.sleep(0.02)
-    yield f"http://127.0.0.1:{sock.getsockname()[1]}"
-    server.should_exit = True
-    thread.join(10)
+    try:
+        yield f"http://127.0.0.1:{sock.getsockname()[1]}"
+    finally:
+        server.should_exit = True
+        thread.join(10)
+
+
+@pytest.fixture(scope="session")
+def talaria(hermes, tmp_path_factory):
+    with serve_talaria(hermes, tmp_path_factory) as url:
+        yield url
+
+
+@pytest.fixture(scope="session")
+def scripted_talaria(scripted_hermes, tmp_path_factory):
+    with serve_talaria(scripted_hermes, tmp_path_factory) as url:
+        yield url
 
 
 @pytest.fixture(scope="session")

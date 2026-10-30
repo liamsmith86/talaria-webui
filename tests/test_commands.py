@@ -235,7 +235,7 @@ def test_stop_and_steer_act_on_the_running_response(page, live_app):
         expect(page.get_by_text(error, exact=True)).to_be_visible()
     assert not peer.runs
 
-    composer.fill("Start working")
+    composer.fill("Hold this response")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_visible()
     [run] = peer.runs.values()

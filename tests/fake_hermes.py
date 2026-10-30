@@ -582,6 +582,12 @@ class FakeHermes:
             "```python\ndef hello(name):\n    return f'Hello, {name}'\n```\n\n"
             "What would you like to explore next?"
         )
+        # Runs until stopped, for a test whose steps must happen during a response.
+        if "hold" in run["input"].lower():
+            for _ in range(600):
+                if run["status"] == "cancelled":
+                    break
+                await asyncio.sleep(0.1)
         for i in range(0, len(output), 15):
             if run["status"] == "cancelled":
                 yield event("run.cancelled")

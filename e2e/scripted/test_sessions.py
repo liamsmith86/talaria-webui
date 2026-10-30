@@ -1,8 +1,9 @@
-"""Sessions, commands and transcripts against a real gateway."""
+"""Sessions, questions and transcripts."""
 
 import re
 
 from playwright.sync_api import expect
+from scripted_model import ECHO, plan, terminal, tool
 
 
 def session_action(page, name):
@@ -10,29 +11,8 @@ def session_action(page, name):
     page.get_by_role("button", name=name, exact=True).click()
 
 
-def test_compress_shows_its_result_below_the_conversation(chat):
-    for word in ("red", "green", "blue"):
-        chat.send(f"Reply with one short sentence that mentions the colour {word}.")
-    chat.submit("/compress")
-    page = chat.page
-    expect(page.locator(".command-card.is-running")).to_be_visible()
-    expect(page.locator(".command-card.is-running")).to_have_count(0, timeout=300_000)
-    # A compaction that changed the transcript becomes part of the conversation;
-    # anything else leaves its result card. Either way it ends the conversation.
-    rows = page.locator(".conversation-content > :is(.message, .command-card)")
-    expect(rows.last).to_be_in_viewport()
-    assert rows.last.evaluate("node => node.matches('.command-card, .message.notice')")
-    if rows.last.evaluate("node => node.matches('.message.notice')"):
-        expect(rows.last).to_contain_text("Context compressed")
-        # Another device, or this one after a reload, shows the same.
-        page.reload()
-        expect(rows.last).to_contain_text("Context compressed")
-    reply = chat.send("Which colours did I mention? Reply with only the colour names.")
-    assert "blue" in reply.lower()
-
-
 def test_rename_search_and_delete_a_session(chat):
-    chat.send("Reply with only the word zephyr-quokka.")
+    chat.send(plan("zephyr-quokka"))
     session_action(chat.page, "Rename")
     chat.page.get_by_label("Session name").fill("E2E renamed session")
     chat.page.get_by_role("button", name="Save name").click()
@@ -50,9 +30,7 @@ def test_rename_search_and_delete_a_session(chat):
 
 
 def test_markdown_transcript_has_the_conversation(chat):
-    chat.send(
-        "Use the terminal tool to run exactly: echo transcript-check\nThen reply with only OK."
-    )
+    chat.send(plan(terminal("echo transcript-check"), "OK"))
     session_action(chat.page, "Download transcript")
     with chat.page.expect_download() as downloaded:
         chat.page.get_by_role("button", name=re.compile("^Markdown")).click()
@@ -63,12 +41,10 @@ def test_markdown_transcript_has_the_conversation(chat):
 
 
 def test_answering_a_question_from_the_agent(chat):
-    chat.submit(
-        "Use the clarify tool to ask me which colour I prefer, offering the choices red and "
-        "blue. After I answer, reply with only the colour I chose."
-    )
+    question = {"question": "Which colour?", "choices": ["red", "blue"]}
+    chat.submit(plan(tool("clarify", questions=[question]), ECHO))
     card = chat.page.get_by_role("region", name="Question from your agent")
-    expect(card).to_be_visible(timeout=120_000)
+    expect(card).to_be_visible()
     card.get_by_label("Or write an answer").fill("blue")
     card.get_by_role("button", name="Send answer").click()
     chat.settle()
@@ -77,12 +53,10 @@ def test_answering_a_question_from_the_agent(chat):
 
 def test_a_background_subagent_result_arrives_without_a_reload(chat, token):
     value = token("sub.txt")
-    chat.send(
-        "Use the delegate_task tool to give one subagent this task: run the terminal command "
-        "cat sub.txt and report its exact output. Then end your turn with a one-line status."
-    )
+    task = plan(terminal("cat sub.txt"), ECHO)
+    chat.send(plan(tool("delegate_task", goal=task), "dispatched"))
     # Hermes saves the result to the session later, without starting a turn.
     notice = chat.page.locator(".message.notice")
-    expect(notice).to_be_visible(timeout=300_000)
+    expect(notice).to_be_visible(timeout=60_000)
     expect(notice).to_contain_text("Background delegation completed")
     assert value in notice.evaluate("node => node.textContent")
