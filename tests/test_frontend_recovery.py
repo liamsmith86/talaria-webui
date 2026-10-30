@@ -501,6 +501,21 @@ def test_recovery_image_commit_cannot_retire_a_new_run_or_restore_old_navigation
     }
 
 
+def test_a_search_page_of_only_superseded_copies_still_offers_more(page, live_app):
+    seed(live_app[1], count=30)
+    enable(page, live_app[1])
+    page.route(
+        "**/api/search?*offset=0",
+        lambda route: route.fulfill(json={"data": [], "has_more": True, "next_offset": 20}),
+    )
+    page.get_by_label("Search sessions").fill("Message")
+    more = page.get_by_role("button", name="More matches", exact=True)
+    expect(more).to_be_visible()
+    expect(page.get_by_text("No matching messages.")).to_have_count(0)
+    more.click()
+    expect(page.locator(".history-search-hit")).to_have_count(10)
+
+
 def test_later_search_page_retry_preserves_preceding_hits(page, live_app):
     seed(live_app[1], count=70)
     enable(page, live_app[1])

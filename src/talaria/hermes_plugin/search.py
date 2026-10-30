@@ -35,13 +35,16 @@ def conversation_ids(db, sid, shown):
     A compaction copies kept turns into a newer row, and rotation into a new session. Hermes's
     display keeps one row for each; versions before 0.22 can only do so within one session.
     """
-    if "include_ancestors" not in inspect.signature(db.get_messages).parameters:
-        return shown.setdefault(sid, {row["id"] for row in displayed(db, sid)})
-    tip = db.get_compression_tip(sid)
-    if tip not in shown:
-        rows = db.get_messages(tip, include_compacted=True, include_ancestors=True)
-        shown[tip] = {row["id"] for row in rows}
-    return shown[tip]
+    lineage = "include_ancestors" in inspect.signature(db.get_messages).parameters
+    key = db.get_compression_tip(sid) if lineage else sid
+    if key not in shown:
+        rows = (
+            db.get_messages(key, include_compacted=True, include_ancestors=True)
+            if lineage
+            else displayed(db, sid)
+        )
+        shown[key] = {row["id"] for row in rows}
+    return shown[key]
 
 
 def compacted(row, session):

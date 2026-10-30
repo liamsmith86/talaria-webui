@@ -40,8 +40,10 @@ alone.
 - **Local storage:** Keeps up to 10,000 response metadata records and 10,000
   compaction sizes in `$HERMES_HOME/talaria/observations.db`: identifiers, model
   names, token counts, timings and completion status. These records contain no
-  message bodies or credentials. Deleting a session removes its records; archiving
-  keeps them. Disabling the plugin leaves this file in place.
+  message bodies or credentials. On Hermes 0.22.5 and later, deleting a session
+  removes its records and archiving keeps them; older versions report neither
+  deletions nor compaction sizes, and log each of those two hooks as unknown at
+  load. Disabling the plugin leaves this file in place.
 - **Network:** Chat and compression use Hermes's configured providers; model
   inventory refreshes use its provider and catalog sources. These requests may
   incur provider charges. The plugin adds no analytics or telemetry.

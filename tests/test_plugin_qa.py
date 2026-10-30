@@ -176,3 +176,19 @@ def test_new_model_call_cannot_inherit_prior_usage_or_accept_a_late_hook(tmp_pat
     assert pending["reasoning"] == "high"
     assert pending["started_at"] == 1
     assert "usage" not in pending and "duration_seconds" not in pending
+
+
+def test_search_reads_an_older_hermes_display_once_per_session():
+    from talaria.hermes_plugin.search import conversation_ids
+
+    reads = []
+
+    class OlderHermes:
+        def get_messages(self, sid, include_compacted=False):
+            reads.append(sid)
+            return [{"id": 1}]
+
+    shown = {}
+    for _ in range(3):
+        assert conversation_ids(OlderHermes(), "session", shown) == {1}
+    assert reads == ["session"]

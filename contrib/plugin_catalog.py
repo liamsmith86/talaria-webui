@@ -194,6 +194,8 @@ Disclosures:
 - Stores bounded response metadata and compaction sizes locally, removed when
   a session is deleted. The plugin has no full-prompt
   debug logger and adds no formatting instructions to model requests.
+- Before Hermes 0.22.5, `post_compaction` and `on_session_delete` never fire, and
+  Hermes logs them as unknown hooks at load.
 - Uses Hermes-owned authentication. No independent vendor-login reads, OAuth
   token rotation, stored credentials, analytics, or telemetry exporter.
 - Starts no shell children or separate daemon. Native command jobs run inside

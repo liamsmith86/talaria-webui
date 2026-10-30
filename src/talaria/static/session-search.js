@@ -48,7 +48,7 @@ export function SessionSearch({ query }) {
       <small>${sourceLabel(hit.source)}${hit.source ? " · " : ""}${hit.role === "user" ? t("You") : hit.role === "tool" ? t("Tool") : t("Agent")}</small>
     </a>`)}
     <div class="sidebar-empty" role="status">
-      ${busy ? t("Searching…") : result.error ? t(result.error) : (!result.data.length ? t("No matching messages.") : "")}
+      ${busy ? t("Searching…") : result.error ? t(result.error) : (!result.data.length && !result.has_more ? t("No matching messages.") : "")}
     </div>
     ${current && result.error && html`<button class="load-more" onClick=${() => {
       setResult({ ...result, error: null, busy: true }); setRetry(retry + 1);
