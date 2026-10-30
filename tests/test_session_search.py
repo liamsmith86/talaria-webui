@@ -1,5 +1,7 @@
 """Search unloaded history through the public API without losing live navigation or drafts."""
 
+import re
+
 from playwright.sync_api import expect
 
 from .conftest import wait_for_store
@@ -39,7 +41,7 @@ def test_search_opens_exact_unloaded_message_and_preserves_draft(page, live_app)
     expect(page.get_by_text("Message 699", exact=True)).to_be_visible()
     page.go_back()
     expect(page.locator(".search-match")).to_contain_text("Message 020")
-    assert "message=21" in page.url
+    expect(page).to_have_url(re.compile("message=21"))
 
 
 def test_search_debounces_recovers_and_does_not_render_markup(page, live_app):

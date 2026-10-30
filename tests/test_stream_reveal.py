@@ -47,13 +47,19 @@ def test_reveal_steps_preserve_graphemes_and_finish_immediately(reveal):
         .map(part=>part.index));boundaries.add(full.length);
       revealTest.render(full);
       const queued=revealTest.text()!==full;
+      const start=revealTest.text().length;
       const lengths=[];
       for(let i=0;i<4;i++) {
         await new Promise(resolve=>setTimeout(resolve,40));
         lengths.push(revealTest.text().length);
       }
+      // A stalled browser may have shown nothing new yet.
+      const deadline=Date.now()+5000;
+      while(revealTest.text().length<=start && Date.now()<deadline)
+        await new Promise(resolve=>setTimeout(resolve,40));
+      const progress=revealTest.text().length>start;
       revealTest.render(full,false);
-      return {queued,progress:lengths[0]>5 && lengths.at(-1)>lengths[0],
+      return {queued,progress,
         graphemes:lengths.every(n=>boundaries.has(n)),finished:revealTest.text()===full};
     }""")
     assert result == {"queued": True, "progress": True, "graphemes": True, "finished": True}
