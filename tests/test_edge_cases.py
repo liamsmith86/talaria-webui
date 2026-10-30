@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from playwright.sync_api import expect
 
 
@@ -112,6 +113,43 @@ def test_tool_history_retains_command_and_readable_output(page, live_app):
     expect(card.get_by_role("region", name="Tool result")).to_have_text("hello")
     expect(card.locator(".tool-facts dt")).to_have_text("exit_code")
     expect(card.locator(".tool-facts dd")).to_have_text("0")
+
+
+@pytest.mark.parametrize(
+    "name,result,failed",
+    [
+        ("read_file", '{"error":"File not found"}', True),
+        ("read_file", '{"error":null,"content":"notes"}', False),
+        ("web_extract", '{"success":false,"message":"Blocked"}', True),
+        ("web_extract", '{"results":[{"error":"a"},{"error":"b"}]}', True),
+        ("web_extract", '{"results":[{"error":"a"},{"error":null}]}', False),
+        ("delegate_task", '{"status":"failed"}', True),
+        ("write_file", '{"bytes_written":5,"warning":"failed lint"}', False),
+        ("read_file", '{"error":"Already read","guardrail_refusal":true}', False),
+        ("terminal", '{"output":"","exit_code":-1,"user_summary":"Denied"}', True),
+        ("terminal", '{"output":"\\"error\\" is fine","exit_code":0}', False),
+        ("custom_tool", "Error: it broke", True),
+        ("custom_tool", 'Output: {"failed": 2}', True),
+        ("custom_tool", 'Output: {"failed": 0}', False),
+    ],
+)
+def test_a_saved_step_is_failed_when_hermes_reported_it_failed(
+    page, live_app, name, result, failed
+):
+    peer = live_app[1]
+    peer.sessions["saved-step"] = {"id": "saved-step", "title": "A saved step"}
+    peer.messages["saved-step"] = [
+        {
+            "id": 1,
+            "role": "assistant",
+            "tool_calls": [{"id": "call-1", "function": {"name": name, "arguments": "{}"}}],
+        },
+        {"id": 2, "role": "tool", "tool_call_id": "call-1", "content": result},
+    ]
+    page.reload()
+    page.get_by_role("link", name="A saved step", exact=True).click()
+    expect(page.locator(".tool-card")).to_have_count(1)
+    expect(page.locator(".tool-card .tool-status.failed")).to_have_count(int(failed))
 
 
 def test_missing_required_capability_explains_unavailable_chat(page):

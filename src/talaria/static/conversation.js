@@ -22,6 +22,7 @@ import {
   ToolRow,
   activityRuns,
   describeCall,
+  resultFailed,
   terminalExit,
 } from "./tool-activity.js";
 import { approve, discardRun, retrySubmission, running } from "./runs.js";
@@ -386,8 +387,8 @@ function historyItems(history, live, excerpt = false) {
         call.messageIds.push(message.id);
         const known = position > settledStart && position <= settledEnd ? outcomes.get(call.id) : null;
         if (call.name === "terminal") call.exitCode = terminalExit(output);
-        call.status = known?.status ||
-          (call.exitCode != null ? (call.exitCode ? "failed" : "completed") : "finished");
+        call.status = known?.status || (resultFailed(call.name, output) ? "failed"
+          : call.exitCode != null ? "completed" : "finished");
         if (known) Object.assign(call, { duration: known.duration, startedAt: known.startedAt,
           endedAt: known.endedAt });
         if (call.name === "delegate_task" && output.length <= 250000) {

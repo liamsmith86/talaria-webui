@@ -68,16 +68,46 @@ export function describeCall(name, args) {
   return { subject, input };
 }
 
-// Hermes treats a non-zero terminal exit as the call's failure. Saved rows
-// have no other outcome, so use the same signal when the result is readable.
-export function terminalExit(output) {
+function parsedResult(output) {
   if (output.length > 250000 || !output.startsWith("{")) return null;
   try {
-    const code = JSON.parse(output).exit_code;
-    return Number.isInteger(code) ? code : null;
+    return JSON.parse(output);
   } catch {
     return null;
   }
+}
+
+export function terminalExit(output) {
+  const code = parsedResult(output)?.exit_code;
+  return Number.isInteger(code) ? code : null;
+}
+
+const fileMutationLanded = {
+  write_file: (result) => "bytes_written" in result,
+  patch: (result) => result.success === true,
+};
+const failureMarker = /"(?:error|failed)"(?!\s*:\s*(?:null|false|0|""|\[\]|\{\})\s*(?:[,}\]]|$))/gi;
+
+function batchFailed(items) {
+  return Array.isArray(items) && items.length > 0 &&
+    items.every((item) => item && typeof item === "object" && item.error);
+}
+
+// Saved rows carry no outcome. Hermes reports a live call's from its result, by
+// these rules (agent/display.py), so a reload has to reach the same verdict.
+export function resultFailed(name, output) {
+  const result = parsedResult(output);
+  if (!result) {
+    if (name === "terminal" || output.length > 250000) return false;
+    const marked = [...output.slice(0, 600).matchAll(failureMarker)].some((m) => m.index < 500);
+    return marked || output.startsWith("Error");
+  }
+  if (!result.error && fileMutationLanded[name]?.(result)) return false;
+  if (result.guardrail_refusal === true) return false;
+  if (result.user_summary) return true;
+  if (name === "terminal") return !!terminalExit(output);
+  if ((result.error || result.message) && (result.success === false || "error" in result)) return true;
+  return ["failed", "error"].includes(String(result.status).toLowerCase()) || batchFailed(result.results);
 }
 
 // Labels follow Hermes's curated verbs; each pair is [finished, in progress].
