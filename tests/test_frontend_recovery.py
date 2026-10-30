@@ -263,6 +263,8 @@ def test_older_page_respects_transcript_identity_and_navigation(page, canonical,
           return Promise.resolve(Response.json({session_id:'continued',
             data:[row(301), row(302)], has_more:true, next_offset:2}));
         }
+        if (path.pathname === '/api/sessions/continued')
+          return Promise.resolve(Response.json({id:'continued'}));
         return fetch(url, options);
       };
       try {
@@ -286,8 +288,6 @@ def test_older_page_respects_transcript_identity_and_navigation(page, canonical,
     }""",
         {"canonical": canonical, "navigate": navigate, "image": image("unsent")},
     )
-    # This test's Hermes has no "continued" session to describe, so a later
-    # details check would leave it as deleted. The address is read before that.
     search = result.pop("search")
     if navigate:
         assert result == {

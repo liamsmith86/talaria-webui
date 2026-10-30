@@ -140,8 +140,10 @@ class SessionState:
                 if version > SCHEMA_VERSION:
                     db.close()
                     raise StateUnavailable(f"{self.path} is from a newer Talaria release.")
-                db.executescript(SCHEMA)
-                db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                # One commit, as each statement would otherwise wait for the disk.
+                db.executescript(
+                    f"BEGIN IMMEDIATE;{SCHEMA}PRAGMA user_version = {SCHEMA_VERSION};COMMIT;"
+                )
                 self.ready = True
             return db
         except (OSError, sqlite3.Error) as exc:
