@@ -1,6 +1,7 @@
 """Tab navigation and refresh through the real UI and a synthetic Hermes server."""
 
 import re
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urljoin
 
 import pytest
@@ -143,6 +144,8 @@ def test_open_session_follows_other_devices_without_focus(page, live_app):
     sid = seed(peer, "watched", count=2)
     open_session(page, sid)
     expect(page.get_by_text("Message 001", exact=True)).to_be_visible()
+    # A check without these yet has nothing to compare, and must read the transcript.
+    wait_for_store(page, f"s => s.sessionDetails?.id === {sid!r}")
     finished = []
     page.on("requestfinished", lambda request: finished.append(request.url))
 
@@ -158,7 +161,7 @@ def test_open_session_follows_other_devices_without_focus(page, live_app):
                     "/api/sessions?" in url for url in finished
                 ):
                     return
-                page.wait_for_timeout(50)
+                page.wait_for_timeout(50)  # Fixed wait: the interval of this poll.
         raise AssertionError(finished)
 
     # Nothing changed: the check never reloads the transcript.
@@ -173,6 +176,26 @@ def test_open_session_follows_other_devices_without_focus(page, live_app):
     revalidate()
     expect(page.get_by_text("Answered on another laptop", exact=True)).to_be_visible()
     expect(page.get_by_role("link", name="Renamed on another laptop", exact=True)).to_be_visible()
+
+
+@pytest.mark.clock
+def test_a_check_while_details_load_still_notices_a_changed_transcript(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "watched", count=2)
+    details = []
+    page.route(f"**/api/sessions/{sid}", lambda route: details.append(route))
+    open_session(page, sid)
+    expect(page.get_by_text("Message 001", exact=True)).to_be_visible()
+    wait_in_browser(page, lambda: details)
+    # The next check starts knowing nothing yet, and reads the session after it changes.
+    page.clock.fast_forward(15001)
+    wait_in_browser(page, lambda: len(details) > 1)
+    peer.messages[sid].append(
+        {"id": 3, "role": "assistant", "content": "Answered meanwhile", "timestamp": 5.0}
+    )
+    for route in details:
+        route.continue_()
+    expect(page.get_by_text("Answered meanwhile", exact=True)).to_be_visible()
 
 
 def test_refresh_compaction_uses_canonical_session_and_carries_draft(page, live_app):
@@ -203,7 +226,9 @@ def test_delayed_focus_response_cannot_replace_new_navigation(page, live_app):
     a = seed(live_app[1], "slow-old", count=2)
     b = seed(live_app[1], "fast-new", count=3)
     open_session(page, a)
-    routes = []
+    routes, settled = [], []
+    for event in ("requestfinished", "requestfailed"):
+        page.on(event, lambda r: "/slow-old/messages" in r.url and settled.append(r))
     page.route("**/api/sessions/slow-old/messages?*", lambda route: routes.append(route))
     page.evaluate("window.dispatchEvent(new Event('focus'))")
     expect(page.get_by_label("Message Hermes")).to_be_visible()
@@ -213,7 +238,7 @@ def test_delayed_focus_response_cannot_replace_new_navigation(page, live_app):
     for route in routes:
         route.continue_()
     page.unroute("**/api/sessions/slow-old/messages?*")
-    page.wait_for_timeout(200)
+    wait_in_browser(page, lambda: settled)
     wait_for_store(page, "s => s.active === 'fast-new'")
     assert history_ids(page) == [1, 2, 3]
     expect(page).to_have_url(re.compile("session=fast-new"))
@@ -254,11 +279,13 @@ def test_return_during_cooldown_gets_one_delayed_refresh(page, live_app):
     open_session(page, sid)
     calls = []
     page.on("request", lambda req: calls.append(req.url))
-    page.evaluate("window.dispatchEvent(new Event('focus'))")
-    page.clock.run_for(150)
+    # Timers run only when told to, however long the steps below take.
+    page.clock.pause_at(datetime.now(UTC) + timedelta(seconds=1))
+    with page.expect_response("**/cooldown/messages*"):
+        page.evaluate("window.dispatchEvent(new Event('focus'))")
+        page.clock.run_for(150)
     wait_for_store(page, "s => s.sessionDetails?.id === 'cooldown'")
-    # Wait for the complete batch, then return again inside the cooldown.
-    wait_in_browser(page, lambda: any("/cooldown/messages" in url for url in calls))
+    # The complete batch is back: return again inside the cooldown.
     live_app[1].messages[sid].append({"id": 3, "role": "assistant", "content": "During cooldown"})
     page.evaluate("""() => {
         window.dispatchEvent(new Event('focus'));
@@ -266,9 +293,11 @@ def test_return_during_cooldown_gets_one_delayed_refresh(page, live_app):
     }""")
     page.clock.run_for(500)
     assert len([url for url in calls if "/cooldown/messages" in url]) == 1
+    # The refresh may be queued only once the first has finished, so let time run again.
+    page.clock.resume()
     page.clock.run_for(5000)
     expect(page.get_by_text("During cooldown", exact=True)).to_be_attached()
-    assert len([url for url in calls if "/cooldown/messages" in url]) == 2
+    wait_in_browser(page, lambda: len([url for url in calls if "/cooldown/messages" in url]) == 2)
 
 
 def test_large_external_append_preserves_the_original_loaded_boundary(page, live_app):
@@ -298,7 +327,7 @@ def test_focus_preserves_loaded_sidebar_pages(page, live_app):
     expect(page.locator(".session-select")).to_have_count(115)
 
 
-def send_with_saved_steps(page, sid, text="Check the build slowly with saved steps"):
+def send_with_saved_steps(page, sid, text="Hold the build check with saved steps"):
     open_session(page, sid)
     page.get_by_label("Message Hermes").fill(text)
     page.get_by_role("button", name="Send message", exact=True).click()
@@ -318,6 +347,7 @@ def test_reloading_mid_reply_shows_its_saved_steps_once(page, live_app):
     expect(stop).to_be_visible()
     wait_for_store(page, "s => s.active === 'saved-steps' && !s.loading && s.history.length")
     expect_one_turn(page)
+    live_app[1].release()
     expect(stop).to_be_hidden(timeout=20000)
     expect_one_turn(page)
 
@@ -341,7 +371,7 @@ def test_another_device_follows_and_approves_a_running_reply(page, live_app, bro
     page.reload()
     wait_for_store(page, "s => s.caps.talaria_extensions?.session_activity")
     open_session(page, "saved-steps")
-    page.get_by_label("Message Hermes").fill("Check the build slowly with saved steps and approval")
+    page.get_by_label("Message Hermes").fill("Check the build with saved steps and approval")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_role("button", name="Allow once")).to_be_visible()
     with browser_context(browser) as context:
@@ -374,7 +404,7 @@ def test_another_tab_follows_a_running_reply_when_looked_at(page, live_app):
     other.goto(f"{live_app[0]}?session=saved-steps")
     wait_for_store(other, "s => s.active === 'saved-steps' && !s.loading")
     open_session(page, "saved-steps")
-    page.get_by_label("Message Hermes").fill("Check the build slowly with saved steps and approval")
+    page.get_by_label("Message Hermes").fill("Check the build with saved steps and approval")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_role("button", name="Allow once")).to_be_visible()
     other.evaluate("window.dispatchEvent(new Event('focus'))")
@@ -403,7 +433,7 @@ def test_only_the_session_on_screen_streams_its_reply(page, live_app):
     page.evaluate(OPEN_STREAMS)
     for sid in ("parked-first", "parked-second"):
         open_session(page, seed(peer, sid, count=0))
-        page.get_by_label("Message Hermes").fill("Check the build slowly")
+        page.get_by_label("Message Hermes").fill("Hold the build check")
         page.get_by_role("button", name="Send message", exact=True).click()
         expect(page.locator(".message.assistant .message-text")).to_be_visible()
     runs = page.evaluate("""async () => {
@@ -417,6 +447,7 @@ def test_only_the_session_on_screen_streams_its_reply(page, live_app):
     page.wait_for_function("run => window.openStreams().join().includes(run)", arg=runs[0])
     streams = page.evaluate("window.openStreams()")
     assert len(streams) == 1 and "after=" in streams[0]
+    peer.release()
     wait_for_store(page, "s => s.lives['parked-first']?.status === 'completed'")
     text = page.evaluate(
         "async () => (await import('/static/store.js')).state.lives['parked-first'].text"
@@ -434,7 +465,7 @@ def test_only_the_session_on_screen_streams_its_reply(page, live_app):
 def test_a_hidden_page_releases_its_stream_and_resumes_when_shown(page, live_app):
     page.evaluate(OPEN_STREAMS)
     open_session(page, seed(live_app[1], "hidden-page", count=0))
-    page.get_by_label("Message Hermes").fill("Check the build slowly")
+    page.get_by_label("Message Hermes").fill("Hold the build check")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.locator(".message.assistant .message-text")).to_be_visible()
     shown = """state => {
@@ -445,6 +476,7 @@ def test_a_hidden_page_releases_its_stream_and_resumes_when_shown(page, live_app
     page.wait_for_function("() => window.openStreams().length === 0")
     page.evaluate(shown, "visible")
     page.wait_for_function("() => window.openStreams().some((url) => url.includes('after='))")
+    live_app[1].release()
     expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_hidden(timeout=20000)
     expect(page.get_by_text("What would you like to explore next?")).to_have_count(1)
 

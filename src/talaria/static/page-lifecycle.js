@@ -153,7 +153,8 @@ export function observePage() {
         if (!running(id)) {
           const before = changes(state.sessionDetails);
           tasks.push(refreshSessionDetails(id).then((session) => {
-            if (before && changes(session) !== before && !stopped && !running(id))
+            // Details still loading say nothing about the transcript on screen.
+            if (changes(session) !== before && !stopped && !running(id))
               return refreshHistory(id, () => !stopped && generation === navigationVersion());
           }));
         }
