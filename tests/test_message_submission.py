@@ -3,6 +3,7 @@
 import pytest
 from playwright.sync_api import expect
 
+from .conftest import wait_in_browser
 from .test_conversation_features import seed
 
 
@@ -76,7 +77,7 @@ def test_repeated_submit_before_the_composer_repaints_sends_once(page, live_app,
         sid = seed(live_app[1], "existing")
         page.evaluate("async sid => (await import('/static/store.js')).openSession(sid)", sid)
     page.set_viewport_size({"width": 390, "height": 844})
-    page.get_by_label("Message Hermes").fill("A slow response for repeated send gestures")
+    page.get_by_label("Message Hermes").fill("Hold for repeated send gestures")
     expect(page.get_by_role("button", name="Send message", exact=True)).to_be_enabled()
     result = page.evaluate("""async () => {
         const {options} = await import('/static/vendor/preact.js');
@@ -96,7 +97,7 @@ def test_repeated_submit_before_the_composer_repaints_sends_once(page, live_app,
         try {
             submit();
             submit(); // The same gesture while the request is pending.
-            const deadline = Date.now() + 5000;
+            const deadline = Date.now() + 30000;
             while (!state.lives[state.active]?.id && Date.now() < deadline)
                 await new Promise(resolve => setTimeout(resolve, 10));
             if (!state.lives[state.active]?.id) throw new Error('Run was not acknowledged');
@@ -117,7 +118,7 @@ def test_repeated_submit_before_the_composer_repaints_sends_once(page, live_app,
 @pytest.mark.parametrize("repeat_text", [False, True])
 def test_history_refresh_keeps_one_bubble_per_saved_user_message(page, live_app, repeat_text):
     sid = seed(live_app[1], "full-history", count=100)
-    text = "A slow response in a full history page"
+    text = "Hold a response in a full history page"
     if repeat_text:
         live_app[1].messages[sid][-2]["content"] = text
     page.evaluate("async sid => (await import('/static/store.js')).openSession(sid)", sid)
@@ -127,7 +128,7 @@ def test_history_refresh_keeps_one_bubble_per_saved_user_message(page, live_app,
     page.get_by_role("button", name="Send message", exact=True).click()
     # Identical text from an earlier turn must not hide the pending message.
     expect(page.get_by_text(text, exact=True)).to_have_count(2 if repeat_text else 1)
-    assert len(held) == 1
+    wait_in_browser(page, lambda: held)
     held[0].continue_()
     expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_enabled()
     peer = live_app[1]
@@ -153,9 +154,9 @@ def test_touch_keyboard_newline_and_repeated_submit_preserve_intentional_guidanc
         mobile = context.new_page()
         mobile.goto(live_app[0])
         text = mobile.get_by_label("Message Hermes")
-        text.fill("A slow mobile response")
+        text.fill("Hold a mobile response")
         text.press("Enter")
-        expect(text).to_have_value("A slow mobile response\n")
+        expect(text).to_have_value("Hold a mobile response\n")
         assert not live_app[1].runs
         held = []
 

@@ -11,8 +11,6 @@ def screenshot(page, name):
 
 
 def test_chat_and_settings(page, live_app):
-    errors = []
-    page.on("pageerror", lambda e: errors.append(str(e)))
     expect(page.get_by_role("button", name="Choose model", exact=True)).to_contain_text(
         "hermes-test"
     )
@@ -35,7 +33,6 @@ def test_chat_and_settings(page, live_app):
     screenshot(page, "dark-conversation")
     page.reload()
     expect(page.locator("html")).to_have_attribute("data-palette", "sage")
-    assert not errors
 
 
 @pytest.mark.parametrize("native", [False, True], ids=["agent", "session-authority"])

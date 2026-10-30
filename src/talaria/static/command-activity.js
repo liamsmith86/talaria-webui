@@ -5,6 +5,7 @@ import {
   refreshSessions, restoreDraft, showCommand, toast,
 } from "./store.js";
 import { duration } from "./content.js";
+import { commandDescription } from "./commands.js";
 import { msg, t } from "./i18n.js";
 
 export const commandRunning = (activity) =>
@@ -240,7 +241,7 @@ export function CommandCard({ activity, onDismiss }) {
   const failed = ["failed", "unknown"].includes(activity.status);
   const output = Array.isArray(activity.commands)
     ? activity.commands.map((command) =>
-      `/${command.name} — ${command.mode === "unavailable" ? t("Unavailable in Talaria") : command.description}`).join("\n")
+      `/${command.name} — ${commandDescription(command)}`).join("\n")
     : activity.notice ? t(activity.notice) : activity.text;
   return html`<section class=${`command-card${busy ? " is-running" : failed ? " is-failed" : ""}`}
     aria-label=${t("/{command} command", { command: activity.command })}>

@@ -8,7 +8,7 @@ from talaria.app import create_app
 from talaria.auth import hash_password
 from talaria.config import Settings, validate_public_url
 
-from .conftest import serve
+from .conftest import capture_browser_errors, serve
 from .fake_hermes import KEY, FakeHermes
 
 
@@ -117,9 +117,9 @@ def test_browser_behind_subpath_proxy(browser, tmp_path, strip):
     server, thread, address = serve(proxy)
     settings.public_url = address + prefix
     context = browser.new_context(viewport={"width": 390, "height": 844})
+    errors = capture_browser_errors(context)
     page = context.new_page()
-    errors, requests = [], []
-    page.on("pageerror", lambda error: errors.append(str(error)))
+    requests = []
     page.on("request", lambda request: requests.append(request.url))
     try:
         page.goto(address + prefix)

@@ -320,6 +320,8 @@ def test_real_git_wheel_install_update_failure_and_rollback(
         monkeypatch.setattr(
             "talaria.deployment.pwd.getpwuid", lambda uid: SimpleNamespace(pw_dir=str(home))
         )
+        # Only the root checks are faked, so nothing here could really change account.
+        monkeypatch.setattr("talaria.deployment.probe_account", lambda config: ({}, {}))
     which = shutil.which
     monkeypatch.setattr(
         shutil,

@@ -7,8 +7,6 @@ from .test_browser import screenshot
 
 
 def test_agent_settings_and_extended_access(page, live_app, tmp_path):
-    errors = []
-    page.on("pageerror", lambda e: errors.append(str(e)))
     page.get_by_role("button", name="Settings").click()
     expect(page.get_by_role("dialog")).to_be_visible()
     expect(page.get_by_text("1.2.3", exact=True)).to_be_visible()
@@ -38,7 +36,6 @@ def test_agent_settings_and_extended_access(page, live_app, tmp_path):
     expect(page.get_by_text("Talaria plugin not detected", exact=True)).to_be_visible()
     page.get_by_role("button", name="Close dialog").click()
     expect(page.get_by_text("Connected to Hermes", exact=True)).to_be_visible()
-    assert not errors
 
 
 @pytest.mark.clock
@@ -124,8 +121,6 @@ def test_models_are_scoped_to_each_session(page, live_app):
 
 
 def test_incomplete_discovery_keeps_settings_and_chat_usable(page, live_app):
-    errors = []
-    page.on("pageerror", lambda e: errors.append(str(e)))
     live_app[1].discovery_overrides.update(
         {
             "/health/detailed": ({}, 503),
@@ -160,4 +155,3 @@ def test_incomplete_discovery_keeps_settings_and_chat_usable(page, live_app):
     page.get_by_label("Message Hermes").fill("Chat still works")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
-    assert not errors

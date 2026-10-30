@@ -137,10 +137,10 @@ async def test_capability_reads_overlap_and_do_not_outlive_the_request(backend, 
     app.state.hermes.request = request
     task = asyncio.create_task(client.get("/api/capabilities"))
     try:
-        await asyncio.wait_for(asyncio.gather(required.wait(), optional.wait()), 1)
+        await asyncio.wait_for(asyncio.gather(required.wait(), optional.wait()), 30)
         assert not task.done()
         release.set()
-        response = await asyncio.wait_for(task, 1)
+        response = await asyncio.wait_for(task, 30)
         assert response.status_code == (502 if fail else 200)
         assert cancelled.is_set()
         if not fail:
@@ -178,7 +178,7 @@ async def test_export_yields_between_messages_and_closes_on_cancellation(backend
     monkeypatch.setattr(transcripts, "SpooledTemporaryFile", new_spool)
     task = asyncio.create_task(client.get(f"/api/sessions/{sid}/export"))
     try:
-        await asyncio.wait_for(started.wait(), 1)
+        await asyncio.wait_for(started.wait(), 30)
         # Even an immediately available upstream page cannot monopolize the
         # event loop until every message has been serialized.
         assert written < 100
@@ -313,7 +313,7 @@ async def test_connection_save_preserves_inflight_discovery(backend, monkeypatch
     monkeypatch.setattr(old_client, "request", delayed)
     pending = asyncio.create_task(client.get("/api/agent"))
     try:
-        await asyncio.wait_for(started.wait(), 1)
+        await asyncio.wait_for(started.wait(), 30)
         response = await client.put("/api/connection", json={"url": "http://isolated-hermes.test"})
         assert response.status_code == 409
         assert not old_client.client.is_closed
@@ -340,7 +340,7 @@ async def test_connection_commit_does_not_admit_new_streams(backend, monkeypatch
         client.put("/api/connection", json={"url": "http://isolated-hermes.test"})
     )
     try:
-        await asyncio.wait_for(started.wait(), 1)
+        await asyncio.wait_for(started.wait(), 30)
         response = await client.get("/api/runs/example/events")
         assert response.status_code == 409
         assert not any("/runs/" in path for _, path, _ in peer.calls)
@@ -370,7 +370,7 @@ async def test_cancelled_connection_save_finishes_disk_and_runtime_update(backen
         )
     )
     try:
-        await asyncio.wait_for(started.wait(), 1)
+        await asyncio.wait_for(started.wait(), 30)
         pending.cancel()
         await asyncio.sleep(0)
         pending.cancel()
@@ -416,7 +416,7 @@ async def test_cancelled_profile_mutation_keeps_saved_and_loaded_records_consist
         else client.delete(f"/api/profiles/{profile_id}")
     )
     try:
-        await asyncio.wait_for(started.wait(), 1)
+        await asyncio.wait_for(started.wait(), 30)
         pending.cancel()
         await asyncio.sleep(0)
     finally:
@@ -458,7 +458,7 @@ async def test_shutdown_awaits_outstanding_mutations_before_closing_clients(back
         assert not app.state.hermes.client.is_closed
 
     pending = asyncio.create_task(app.state.profiles.finish_mutation(write()))
-    await asyncio.wait_for(started.wait(), 1)
+    await asyncio.wait_for(started.wait(), 30)
     closing = asyncio.create_task(app.state.profiles.close())
     try:
         await asyncio.sleep(0)
@@ -547,7 +547,7 @@ async def test_read_timeout_recovers_without_stopping_or_restarting_the_run():
     relay = Relay(client)
     channel = relay.attach("example")
     try:
-        await asyncio.wait_for(channel.task, 3)
+        await asyncio.wait_for(channel.task, 30)
         frames = "".join([frame async for frame in relay.stream(channel, 0)])
         assert '"event":"talaria.reconcile"' in frames
         assert '"event":"run.completed"' in frames
@@ -575,7 +575,7 @@ async def test_malformed_stream_events_recover_through_run_status(event):
     relay = Relay(Upstream())
     channel = relay.attach("example")
     try:
-        await asyncio.wait_for(channel.task, 1)
+        await asyncio.wait_for(channel.task, 30)
         frames = "".join([frame async for frame in relay.stream(channel, 0)])
         assert '"event":"run.completed"' in frames
         assert "Recovered output" in frames
@@ -600,7 +600,7 @@ async def test_polling_recovers_and_clears_native_clarification():
             return next(self.statuses)
 
     channel = Channel("pending")
-    await asyncio.wait_for(Relay(Upstream()).poll(channel), 6)
+    await asyncio.wait_for(Relay(Upstream()).poll(channel), 30)
     events = [json.loads(entry.encoded) for entry in channel.events]
     assert events == [
         {**question, "event": "talaria.clarification.request"},

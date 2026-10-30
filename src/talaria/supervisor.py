@@ -14,7 +14,15 @@ from contextlib import suppress
 from pathlib import Path
 
 from .control import JOB, SOCKET, ControlError, receive, send, validate
-from .deployment import Deployment, DeploymentError, now, select, selected, write_json
+from .deployment import (
+    Deployment,
+    DeploymentError,
+    account_identity,
+    now,
+    select,
+    selected,
+    write_json,
+)
 from .installation import read_json
 from .setup_services import check_system_directory
 
@@ -51,7 +59,7 @@ def web_identity(root, config):
         USER=account.pw_name,
         LOGNAME=account.pw_name,
     )
-    return {"user": account.pw_uid, "group": account.pw_gid, "extra_groups": []}, env
+    return account_identity(account), env
 
 
 class WebProcess:

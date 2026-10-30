@@ -185,7 +185,7 @@ def test_failed_tool_stream_settles_without_becoming_successful(page, live_app, 
     monkeypatch.setattr(peer, "events", events)
     open_session(page, sid)
     page.get_by_label("Message Hermes").fill("Same prompt")
-    page.get_by_label("Message Hermes").press("Enter")
+    page.get_by_role("button", name="Send message", exact=True).click()
     try:
         expect(page.locator(".tool-status")).to_have_text("Failed")
     finally:

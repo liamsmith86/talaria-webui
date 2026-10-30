@@ -36,9 +36,12 @@ REQUIRED_CHECKS = {
     "security scan",
     "no core override",
 }
-# Hermes lists imports of its internals as advice, never a refusal. The plugin
-# relies on them for API sessions; the submission discloses this warning.
-INTERNAL_IMPORTS = "private core imports (catalog rule 9:"
+# Hermes lists uses of its internals as advice, never a refusal. The plugin relies
+# on them for API sessions; the submission discloses these warnings.
+INTERNAL_USES = (
+    "private core imports (catalog rule 9:",
+    "private core attribute access (catalog rule 9:",
+)
 
 
 def git(*args, cwd=ROOT):
@@ -66,7 +69,7 @@ def require_clean_validation(result):
         raise ValueError("The complete current Hermes admission checks must pass.")
     if not all(check.get("ok") is True for check in checks.values()):
         raise ValueError("A Hermes admission check failed.")
-    if any(not w.startswith(INTERNAL_IMPORTS) for w in report.get("warnings", [])):
+    if any(not w.startswith(INTERNAL_USES) for w in report.get("warnings", [])):
         raise ValueError("Review and resolve validation warnings before preparing a submission.")
     if checks["security scan"].get("detail") != "safe":
         raise ValueError("The install scanner must report safe.")
@@ -166,7 +169,7 @@ def check_entry(entry, hermes_source):
 def submission(entry, hermes_sha, warnings=()):
     advice = "there were no warnings"
     if warnings:
-        advice = "its only warning lists the plugin's imports of Hermes internals"
+        advice = "its only warnings list the plugin's uses of Hermes internals"
     return f"""Add {entry["name"]} {entry["version"]} to the community catalog.
 
 Talaria is an independent web client for Hermes. This entry installs only its
@@ -176,7 +179,8 @@ standalone installer, and updater are outside the catalog package.
 Pin: `{entry["sha"]}`. The version and all gallery images refer to that tree.
 
 Surfaces: `register_platform_handler("api_server", ...)`, `pre_api_request`,
-`post_api_request`, and `on_session_end`. No tools, middleware, privileged
+`post_api_request`, `on_session_end`, `post_compaction`, and
+`on_session_delete`. No tools, middleware, privileged
 capabilities, Desktop renderer code, or core-method replacements.
 
 Disclosures:
@@ -187,8 +191,11 @@ Disclosures:
   any session. Branching another app's session copies it and leaves it open.
 - Chat/compression and inventory refreshes use Hermes's configured providers
   and catalog sources; provider charges can apply.
-- Stores bounded response metadata locally. The plugin has no full-prompt
+- Stores bounded response metadata and compaction sizes locally, removed when
+  a session is deleted. The plugin has no full-prompt
   debug logger and adds no formatting instructions to model requests.
+- Before Hermes 0.22.5, `post_compaction` and `on_session_delete` never fire, and
+  Hermes logs them as unknown hooks at load.
 - Uses Hermes-owned authentication. No independent vendor-login reads, OAuth
   token rotation, stored credentials, analytics, or telemetry exporter.
 - Starts no shell children or separate daemon. Native command jobs run inside

@@ -2,6 +2,8 @@
 
 import os
 import sqlite3
+import sys
+import types
 
 import pytest
 
@@ -17,6 +19,73 @@ def test_reading_observations_does_not_create_or_touch_the_store(tmp_path):
     os.utime(path, ns=(1_000_000_000, 1_000_000_000))
     assert observations.read("session", 1) == {"model": "known", "message_id": 1}
     assert path.stat().st_mtime_ns == 1_000_000_000
+
+
+def test_details_follow_the_durable_id_when_compaction_renumbers_a_reply(tmp_path):
+    observations = Observations(tmp_path)
+    observations.save("session", 1, {"model": "kept"}, uid="uid-1")
+    assert observations.read("session", 2) is None
+    assert observations.read("session", 2, "other") is None
+    assert observations.read("session", 2, "uid-1") == {
+        "model": "kept",
+        "message_id": 1,
+        "uid": "uid-1",
+    }
+
+
+def test_store_from_an_older_plugin_still_reads_and_then_migrates(tmp_path):
+    directory = tmp_path / "talaria"
+    directory.mkdir()
+    with sqlite3.connect(directory / "observations.db") as db:
+        db.execute(
+            "CREATE TABLE responses (session TEXT, message INTEGER, "
+            "data TEXT NOT NULL, PRIMARY KEY(session, message))"
+        )
+        db.execute("INSERT INTO responses VALUES ('session', 1, '{\"model\": \"old\"}')")
+    observations = Observations(tmp_path)
+    assert observations.read("session", 1)["model"] == "old"
+    assert observations.read("session", 2, "uid") is None
+    assert observations.read("session")["model"] == "old"
+    assert observations.read_compaction("session") is None
+    observations.save("session", 2, {"model": "new"}, uid="uid")
+    assert observations.read("session", 3, "uid")["model"] == "new"
+    assert observations.read("session", 1)["model"] == "old"
+
+
+@pytest.fixture
+def hermes_home(tmp_path, monkeypatch):
+    module = types.ModuleType("hermes_constants")
+    module.get_hermes_home = lambda: tmp_path
+    monkeypatch.setitem(sys.modules, "hermes_constants", module)
+    return tmp_path
+
+
+def test_compaction_size_survives_a_rotation_and_a_rewind_forgets_it(hermes_home):
+    observations = Observations(hermes_home)
+    observations.save("old", 1, {"model": "known", "context_max": 1000})
+    observations.compacted(session_id="old", after_tokens=None)
+    assert observations.read_compaction("old") is None
+    observations.compacted(session_id="new", old_session_id="old", after_tokens=120)
+    saved = observations.read_compaction("new")
+    assert (saved["tokens"], saved["maximum"], saved["model"]) == (120, 1000, "known")
+    observations.forget_compaction("new")
+    assert observations.read_compaction("new") is None
+
+
+def test_deleting_a_session_removes_its_details_but_archiving_keeps_them(hermes_home):
+    observations = Observations(hermes_home)
+    observations.deleted(session_id="missing", reason="delete")
+    assert not (hermes_home / "talaria").exists(), "A delete must not create the optional store"
+    for session in ("gone", "lineage", "kept"):
+        observations.save(session, 1, {"model": session})
+        observations.compacted(session_id=session, after_tokens=5)
+    observations.deleted(session_id="gone", reason="archive")
+    assert observations.read("gone", 1)
+    observations.deleted(session_id="gone", deleted_ids=["gone", "lineage"], reason="delete")
+    for session in ("gone", "lineage"):
+        assert observations.read(session, 1) is None
+        assert observations.read_compaction(session) is None
+    assert observations.read("kept", 1) and observations.read_compaction("kept")
 
 
 @pytest.mark.parametrize("broken", ["not-json", "null", "[]", '"unknown format"'])
@@ -107,3 +176,19 @@ def test_new_model_call_cannot_inherit_prior_usage_or_accept_a_late_hook(tmp_pat
     assert pending["reasoning"] == "high"
     assert pending["started_at"] == 1
     assert "usage" not in pending and "duration_seconds" not in pending
+
+
+def test_search_reads_an_older_hermes_display_once_per_session():
+    from talaria.hermes_plugin.search import conversation_ids
+
+    reads = []
+
+    class OlderHermes:
+        def get_messages(self, sid, include_compacted=False):
+            reads.append(sid)
+            return [{"id": 1}]
+
+    shown = {}
+    for _ in range(3):
+        assert conversation_ids(OlderHermes(), "session", shown) == {1}
+    assert reads == ["session"]

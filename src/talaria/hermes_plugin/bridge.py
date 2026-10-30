@@ -118,12 +118,16 @@ def rewind_preview(db, sid, message_id):
 
 
 def rewind(db, sid, data):
+    from hermes_constants import get_hermes_home
+
     preview, ids, options = rewind_preview(db, sid, data["message_id"])
     if data.get("preview") is True:
         return preview
     if data.get("revision") != preview["revision"]:
         raise RuntimeError("The session changed. Reopen the action and try again.")
     result = db.rewind_to_message(sid, preview["target_id"], expected_active_ids=ids, **options)
+    # A size measured after an earlier compaction no longer describes this transcript.
+    Observations(get_hermes_home()).forget_compaction(sid)
     return {"ok": True, "removed": result["rewound_count"]}
 
 
@@ -177,6 +181,8 @@ def register(ctx):
     ctx.register_hook("pre_api_request", observations.before)
     ctx.register_hook("post_api_request", observations.after)
     ctx.register_hook("on_session_end", observations.end)
+    ctx.register_hook("post_compaction", observations.compacted)
+    ctx.register_hook("on_session_delete", observations.deleted)
 
 
 async def dispatch(request, adapter, commands=None):
@@ -249,6 +255,43 @@ async def capabilities(adapter, db):
     )
 
 
+def still_in_transcript(db, sid, detail):
+    """A rewind removes the reply a context reading came from; compaction only renumbers it."""
+    rows = db.get_messages(sid, after_id=detail["message_id"] - 1, limit=1)
+    if rows and rows[0]["id"] == detail["message_id"]:
+        return True
+    uid = detail.get("uid")
+    return bool(uid) and any(
+        row.get("message_uid") == uid for row in db.get_messages(sid, limit=200, latest=True)
+    )
+
+
+def context_usage(db, sid, observations):
+    detail = observations.read(sid)
+    if detail and not still_in_transcript(db, sid, detail):
+        detail = None
+    compaction = observations.read_compaction(sid)
+    if compaction and (compaction.get("observed_at") or 0) > (
+        (detail or {}).get("observed_at") or 0
+    ):
+        return {
+            "used": compaction.get("tokens"),
+            "maximum": compaction.get("maximum") or (detail or {}).get("context_max"),
+            "model": compaction.get("model") or (detail or {}).get("model"),
+            "observed_at": compaction.get("observed_at"),
+            "estimated": True,
+        }
+    if not detail:
+        return None
+    usage = detail.get("usage")
+    return {
+        "used": usage.get("input_tokens") if isinstance(usage, dict) else None,
+        "maximum": detail.get("context_max"),
+        "model": detail.get("model"),
+        "observed_at": detail.get("observed_at"),
+    }
+
+
 async def session_details(request, db, sid, action):
     from aiohttp import web
     from hermes_constants import get_hermes_home
@@ -272,35 +315,18 @@ async def session_details(request, db, sid, action):
         if not rows or rows[0]["id"] != message_id:
             return web.json_response({"error": "Message not found."}, status=404)
         row = rows[0]
-        detail = await asyncio.to_thread(observations.read, sid, message_id)
+        detail = await asyncio.to_thread(observations.read, sid, message_id, row.get("message_uid"))
         return web.json_response(
             {
-                "message_id": message_id,
                 "timestamp": row.get("timestamp"),
                 "finish_reason": row.get("finish_reason"),
                 "has_reasoning": bool(row.get("reasoning") or row.get("reasoning_content")),
                 **(detail or {}),
+                "message_id": message_id,
             }
         )
-    detail = await asyncio.to_thread(observations.read, sid)
-    if detail:
-        rows = await asyncio.to_thread(
-            db.get_messages, sid, after_id=detail["message_id"] - 1, limit=1
-        )
-        if not rows or rows[0]["id"] != detail["message_id"]:
-            detail = None  # A rewind invalidates the removed turn's context observation.
-    usage = detail.get("usage") if detail else None
     return web.json_response(
-        {
-            "context": {
-                "used": usage.get("input_tokens") if isinstance(usage, dict) else None,
-                "maximum": detail.get("context_max"),
-                "model": detail.get("model"),
-                "observed_at": detail.get("observed_at"),
-            }
-            if detail
-            else None
-        }
+        {"context": await asyncio.to_thread(context_usage, db, sid, observations)}
     )
 
 

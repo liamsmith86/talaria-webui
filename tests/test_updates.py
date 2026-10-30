@@ -13,6 +13,7 @@ from talaria import control, installation
 from talaria.deployment import read_json
 from talaria.supervisor_worker import execute
 
+from .conftest import wait_in_browser
 from .test_app import signed_in
 from .test_deployment import A, B, C, release
 from .test_deployment import deployment as deployment_fixture
@@ -255,6 +256,7 @@ def test_channel_switch_offers_the_new_commit_without_installing(page, update_ui
         "[...document.querySelectorAll('.select-control option')]"
         ".map((option) => [option.value, option.disabled])"
     ) == [["stable", True], ["nightly", False]]
+    wait_in_browser(page, lambda: switches)
     assert len(switches) == 1 and switches[0]["channel"] == "nightly"
     assert set(switches[0]) == {"id", "channel"}
 
@@ -388,12 +390,17 @@ def test_lost_update_ack_is_not_resent_and_reload_waits_for_new_build(page, upda
     page.get_by_role("button", name="Update", exact=True).click()
     expect(page.get_by_role("button", name="Update", exact=True)).to_be_disabled()
     expect(page.get_by_role("status").filter(has_text="Preparing update")).to_be_visible()
+    wait_in_browser(page, lambda: sent)
     assert len(sent) == 1 and sent[0]["expect"] == B
     page.get_by_role("tab", name="Talaria", exact=True).click()
     expect(page.get_by_role("status").filter(has_text="Preparing update")).to_be_visible()
     assert len(sent) == 1
     info["operation"]["status"] = "completed"
-    page.clock.fast_forward(1200)
+    # The page has seen it finish on the old build, and must wait for the new one.
+    with page.expect_response(
+        lambda r: r.url.endswith("/api/installation") and "completed" in r.text()
+    ):
+        page.clock.fast_forward(1200)
     expect(page.get_by_role("status").filter(has_text="Preparing update")).to_be_visible()
     assert page.evaluate("sessionStorage.getItem('reloads')") == "0"
     info["commit"] = B
@@ -453,7 +460,7 @@ def test_update_reload_recovers_stalled_mobile_bootstrap(page, update_ui):
         # Browsers can deliver additional lifecycle events during navigation.
         # Keep every attempt stalled until the failure UI has been observed.
         page.evaluate("dispatchEvent(new Event('pageshow'))")
-        expect(page.get_by_role("button", name="Retry connection")).to_be_visible(timeout=8000)
+        expect(page.get_by_role("button", name="Retry connection")).to_be_visible()
         available = True
         expect(page.locator(".topbar-title")).to_be_visible(timeout=10000)
         expect(page.get_by_label("Password", exact=True)).to_have_count(0)

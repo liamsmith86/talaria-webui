@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from playwright.sync_api import expect
 
 
@@ -37,6 +38,7 @@ def test_ambiguous_submission_without_idempotency_cannot_repeat(page, live_app):
     page.get_by_label("Message Hermes").fill("Do not send a duplicate")
     expect(page.get_by_role("button", name="Send message", exact=True)).to_be_disabled()
     page.reload()
+    expect(page.get_by_text("The submission confirmation was lost.", exact=False)).to_be_visible()
     expect(page.get_by_role("button", name="Retry submission")).to_have_count(0)
     assert len(live_app[1].runs) == 1
 
@@ -67,7 +69,7 @@ def test_mobile_sidebar_keyboard_focus(page):
 
 
 def test_subagent_lifecycle_keeps_its_name(page):
-    page.get_by_label("Message Hermes").fill("Delegate a slow review")
+    page.get_by_label("Message Hermes").fill("Delegate and hold a review")
     page.get_by_role("button", name="Send message", exact=True).click()
     card = page.locator(".tool-card").filter(has_text="Subagent")
     expect(card).to_have_count(1)
@@ -114,6 +116,43 @@ def test_tool_history_retains_command_and_readable_output(page, live_app):
     expect(card.locator(".tool-facts dd")).to_have_text("0")
 
 
+@pytest.mark.parametrize(
+    "name,result,failed",
+    [
+        ("read_file", '{"error":"File not found"}', True),
+        ("read_file", '{"error":null,"content":"notes"}', False),
+        ("web_extract", '{"success":false,"message":"Blocked"}', True),
+        ("web_extract", '{"results":[{"error":"a"},{"error":"b"}]}', True),
+        ("web_extract", '{"results":[{"error":"a"},{"error":null}]}', False),
+        ("delegate_task", '{"status":"failed"}', True),
+        ("write_file", '{"bytes_written":5,"warning":"failed lint"}', False),
+        ("read_file", '{"error":"Already read","guardrail_refusal":true}', False),
+        ("terminal", '{"output":"","exit_code":-1,"user_summary":"Denied"}', True),
+        ("terminal", '{"output":"\\"error\\" is fine","exit_code":0}', False),
+        ("custom_tool", "Error: it broke", True),
+        ("custom_tool", 'Output: {"failed": 2}', True),
+        ("custom_tool", 'Output: {"failed": 0}', False),
+    ],
+)
+def test_a_saved_step_is_failed_when_hermes_reported_it_failed(
+    page, live_app, name, result, failed
+):
+    peer = live_app[1]
+    peer.sessions["saved-step"] = {"id": "saved-step", "title": "A saved step"}
+    peer.messages["saved-step"] = [
+        {
+            "id": 1,
+            "role": "assistant",
+            "tool_calls": [{"id": "call-1", "function": {"name": name, "arguments": "{}"}}],
+        },
+        {"id": 2, "role": "tool", "tool_call_id": "call-1", "content": result},
+    ]
+    page.reload()
+    page.get_by_role("link", name="A saved step", exact=True).click()
+    expect(page.locator(".tool-card")).to_have_count(1)
+    expect(page.locator(".tool-card .tool-status.failed")).to_have_count(int(failed))
+
+
 def test_missing_required_capability_explains_unavailable_chat(page):
     def older_server(route):
         response = route.fetch()
@@ -144,3 +183,38 @@ def test_wide_code_is_keyboard_scrollable(page, live_app):
     code.focus()
     page.keyboard.press("ArrowRight")
     expect(code).not_to_have_js_property("scrollLeft", 0)
+
+
+def test_blocked_code_says_which_setting_allows_it(page, live_app):
+    peer = live_app[1]
+    peer.sessions["blocked-code"] = {"id": "blocked-code", "title": "Blocked code"}
+    peer.messages["blocked-code"] = [
+        {
+            "id": 1,
+            "role": "assistant",
+            "tool_calls": [
+                {"id": "call-1", "function": {"name": "execute_code", "arguments": "{}"}}
+            ],
+        },
+        {
+            "id": 2,
+            "role": "tool",
+            "tool_call_id": "call-1",
+            "content": json.dumps(
+                {
+                    "status": "error",
+                    "error": "BLOCKED: execute_code runs arbitrary local Python. This session "
+                    "runs on an unattended platform (api_server) with no user present.",
+                }
+            ),
+        },
+    ]
+    page.reload()
+    page.get_by_role("link", name="Blocked code", exact=True).click()
+    card = page.locator(".tool-card")
+    expect(card.locator(".tool-status.failed")).to_be_visible()
+    card.locator("summary").click()
+    expect(card.locator(".tool-blocked code")).to_have_text(
+        ["config.yaml", "approvals.unattended_mode", "approve"]
+    )
+    expect(card).not_to_contain_text("BLOCKED")

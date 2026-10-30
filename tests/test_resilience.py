@@ -35,7 +35,7 @@ def test_request_limits_and_login_throttling(live_app):
 
 
 def test_relay_restart_does_not_restart_agent(page, live_app):
-    page.get_by_label("Message Hermes").fill("A slow response for reconnect testing")
+    page.get_by_label("Message Hermes").fill("Hold a response to test reconnecting")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_role("heading", name="A thoughtful place to start")).to_be_visible()
     app = live_app[2]
@@ -46,6 +46,7 @@ def test_relay_restart_does_not_restart_agent(page, live_app):
         app.state.relay = Relay(app.state.hermes)
 
     asyncio.run_coroutine_threadsafe(replace_relay(), channel.task.get_loop()).result(timeout=5)
+    live_app[1].release()
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible(
         timeout=20000
     )
@@ -55,7 +56,7 @@ def test_relay_restart_does_not_restart_agent(page, live_app):
 
 
 def test_stop_and_steer(page, live_app):
-    page.get_by_label("Message Hermes").fill("A slow response")
+    page.get_by_label("Message Hermes").fill("Hold a response")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_role("button", name="Stop response")).to_be_visible()
     page.get_by_label("Message Hermes").fill("Focus on readability")
@@ -100,7 +101,32 @@ def test_turn_lost_in_a_hermes_restart_waits_for_a_discard(page, live_app):
     expect(page.get_by_text("You stopped this response.")).to_have_count(0)
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Stop response")).to_have_count(0)
     assert [run["status"] for run in live_app[1].runs.values()] == ["cancelled", "completed"]
+
+
+def test_sending_right_after_a_discard_does_not_wait_for_recovery(page, live_app):
+    page.get_by_label("Message Hermes").fill("Lost in a restart")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    notice = page.get_by_text("Hermes restarted before this response finished.")
+    expect(notice).to_be_visible()
+    page.get_by_label("Message Hermes").fill("Another message")
+    # Recovery after the reload is still settling, and stays so until this list arrives.
+    lists = []
+    page.route("**/api/sessions?*", lambda route: lists.append(route))
+    try:
+        page.reload()
+        expect(notice).to_be_visible()
+        page.get_by_role("button", name="Discard and continue", exact=True).click()
+        expect(page.get_by_text("This turn did not complete.", exact=False)).to_be_visible()
+        page.get_by_role("button", name="Send message", exact=True).click()
+        expect(page.get_by_label("Message Hermes")).to_have_value("")
+        expect(page.get_by_role("alert")).to_have_count(0)
+    finally:
+        for route in lists:
+            route.continue_()
+        page.unroute("**/api/sessions?*")
+    expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
 
 
 def test_long_history_and_malicious_markdown(page, live_app):

@@ -103,24 +103,27 @@ export function ContextIndicator({ app }) {
   const enabled = !!app.caps.talaria_extensions?.context_usage;
   // The reply now ending the conversation keeps its usage after a rewind.
   const reply = app.history.findLast((row) => row?.role === "assistant");
-  const { data } = useDetails(
-    `/sessions/${encodeURIComponent(app.active)}/context?turn=${encodeURIComponent(stamp)}` +
-      `&head=${app.history.at(-1)?.id || 0}` +
-      (Number.isSafeInteger(reply?.id) ? `&reply=${reply.id}` : ""),
-    enabled,
-  );
   // No request has measured the compressed context until the next reply.
   const replyTime = Number(reply?.timestamp);
   const records = app.commands.session === app.active ? app.commands.records : [];
   const compressed = enabled && records.some((record) => compacted(record) &&
     !(Number(record.anchor ?? record.finished_at) < replyTime));
-  if (compressed) {
+  const { data } = useDetails(
+    `/sessions/${encodeURIComponent(app.active)}/context?turn=${encodeURIComponent(stamp)}` +
+      `&head=${app.history.at(-1)?.id || 0}` +
+      (Number.isSafeInteger(reply?.id) ? `&reply=${reply.id}` : "") +
+      (compressed ? "&compressed=1" : ""),
+    enabled,
+  );
+  const context = data?.context;
+  const estimated = context?.estimated === true;
+  // Older plugins know no size for the compressed context.
+  if (compressed && !estimated) {
     const label = t("Context compressed · usage updates after the next reply");
     return html`<span class="context-indicator" role="img" aria-label=${label} title=${label}>
       <${Icon} name="context" size=${18} /><span aria-hidden="true">–</span>
     </span>`;
   }
-  const context = data?.context;
   const used = numberValue(context?.used),
     maximum = numberValue(context?.maximum);
   if (used === null) return null;
@@ -129,9 +132,13 @@ export function ContextIndicator({ app }) {
   const percentage = percent === null ? null : formatNumber(percent / 100, {
     style: "percent", maximumFractionDigits: 0,
   });
-  const label = percent !== null
-    ? t("{percent} context used · last request", { percent: percentage })
-    : n("{count} input token · last request", "{count} input tokens · last request", used);
+  const label = estimated
+    ? percent !== null
+      ? t("About {percent} context used · estimated after compression", { percent: percentage })
+      : n("About {count} token · estimated after compression", "About {count} tokens · estimated after compression", used)
+    : percent !== null
+      ? t("{percent} context used · last request", { percent: percentage })
+      : n("{count} input token · last request", "{count} input tokens · last request", used);
   return html`<span class="context-indicator" role="img" aria-label=${label} title=${label}>
     <${Icon} name="context" size=${18} /><span>${percentage ?? n("{count} token", "{count} tokens", used)}</span>
   </span>`;

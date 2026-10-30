@@ -5,7 +5,7 @@ import { Installation } from "./installation.js";
 import { msg, t } from "./i18n.js";
 
 const releaseLabels = {
-  current: msg("Matches this Talaria release"),
+  current: msg("Up to date"),
   outdated: msg("Plugin update available"),
   newer: msg("Plugin is newer than this Talaria release"),
   different: msg("Plugin differs from this Talaria release"),

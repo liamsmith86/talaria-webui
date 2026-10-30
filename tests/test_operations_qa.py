@@ -11,6 +11,7 @@ import sys
 import time
 from contextlib import suppress
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -75,6 +76,51 @@ def test_staged_startup_deadline_covers_partial_stdout(deployment, monkeypatch):
     with pytest.raises(DeploymentError, match="did not start"):
         deployment.probe(release, startup_timeout=0.2)
     assert time.monotonic() - started < 3
+
+
+class ProbeStarted(Exception):
+    pass
+
+
+def probed_with(deployment, monkeypatch):
+    """What the staged release would be started with, without starting it."""
+    seen = {}
+
+    def popen(*args, **kwargs):
+        seen.update(kwargs)
+        raise ProbeStarted
+
+    monkeypatch.setattr(operations, "run", lambda *args, **kwargs: "")
+    monkeypatch.setattr(operations.subprocess, "Popen", popen)
+    with pytest.raises(ProbeStarted):
+        deployment.probe(deployment.root / "releases" / A)
+    return seen
+
+
+def service_owner(monkeypatch, uid):
+    account = SimpleNamespace(
+        pw_uid=uid, pw_gid=uid, pw_dir="/srv/talaria", pw_name="talaria-webui"
+    )
+    monkeypatch.setattr(operations.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(operations.pwd, "getpwuid", lambda _: account)
+
+
+def test_a_root_update_checks_a_release_as_the_web_account(deployment, monkeypatch):
+    # The check starts on the real config. As root, it created a state file the web
+    # process could never open, which then failed on the first saved choice.
+    service_owner(monkeypatch, 999)
+    seen = probed_with(deployment, monkeypatch)
+    assert (seen["user"], seen["group"], seen["extra_groups"]) == (999, 999, [])
+    assert seen["env"]["HOME"] == "/srv/talaria" and seen["env"]["USER"] == "talaria-webui"
+
+
+def test_a_root_owned_config_has_no_account_to_check_a_release_as(deployment, monkeypatch):
+    service_owner(monkeypatch, 0)
+    assert "user" not in probed_with(deployment, monkeypatch)
+
+
+def test_a_personal_install_checks_a_release_as_itself(deployment, monkeypatch):
+    assert "user" not in probed_with(deployment, monkeypatch)
 
 
 def test_corrupt_selected_release_is_never_removed_for_rebuilding(deployment, monkeypatch):

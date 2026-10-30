@@ -1099,6 +1099,8 @@ export async function discardRun(sid) {
       discarding: false,
       discarded: true,
     };
+    // Nothing is left to recover, even if recovery is still settling this run.
+    delete recoveryRecords[sid];
     publish(sid, next);
     remember();
     await settle(sid, next);

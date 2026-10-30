@@ -2,15 +2,12 @@
 
 import pytest
 from playwright.sync_api import expect
+from scripted_model import ECHO, plan, reasoned, terminal, tool
 
 
 def test_consecutive_commands_fold_into_one_group(chat, token):
     values = [token(f"{name}.txt") for name in ("a", "b", "c")]
-    reply = chat.send(
-        "Use the terminal tool three separate times, one command per call, in this order: "
-        "cat a.txt, cat b.txt, cat c.txt. Then reply with only the three outputs, "
-        "separated by spaces."
-    )
+    reply = chat.send(plan(*[terminal(f"cat {name}.txt") for name in ("a", "b", "c")], ECHO))
     assert all(value in reply for value in values)
     group = chat.page.locator(".conversation-content .activity")
     expect(group).to_have_count(1)
@@ -24,8 +21,11 @@ def test_consecutive_commands_fold_into_one_group(chat, token):
 
 def test_file_steps_write_and_read_the_workspace(chat, hermes):
     reply = chat.send(
-        "Use your file writing tool to create notes.txt containing exactly: alpha beta\n"
-        "Then use your file reading tool to read notes.txt, and reply with only its contents."
+        plan(
+            tool("write_file", path="notes.txt", content="alpha beta"),
+            tool("read_file", path="notes.txt"),
+            ECHO,
+        )
     )
     assert "alpha beta" in reply
     assert (hermes.workspace / "notes.txt").read_text().strip() == "alpha beta"
@@ -33,20 +33,38 @@ def test_file_steps_write_and_read_the_workspace(chat, hermes):
 
 
 def test_a_failing_command_is_marked_failed(chat):
-    chat.send(
-        "Use the terminal tool to run exactly: ls /definitely-missing-e2e-dir\n"
-        "Do not retry. Then reply with only: checked"
-    )
+    chat.send(plan(terminal("ls /definitely-missing-e2e-dir"), "checked"))
     step = chat.page.locator(".tool-card").filter(has_text="definitely-missing-e2e-dir").first
     expect(step.locator(".tool-status.failed")).to_be_visible()
     expect(step.locator(".tool-meta")).to_contain_text("exit 2")
 
 
-def test_long_output_is_readable_text(chat):
-    chat.send(
-        "Use the terminal tool to run exactly: seq 1 6000\n"
-        "Then reply with only the last number it printed."
+def test_a_failed_step_stays_marked_after_a_reload(chat):
+    chat.send(plan(tool("read_file", path="definitely-missing.txt"), "checked"))
+    expect(chat.page.locator(".tool-status.failed")).to_be_visible()
+    chat.assert_reload_matches()
+    expect(chat.page.locator(".tool-status.failed")).to_be_visible()
+
+
+def test_reasoning_appears_once_the_reply_is_done(chat):
+    assert chat.send(plan(reasoned("Weighing it up.", "done"))) == "done"
+    expect(chat.page.locator(".reasoning")).to_contain_text("Weighing it up.")
+
+
+def test_blocked_code_says_which_setting_allows_it(chat):
+    chat.send(plan(tool("execute_code", code="print('hello')"), "blocked"))
+    step = chat.page.locator(".tool-card").filter(has_text="Ran code")
+    expect(step.locator(".tool-status.failed")).to_be_visible()
+    step.locator("summary").click()
+    expect(step.locator(".tool-blocked")).to_have_text(
+        "execute_code attempt was blocked by Hermes. Update your Hermes Agent’s config.yaml "
+        "and set approvals.unattended_mode to approve to allow."
     )
+    expect(step).not_to_contain_text("BLOCKED")
+
+
+def test_long_output_is_readable_text(chat):
+    chat.send(plan(terminal("seq 1 6000"), "6000"))
     step = chat.page.locator(".tool-card").filter(has_text="seq 1 6000").first
     step.locator("summary").click()
     result = step.get_by_role("region", name="Tool result", exact=True)
@@ -56,12 +74,9 @@ def test_long_output_is_readable_text(chat):
 
 @pytest.mark.viewport(390, 844)
 def test_steps_fit_a_phone_screen(chat, token):
-    token("a-file-with-a-rather-long-name-to-check-wrapping-on-narrow-screens.txt")
-    chat.send(
-        "Use the terminal tool to run exactly: "
-        "cat a-file-with-a-rather-long-name-to-check-wrapping-on-narrow-screens.txt\n"
-        "Then reply with only OK."
-    )
+    name = "a-file-with-a-rather-long-name-to-check-wrapping-on-narrow-screens.txt"
+    token(name)
+    chat.send(plan(terminal(f"cat {name}"), "OK"))
     expect(chat.page.locator(".tool-card")).to_have_count(1)
     overflow = chat.page.evaluate("() => document.scrollingElement.scrollWidth - window.innerWidth")
     assert overflow <= 0

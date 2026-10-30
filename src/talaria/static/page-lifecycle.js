@@ -140,8 +140,9 @@ export function observePage() {
   }
   // Between focus changes, cheap checks follow other devices: recent sessions,
   // every session's runs, and the open session's commands and details. Its
-  // transcript reloads only when Hermes reports that it changed.
-  let ticking;
+  // transcript reloads when Hermes reports a change since the last read here.
+  // Opening reads details after the transcript, so the first check always reads.
+  let ticking, read = "";
   async function tick() {
     const id = state.active, generation = navigationVersion();
     try {
@@ -151,10 +152,11 @@ export function observePage() {
       if (id && !state.searchWindow) {
         tasks.push(refreshCommands(id));
         if (!running(id)) {
-          const before = changes(state.sessionDetails);
-          tasks.push(refreshSessionDetails(id).then((session) => {
-            if (before && changes(session) !== before && !stopped && !running(id))
-              return refreshHistory(id, () => !stopped && generation === navigationVersion());
+          tasks.push(refreshSessionDetails(id).then(async (session) => {
+            const seen = `${generation}:${changes(session)}`;
+            if (seen === read || stopped || running(id)) return;
+            await refreshHistory(id, () => !stopped && generation === navigationVersion());
+            read = seen;
           }));
         }
       }

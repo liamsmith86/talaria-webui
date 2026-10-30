@@ -2,6 +2,7 @@ docs/
 .local/
 .codex-security/
 AGENTS.md
+CLAUDE.md
 .venv/
 __pycache__/
 *.py[cod]

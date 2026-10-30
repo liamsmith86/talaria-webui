@@ -22,6 +22,7 @@ import {
   ToolRow,
   activityRuns,
   describeCall,
+  resultFailed,
   terminalExit,
 } from "./tool-activity.js";
 import { approve, discardRun, retrySubmission, running } from "./runs.js";
@@ -33,7 +34,7 @@ import {
   loadOlderMessages,
   update,
 } from "./store.js";
-import { guidanceText, isGuidance, isNotice, plainContent, userMessage } from "./content.js";
+import { guidanceText, isGuidance, isNotice, isRecoveryPrompt, plainContent, userMessage } from "./content.js";
 import {
   currentImageMessage,
   messageImages,
@@ -368,7 +369,7 @@ function historyItems(history, live, excerpt = false) {
     .map((t) => [t.id, t]) : []);
   for (const [position, message] of history.entries()) {
     if (!message || typeof message !== "object") continue;
-    if (message.display_kind === "hidden") continue;
+    if (message.display_kind === "hidden" || isRecoveryPrompt(message)) continue;
     if (message.role === "tool") {
       let call = calls.get(message.tool_call_id);
       if (!call && excerpt) {
@@ -386,8 +387,8 @@ function historyItems(history, live, excerpt = false) {
         call.messageIds.push(message.id);
         const known = position > settledStart && position <= settledEnd ? outcomes.get(call.id) : null;
         if (call.name === "terminal") call.exitCode = terminalExit(output);
-        call.status = known?.status ||
-          (call.exitCode != null ? (call.exitCode ? "failed" : "completed") : "finished");
+        call.status = known?.status || (resultFailed(call.name, output) ? "failed"
+          : call.exitCode != null ? "completed" : "finished");
         if (known) Object.assign(call, { duration: known.duration, startedAt: known.startedAt,
           endedAt: known.endedAt });
         if (call.name === "delegate_task" && output.length <= 250000) {

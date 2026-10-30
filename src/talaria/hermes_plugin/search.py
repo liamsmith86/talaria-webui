@@ -24,9 +24,41 @@ def visible(row):
     )
 
 
+def displayed(db, sid):
+    """The rows Hermes shows for this session: compaction copies a kept turn to a new row."""
+    return db.get_messages(sid, include_compacted=True)
+
+
+def conversation_ids(db, sid, shown):
+    """Row ids in the display of this session's conversation, read once per search.
+
+    A compaction copies kept turns into a newer row, and rotation into a new session. Hermes's
+    display keeps one row for each; versions before 0.22 can only do so within one session.
+    """
+    lineage = "include_ancestors" in inspect.signature(db.get_messages).parameters
+    key = db.get_compression_tip(sid) if lineage else sid
+    if key not in shown:
+        rows = (
+            db.get_messages(key, include_compacted=True, include_ancestors=True)
+            if lineage
+            else displayed(db, sid)
+        )
+        shown[key] = {row["id"] for row in rows}
+    return shown[key]
+
+
+def compacted(row, session):
+    """Only a compaction leaves copies, so an untouched session never pays for the display read."""
+    return (
+        row.get("compacted")
+        or session.get("parent_session_id")
+        or session.get("end_reason") == "compression"
+    )
+
+
 def search(db, query, offset):
     rows = db.search_messages(query, limit=PAGE_SIZE, offset=offset, fields=FIELDS)
-    sessions = {}
+    sessions, shown = {}, {}
     result = []
     for row in rows:
         sid = row["session_id"]
@@ -38,14 +70,17 @@ def search(db, query, offset):
         # The native index excludes rewound rows. Recheck visibility after search:
         # a concurrent rewind must not return a now-hidden match or its snippet.
         window = db.get_messages_around(sid, row["id"], window=0)["window"]
-        if window and visible(window[0]):
-            result.append(
-                {
-                    **row,
-                    "snippet": str(row.get("snippet") or "")[:1200],
-                    "title": session.get("title") or "Untitled session",
-                }
-            )
+        if not window or not visible(window[0]):
+            continue
+        if compacted(window[0], session) and row["id"] not in conversation_ids(db, sid, shown):
+            continue
+        result.append(
+            {
+                **row,
+                "snippet": str(row.get("snippet") or "")[:1200],
+                "title": session.get("title") or "Untitled session",
+            }
+        )
     return {"data": result, "has_more": len(rows) == PAGE_SIZE, "next_offset": offset + len(rows)}
 
 
@@ -53,10 +88,12 @@ def around(db, adapter, sid, mid):
     session = db.get_session(sid)
     if not session or session.get("hidden"):
         return None
-    rows = db.get_messages_around(sid, mid, window=5)["window"]
-    rows = [row for row in rows if visible(row)]
-    if not any(row["id"] == mid for row in rows):
+    # Row IDs do not follow display order across a compaction, so window the display itself.
+    rows = [row for row in displayed(db, sid) if visible(row)]
+    index = next((i for i, row in enumerate(rows) if row["id"] == mid), None)
+    if index is None:
         return None
+    rows = rows[max(0, index - 5) : index + 6]
     return {
         "session_id": sid,
         "title": session.get("title") or "Untitled session",

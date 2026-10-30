@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 import pytest
 from playwright.sync_api import expect
 
-from .conftest import capture_browser_errors, wait_for_store
+from .conftest import BACKGROUND_TIMERS, capture_browser_errors, hold_timers, wait_for_store
 from .test_commands import CATALOG
 from .test_conversation_features import png
 
@@ -33,6 +33,10 @@ def test_http_origin_supports_dialogs_images_messages_and_commands(browser, live
     context.route(origin + "/**", local_network)
     try:
         page = context.new_page()
+        # Every file comes through the route above, one at a time: slow on a busy runner,
+        # so give it a higher ceiling, and keep startup's stall recovery from firing.
+        page.set_default_timeout(60_000)
+        hold_timers(page, *BACKGROUND_TIMERS)
         page.goto(origin)
         assert page.evaluate("isSecureContext") is (hostname == "127.0.0.1")
         if hostname != "127.0.0.1":
@@ -78,7 +82,9 @@ def test_http_origin_supports_dialogs_images_messages_and_commands(browser, live
         expect(composer).to_have_value("")
         composer.fill("/compress")
         expect(page.get_by_role("option").first).to_contain_text("/compress")
-        page.get_by_role("button", name="Send message", exact=True).click()
+        # The route above runs on this thread, so finish_command can't wait for it.
+        with page.expect_response(lambda r: r.request.method == "POST" and "/commands" in r.url):
+            page.get_by_role("button", name="Send message", exact=True).click()
         expect(page.locator(".command-card")).to_contain_text("Compressing context…")
         peer.finish_command(session_id=next(iter(peer.sessions)), text="Compressed.")
         expect(page.locator(".command-card")).to_contain_text("Compressed.")

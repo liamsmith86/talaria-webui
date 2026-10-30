@@ -40,7 +40,7 @@ from .session_commands import CommandFollowers
 from .session_state import SessionState, StateUnavailable
 
 STATIC = Path(__file__).parent / "static"
-STATE_UNAVAILABLE = "Talaria could not use its data folder. Check that it is writable."
+STATE_UNAVAILABLE = "Talaria could not use its saved session data. Its server log has the reason."
 log = logging.getLogger(__name__)
 
 

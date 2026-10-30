@@ -259,7 +259,7 @@ def check(full=False, native=False, paths=None, skip_native=False):
             pytest(
                 *(file for file in tests[browser] if Path(file).is_file()),
                 "-m",
-                "browser",
+                "cross_browser" if full and browser != "chromium" else "browser",
                 env={**env, "TALARIA_TEST_BROWSER": browser},
             )
     if scope["native"]:

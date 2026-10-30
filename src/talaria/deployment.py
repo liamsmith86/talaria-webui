@@ -47,6 +47,25 @@ uvicorn.Server(uvicorn.Config(app, log_level='error', access_log=False)).run(soc
 """
 
 
+def account_identity(account):
+    return {"user": account.pw_uid, "group": account.pw_gid, "extra_groups": []}
+
+
+def probe_account(config):
+    """What a staged release runs as: the web process's account, which owns its config.
+
+    It starts on the real config, and anything it creates there must stay usable afterwards.
+    Before the service account exists, setup hands the whole folder over to it.
+    """
+    if os.geteuid() != 0:
+        return {}, {}
+    account = pwd.getpwuid(Path(config).stat().st_uid)
+    if account.pw_uid == 0:
+        return {}, {}
+    env = {"HOME": account.pw_dir, "USER": account.pw_name, "LOGNAME": account.pw_name}
+    return account_identity(account), env
+
+
 def now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
@@ -281,13 +300,16 @@ class Deployment:
                 "(__import__('talaria.supervisor'), __import__('talaria.supervisor_worker'))",
             ]
         )
+        identity, account_env = probe_account(self.config["config"])
         with tempfile.TemporaryFile() as errors:
             process = subprocess.Popen(
                 [str(release / "venv/bin/python"), "-c", PROBE, self.config["config"]],
                 stdout=subprocess.PIPE,
                 stderr=errors,
+                cwd=self.root,
                 start_new_session=True,
-                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", **account_env},
+                **identity,
             )
             try:
                 with selectors.DefaultSelector() as selector:

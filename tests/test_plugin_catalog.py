@@ -46,16 +46,17 @@ def test_catalog_gate_accepts_complete_clean_validation():
     assert require_clean_validation(validation())["ok"] is True
 
 
-def test_catalog_gate_accepts_and_discloses_only_internal_import_advice():
+def test_catalog_gate_accepts_and_discloses_only_internal_use_advice():
     advice = "private core imports (catalog rule 9: public surfaces only): bridge.py:1 run_agent"
-    result = validation(warnings=[advice])
-    assert require_clean_validation(result)["warnings"] == [advice]
+    access = "private core attribute access (catalog rule 9: public surfaces only): runs.py:1 _x"
+    result = validation(warnings=[advice, access])
+    assert require_clean_validation(result)["warnings"] == [advice, access]
     with pytest.raises(ValueError):
         require_clean_validation(validation(warnings=[advice, "manifest: unknown key"]))
     entry = {"name": "talaria-webui", "version": "1.5.2", "subdir": "plugin", "sha": "0" * 40}
     entry.update(docs_url="docs", screenshots=["desktop", "mobile"])
     assert "no warnings" in submission(entry, "1" * 40)
-    assert "imports of Hermes internals" in submission(entry, "1" * 40, [advice])
+    assert "uses of Hermes internals" in submission(entry, "1" * 40, [advice])
 
 
 def test_catalog_images_and_metadata_follow_the_reviewed_commit():

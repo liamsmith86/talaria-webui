@@ -35,6 +35,10 @@ tree. The Git hooks also run checks on each commit and push. A push reuses
 passing checks of the same code from the last hour, so after a full check it
 reruns at most the native Hermes tests.
 
+Releases run every browser test on Chromium and those listed in `CROSS_BROWSER` in `tests/conftest.py`
+on Firefox and WebKit; add a file there if its behavior can differ between
+browsers. Every browser test runs on every browser nightly.
+
 Every bug fix needs a test that fails without the fix. Confirm that it does with
 `uv run --locked python contrib/check.py prove --base origin/main TEST...`.
 Keep real sessions and credentials out of tests. Don't bypass the lockfiles or
@@ -42,17 +46,18 @@ the 7-day dependency cooldown.
 
 ## End-to-end tests
 
-`e2e/` runs Talaria against a real Hermes gateway and model. It isn't in CI. The
-model runs real commands, so use an account with no access to your files or
-credentials.
+`e2e/` runs Talaria against a real Hermes gateway. It isn't in CI. Tools run real
+commands, so use an account with no access to your files or credentials.
 
 ```sh
 TALARIA_E2E_HERMES=/path/to/hermes-agent OPENROUTER_API_KEY=... uv run --locked pytest e2e -n 3
 ```
 
-The default model, `z-ai/glm-5.3-flash`, costs a few cents per run. Set
-`TALARIA_E2E_MODEL` to use another model. Set `TALARIA_E2E_ARTIFACTS` to keep
-failure screenshots and the gateway log.
+`e2e/scripted/` uses a loopback model that follows the plan in each prompt, so a
+test there can't fail on what a model chooses. It needs no provider key. Add tests
+there. `e2e/test_real_model.py` keeps a few checks of a real provider, using
+`z-ai/glm-5.3-flash` for a few cents per run. Set `TALARIA_E2E_MODEL` to use another
+model. Set `TALARIA_E2E_ARTIFACTS` to keep failure screenshots and the gateway logs.
 
 ## Translations
 

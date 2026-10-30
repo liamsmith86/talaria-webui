@@ -37,6 +37,20 @@ CATALOG = [
         "reason": "Use this command in Hermes's terminal.",
     },
     {
+        "name": "stop",
+        "aliases": [],
+        "description": "Kill all running background processes",
+        "mode": "unavailable",
+        "reason": "Use this command in Hermes's terminal.",
+    },
+    {
+        "name": "steer",
+        "aliases": ["s"],
+        "description": "Inject a message after the next tool call",
+        "mode": "unavailable",
+        "reason": "Use this command in Hermes's terminal.",
+    },
+    {
         "name": "title",
         "aliases": [],
         "description": "Name the session",
@@ -184,6 +198,66 @@ def test_command_picker_alias_and_result_do_not_become_messages(page, live_app):
     assert len(peer.commands) == 1
 
 
+def test_commands_talaria_cannot_run_stay_out_of_the_picker_and_help(page, live_app):
+    prepare(page, live_app)
+    composer = page.get_by_role("textbox", name="Message Hermes")
+    composer.fill("/")
+    options = page.get_by_role("option")
+    expect(options.filter(has_text="/compress")).to_have_count(1)
+    expect(options.filter(has_text="/steer")).to_contain_text("<prompt>")
+    expect(options.filter(has_text="/stop")).to_contain_text("Stop the current response")
+    expect(options.filter(has_text="/clear")).to_have_count(0)
+    composer.fill("/cl")
+    expect(options).to_have_count(0)
+    live_app[1].command_catalog = [*CATALOG, {**CATALOG[0], "name": "help", "mode": "web"}]
+    page.reload()
+    # A reload restores the draft, which must not land in the middle of typing.
+    expect(composer).to_have_value("/cl")
+    composer.fill("/help")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    output = page.locator(".command-output")
+    expect(output).to_contain_text("/stop — Stop the current response")
+    expect(output).not_to_contain_text("/clear")
+
+
+def test_stop_and_steer_act_on_the_running_response(page, live_app):
+    prepare(page, live_app)
+    peer = live_app[1]
+    composer = page.get_by_role("textbox", name="Message Hermes")
+
+    def run_command(text):
+        composer.fill(text)
+        page.locator(".send-button").click()
+
+    for text, error in (
+        ("/stop", "No response is running."),
+        ("/steer Use tabs", "No response is running."),
+    ):
+        run_command(text)
+        expect(page.get_by_text(error, exact=True)).to_be_visible()
+    assert not peer.runs
+
+    composer.fill("Hold this response")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_visible()
+    [run] = peer.runs.values()
+
+    run_command("/steer")
+    expect(page.get_by_text("Type your guidance after /steer.", exact=True)).to_be_visible()
+    run_command("/stop now")
+    expect(page.get_by_text("Use /stop without arguments.", exact=True)).to_be_visible()
+    assert "steer" not in run and not peer.stops
+
+    run_command("/s Use tabs")
+    expect(composer).to_have_value("")
+    wait_for(lambda: run.get("steer"), lambda steer: steer == "Use tabs")
+    assert len(peer.runs) == 1
+
+    run_command("/stop")
+    expect(composer).to_have_value("")
+    wait_for(lambda: peer.stops, lambda stops: stops == 1)
+
+
 def test_lost_admission_response_and_reload_never_post_twice(page, live_app):
     sid = prepare(page, live_app, turns(4))
     peer = live_app[1]
@@ -216,6 +290,9 @@ def test_unconfirmed_command_start_is_followed_and_never_offered_again(page, liv
             checks.append(route.request.url)
             route.abort()
 
+    # The session's list hasn't caught up, so following by ID is all that can find it.
+    session_list = f"**/api/sessions/{sid}/commands*"
+    page.route(session_list, lambda route: route.fulfill(json={"data": [], "server_time": 0}))
     page.route("**/api/commands", lose_answer)
     page.route("**/api/commands/*", unreachable_once)
     with page.expect_response(lambda r: r.url.endswith("/api/commands") and r.status == 502):
@@ -224,11 +301,12 @@ def test_unconfirmed_command_start_is_followed_and_never_offered_again(page, liv
     # message box never offers it to run a second time.
     expect(page.get_by_role("textbox", name="Message Hermes")).to_have_value("")
     expect(page.locator(".command-card")).to_have_count(1)
+    wait_in_browser(page, lambda: checks)
+    page.unroute(session_list)
     peer.finish_command(session_id=sid, changed=True, text="Recovered command result")
     expect(page.locator(".message.notice")).to_contain_text("Context compressed", timeout=10000)
     expect(page.locator(".command-card")).to_have_count(0)
     assert len(peer.commands) == 1
-    assert checks
 
 
 def test_compaction_is_shown_on_every_device_after_reloads_and_hours_away(page, live_app, browser):
@@ -267,6 +345,15 @@ def test_compaction_is_shown_on_every_device_after_reloads_and_hours_away(page, 
         expect(indicator).to_have_attribute(
             "aria-label", "Context compressed · usage updates after the next reply"
         )
+        peer.discovery_overrides[f"/talaria/v1/sessions/{sid}/context"] = (
+            {"context": {"used": 1200, "maximum": 128000, "estimated": True}},
+            200,
+        )
+        third.reload()
+        expect(indicator).to_have_attribute(
+            "aria-label", "About 1% context used · estimated after compression"
+        )
+        del peer.discovery_overrides[f"/talaria/v1/sessions/{sid}/context"]
         peer.messages[sid].extend(turns(2, start=5))
         third.evaluate("async sid => (await import('/static/store.js')).refreshHistory(sid)", sid)
         expect(indicator).to_have_attribute("aria-label", "9% context used · last request")
@@ -283,7 +370,9 @@ def test_command_results_and_dismissal_are_shared(page, live_app, browser):
         expect(page.locator(".command-card")).to_contain_text("Hermes Agent 0.22.5")
         laptop.reload()
         expect(laptop.locator(".command-card")).to_contain_text("Hermes Agent 0.22.5")
-        laptop.get_by_role("button", name="Dismiss command result").click()
+        # The card leaves at once; another device can only learn of it once this is saved.
+        with laptop.expect_response(lambda r: r.request.method == "DELETE"):
+            laptop.get_by_role("button", name="Dismiss command result").click()
         expect(laptop.locator(".command-card")).to_have_count(0)
         page.evaluate("dispatchEvent(new Event('focus'))")
         expect(page.locator(".command-card")).to_have_count(0)
@@ -344,7 +433,9 @@ def test_command_whose_result_hermes_lost_says_so_and_frees_the_session(page, li
     expect(page.locator(".message.notice")).to_have_count(0)
     page.get_by_role("textbox", name="Message Hermes").fill("Carry on")
     expect(page.get_by_role("button", name="Send message", exact=True)).to_be_enabled()
-    page.get_by_role("button", name="Dismiss command result").click()
+    # The card leaves at once; a reload could abort or outrun the save.
+    with page.expect_response(lambda r: r.request.method == "DELETE"):
+        page.get_by_role("button", name="Dismiss command result").click()
     expect(card).to_have_count(0)
     page.reload()
     wait_for_store(page, f"s => s.commands.session === {json.dumps(sid)}")
@@ -372,7 +463,9 @@ def test_a_dismissed_result_stays_dismissed_when_an_older_list_arrives(page, liv
         return wait_in_browser(page, lambda: routes)[0]
 
     page.route(f"**/api/sessions/{sid}/commands*", hold_first_list)
-    page.evaluate("() => { import('/static/store.js').then(s => s.refreshCommands()); }")
+    page.evaluate(
+        "() => { window.olderList = import('/static/store.js').then(s => s.refreshCommands()); }"
+    )
     route, response = held(lists)
     dismiss = page.get_by_role("button", name="Dismiss command result")
     if arrives == "while saving":
@@ -380,7 +473,7 @@ def test_a_dismissed_result_stays_dismissed_when_an_older_list_arrives(page, liv
         dismiss.click()
         saving = held(dismissals)
         route.fulfill(response=response)
-        page.wait_for_timeout(300)
+        page.evaluate("olderList")
         shown = card.count()
         saving.continue_()
         assert shown == 0
@@ -388,7 +481,7 @@ def test_a_dismissed_result_stays_dismissed_when_an_older_list_arrives(page, liv
         with page.expect_response(lambda r: r.request.method == "DELETE"):
             dismiss.click()
         route.fulfill(response=response)
-    page.wait_for_timeout(300)
+        page.evaluate("olderList")
     expect(card).to_have_count(0)
 
 
@@ -401,6 +494,7 @@ def test_a_result_from_unloaded_history_waits_for_that_history(page, live_app):
     peer.messages[sid].extend(turns(150, start=3))
     page.reload()
     expect(page.get_by_text("Message 152.", exact=False)).to_be_visible()
+    wait_for_store(page, f"s => s.commands.session === {json.dumps(sid)}")
     # It ran after Message 2, which is not loaded: the top of this page is no place for it.
     expect(page.locator(".command-card")).to_have_count(0)
     page.get_by_role("button", name="Load earlier messages").click()
@@ -495,16 +589,11 @@ def test_a_command_listed_before_hermes_answers_shows_one_card(module_page):
 def test_command_runs_after_its_catalog_failed_to_load(page, live_app):
     sid = prepare(page, live_app, turns(2))
     peer = live_app[1]
-    failures = []
-
-    def fail_once(route):
-        if route.request.method == "GET" and not failures:
-            failures.append(route.request.url)
-            route.fulfill(status=502, body="Bad gateway")
-        else:
-            route.continue_()
-
-    page.route("**/api/commands", fail_once)
+    page.route(
+        "**/api/commands",
+        lambda route: route.fulfill(status=502, body="Bad gateway"),
+        times=1,
+    )
     with page.expect_response(lambda r: r.url.endswith("/api/commands") and r.status == 502):
         page.reload()
     page.get_by_role("textbox", name="Message Hermes").wait_for()
@@ -555,7 +644,7 @@ def test_command_card_live_states_and_mobile_layout(page, live_app):
     expect(card).to_contain_text("Compressing context…")
     node = card.element_handle()
     # Visible immediately, even while admission itself is still waiting on the network.
-    assert admissions
+    wait_in_browser(page, lambda: admissions)
     admissions[0].continue_()
     expect(card.locator(".command-elapsed")).not_to_have_text("0s")
     assert card.locator(".spinner").evaluate("el => getComputedStyle(el).animationName") == "none"
@@ -683,6 +772,8 @@ def test_in_place_compaction_keeps_the_result_below_the_latest_turn(page, live_a
     peer = live_app[1]
     run_command(page, "/compress ")
     expect(page.locator(".command-card")).to_contain_text("Compressing context…")
+    # The card shows before Hermes has the command, which can't compact until it does.
+    wait_for(lambda: peer.commands, bool)
     # Hermes archives every row and re-inserts the ones it keeps with new IDs,
     # but their original timestamps, in their original display places; the
     # hidden summary row closes the list.

@@ -562,6 +562,10 @@
   font-size: 11px;
   color: var(--muted);
 }
+.tool-content .tool-blocked {
+  font-size: 13px;
+  color: inherit;
+}
 .tool-facts {
   display: flex;
   flex-wrap: wrap;
@@ -736,16 +740,19 @@
 }
 .conversation-jumps.is-idle {
   opacity: 0;
-  pointer-events: none;
 }
 .conversation-jumps:focus-within {
   opacity: 1;
-  pointer-events: auto;
 }
 @media (hover: hover) {
   .conversation-jumps:hover {
     opacity: 1;
-    pointer-events: auto;
+  }
+}
+/* Without hover, nothing would reveal them before a tap landed on them. */
+@media (hover: none) {
+  .conversation-jumps.is-idle:not(:focus-within) {
+    pointer-events: none;
   }
 }
 .jump-bottom,
@@ -837,7 +844,6 @@
 }
 .command-picker span { grid-column: 1 / -1; }
 .command-picker small { overflow-wrap: anywhere; }
-.command-picker .command-unavailable { grid-column: 2; grid-row: 1; justify-self: end; }
 .command-picker span, .command-picker small { font-size: .8rem; color: var(--muted); }
 
 .command-card {

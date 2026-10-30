@@ -36,6 +36,7 @@ def project_details(action, result):
                 "used": numeric(context.get("used")),
                 "maximum": numeric(context.get("maximum")),
                 "model": text(context.get("model"), 256),
+                "estimated": context.get("estimated") is True,
             }
             if isinstance(context, dict)
             else None

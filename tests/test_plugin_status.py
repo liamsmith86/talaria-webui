@@ -11,6 +11,7 @@ from playwright.sync_api import expect
 from talaria import plugin_status
 from talaria.hermes_plugin.release import LOADED_REVISION, PLUGIN_VERSION
 
+from .conftest import wait_for_store
 from .test_app import signed_in
 
 
@@ -59,6 +60,8 @@ def test_connection_detects_releases_and_offers_native_installation(page, live_a
     link = page.get_by_role("link", name="Server installation instructions")
     install_url = "https://github.com/liamsmith86/talaria-webui#hermes-plugin"
     expect(link).to_have_attribute("href", install_url)
+    # Opening settings also reads the plugin, and would overwrite a newer check.
+    wait_for_store(page, "s => !!s.agentInfo")
     peer.extension = {"plugin_version": "1.0.0", "revision": "b" * 64}
     page.get_by_role("button", name="Check again", exact=True).click()
     expect(page.get_by_role("tabpanel")).to_contain_text("Plugin update available")
@@ -69,7 +72,7 @@ def test_connection_detects_releases_and_offers_native_installation(page, live_a
     expect(link).to_have_count(0)
     peer.extension = {"plugin_version": PLUGIN_VERSION, "revision": LOADED_REVISION}
     page.get_by_role("button", name="Check again", exact=True).click()
-    expect(page.get_by_role("tabpanel")).to_contain_text("Matches this Talaria release")
+    expect(page.get_by_role("tabpanel")).to_contain_text("Up to date")
 
 
 @pytest.mark.hermes
@@ -100,5 +103,10 @@ def test_native_plugin_validation(tmp_path):
         text=True,
         timeout=45,
     )
-    assert result.returncode == 0, result.stdout + result.stderr
+    # Before 0.22.5 Hermes doesn't know these hooks, so they stay idle (see the plugin README).
+    known = (source / "hermes_cli/plugins.py").read_text()
+    idle = [hook for hook in ("post_compaction", "on_session_delete") if hook not in known]
+    errors = [line.strip() for line in result.stdout.splitlines() if "ERROR:" in line]
+    assert all(any(f"'{hook}'" in line for hook in idle) for line in errors), result.stdout
+    assert result.returncode == 0 or errors, result.stdout + result.stderr
     assert "WARN:" not in result.stdout, result.stdout
