@@ -64,6 +64,50 @@ async def test_native_fallback_never_ends_another_apps_session(backend):
     assert list(peer.sessions) == ["original"] and "end_reason" not in peer.sessions["original"]
 
 
+@pytest.mark.parametrize("plugin", [False, True])
+@pytest.mark.parametrize("source", ["api_server", "tui"])
+async def test_branching_a_session_with_no_messages_creates_nothing(backend, plugin, source):
+    client, _, peer = backend
+    peer.extension = {"session_fork": True} if plugin else None
+    peer.sessions["empty"] = {"id": "empty", "source": source}
+    peer.messages["empty"] = []
+    response = await client.post("/api/sessions/empty/fork", json={})
+    assert response.status_code == 409
+    assert response.json()["error"] == "This session has no chat history to branch."
+    assert list(peer.sessions) == ["empty"] and "end_reason" not in peer.sessions["empty"]
+    assert not [c for c in peer.calls if c[0] == "POST" and c[1].endswith("/fork")]
+
+
+async def test_a_message_too_large_to_read_does_not_look_like_no_messages(backend, monkeypatch):
+    client, _, peer = backend
+    peer.sessions["huge"] = {"id": "huge", "source": "api_server"}
+    peer.messages["huge"] = [{"id": 1, "role": "user", "content": "Huge"}]
+
+    async def too_large(*_args, **_kwargs):
+        raise APIError("Hermes returned too much data.", 502, "response_too_large")
+
+    monkeypatch.setattr("talaria.routes.message_page", too_large)
+    response = await client.post("/api/sessions/huge/fork", json={})
+    assert response.status_code == 201, response.text
+
+
+async def test_branching_a_missing_session_still_says_it_is_missing(backend):
+    client, _, peer = backend
+    assert (await client.post("/api/sessions/missing/fork", json={})).status_code == 404
+    assert not peer.sessions
+
+
+async def test_a_session_with_no_messages_still_exports_readable_files(backend):
+    client, _, peer = backend
+    peer.sessions["empty"] = {"id": "empty", "source": "tui"}
+    peer.messages["empty"] = []
+    exported = await client.get("/api/sessions/empty/export?format=json")
+    assert exported.status_code == 200
+    assert json.loads(exported.text)["messages"] == []
+    markdown = await client.get("/api/sessions/empty/export")
+    assert markdown.status_code == 200 and markdown.text.startswith("# Session")
+
+
 async def test_session_authority_refusal_explains_how_to_continue(backend):
     client, _, peer = backend
     peer.session_authority = True
@@ -107,7 +151,7 @@ async def test_default_branch_names_are_chosen_by_hermes(backend, plugin):
     client, _, peer = backend
     peer.extension = {"session_fork": True} if plugin else None
     peer.sessions["original"] = {"id": "original", "title": "Original", "source": "api_server"}
-    peer.messages["original"] = []
+    peer.messages["original"] = [{"id": 1, "role": "user", "content": "Original"}]
     for number in (2, 3):
         response = await client.post("/api/sessions/original/fork", json={})
         assert response.status_code == 201, response.text
@@ -238,7 +282,8 @@ async def test_unexpected_response_envelopes_do_not_crash(
 ):
     client, _, peer = backend
     # A plugin-less branch first confirms the API owns the session.
-    peer.sessions["example"], peer.messages["example"] = {"id": "example"}, []
+    peer.sessions["example"] = {"id": "example"}
+    peer.messages["example"] = [{"id": 1, "role": "user", "content": "Example"}]
     peer.discovery_overrides[upstream] = (result, 200)
     response = await client.request(method, path, json=payload)
     assert response.status_code == 502

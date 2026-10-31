@@ -29,6 +29,7 @@ from .session_state import StateUnavailable
 from .transcripts import message_page, session_details
 
 EXTERNAL_BRANCH = "Update the Talaria plugin in Hermes to branch a conversation from another app."
+NO_HISTORY_BRANCH = "This session has no chat history to branch."
 
 
 async def body(request: Request, limit=1024 * 1024) -> dict:
@@ -382,6 +383,15 @@ async def messages(request: Request):
     return JSONResponse(page)
 
 
+async def has_no_messages(client, sid):
+    try:
+        return not (await message_page(client, sid, limit=1))["data"]
+    except APIError as exc:
+        if exc.code == "response_too_large":
+            return False  # A row too large to read is still a row.
+        raise
+
+
 async def fork(request: Request):
     sid = identifier(request.path_params["session_id"])
     data = await body(request)
@@ -396,6 +406,10 @@ async def fork(request: Request):
             raise APIError("Choose a saved message.", 400)
         result = await branch_from_response(client, sid, mid, payload)
         return JSONResponse(result, status_code=201)
+    # A menu can offer this before the session is opened. Copying nothing would only
+    # leave an empty session behind, under Hermes's fallback name "fork".
+    if await has_no_messages(client, sid):
+        raise APIError(NO_HISTORY_BRANCH, 409)
     try:
         result = await client.request("POST", f"{PREFIX}/sessions/{sid}/fork", json=payload)
     except APIError as exc:

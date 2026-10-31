@@ -778,6 +778,44 @@
 .history-loading {
   padding: 20px 0;
 }
+.conversation-content.is-empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.no-chat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  /* Sits above true centre, where a reader's eye expects it. */
+  padding: 24px 24px 12vh;
+  text-align: center;
+  text-wrap: balance;
+  animation: arrive 0.2s ease;
+}
+.no-chat-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 11px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  color: var(--faint);
+}
+.no-chat strong {
+  font-size: 15.5px;
+  font-weight: 500;
+  letter-spacing: -0.1px;
+}
+.no-chat p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
 .skeleton {
   height: 12px;
   width: 65%;

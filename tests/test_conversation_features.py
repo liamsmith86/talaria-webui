@@ -12,7 +12,7 @@ from playwright.sync_api import expect
 
 from talaria.hermes import APIError
 
-from .conftest import wait_for_store
+from .conftest import fire_timers, wait_for_store, wait_for_timer
 from .test_app import signed_in
 from .test_browser import screenshot
 
@@ -690,6 +690,197 @@ def test_sessions_owned_by_other_apps_continue_in_a_branch(page, live_app, autho
     assert copy["source"] == "api_server" and "end_reason" not in peer.sessions[sid]
     send(page, "Continue here")
     assert [run["session_id"] for run in peer.runs.values()] == [copy["id"]]
+
+
+NO_CHAT = "This session has no chat history."
+
+
+def open_empty_session(page, peer, *, source="tui", rows=(), **fields):
+    peer.session_authority, peer.extension = True, {}
+    peer.sessions["empty"] = {"id": "empty", "title": None, "source": source, "pinned": False}
+    peer.sessions["empty"].update(fields)
+    peer.messages["empty"] = list(rows)
+    page.reload()
+    page.get_by_role("link", name="Untitled session", exact=True).click()
+
+
+def menu_action(page, name):
+    page.get_by_role("button", name="Session options", exact=True).click()
+    return page.get_by_role("dialog").get_by_role("button", name=name, exact=True)
+
+
+def test_session_with_nothing_saved_says_so_and_offers_a_new_session(page, live_app):
+    peer = live_app[1]
+    open_empty_session(page, peer)
+    expect(page.get_by_text(NO_CHAT, exact=True)).to_be_visible()
+    expect(
+        page.get_by_text("Hermes has no saved messages from Terminal.", exact=True)
+    ).to_be_visible()
+    notice = "This conversation belongs to Terminal. Hermes accepts new messages for it only there."
+    expect(page.get_by_text(notice, exact=True)).to_be_visible()
+    expect(page.get_by_label("Message Hermes")).to_have_count(0)
+    # There is nothing to continue, so a branch would only make an empty session.
+    expect(page.get_by_role("button", name="Continue in a branch", exact=True)).to_have_count(0)
+    screenshot(page, "no-chat-history")
+    for width, name in ((390, "mobile"), (320, "narrow")):
+        page.set_viewport_size({"width": width, "height": 700})
+        expect(page.get_by_text(NO_CHAT, exact=True)).to_be_in_viewport()
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        screenshot(page, f"no-chat-history-{name}")
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.emulate_media(color_scheme="dark")
+    screenshot(page, "no-chat-history-dark")
+    page.emulate_media(color_scheme="light")
+
+    for name in ("Branch session", "Download transcript"):
+        expect(menu_action(page, name)).to_be_disabled()
+        page.keyboard.press("Escape")
+    for name in ("Rename", "Delete session", "Session details"):
+        expect(menu_action(page, name)).to_be_enabled()
+        page.keyboard.press("Escape")
+
+    page.get_by_role("button", name="Find in session", exact=True).click()
+    page.get_by_label("Find text in session", exact=True).fill("anything")
+    expect(page.get_by_text(NO_CHAT, exact=True)).to_be_visible()
+
+    page.locator(".child-return").get_by_role("button", name="New session", exact=True).click()
+    expect(page.get_by_label("Message Hermes")).to_be_visible()
+    expect(page.get_by_text(NO_CHAT, exact=True)).to_have_count(0)
+    assert list(peer.sessions) == ["empty"]
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [{"id": 1, "role": "user", "content": "Hidden", "display_kind": "hidden"}],
+        [{"id": 1, "role": "system", "content": "System prompt"}],
+        [{"id": 1, "role": "session_meta", "content": "Metadata"}],
+        [{"id": 1, "role": "tool", "tool_call_id": "gone", "content": "Orphaned result"}],
+        [{"id": 1, "role": "assistant", "content": ""}],
+    ],
+    ids=["hidden", "system", "metadata", "orphan-tool", "blank-reply"],
+)
+def test_saved_rows_that_show_nothing_are_no_chat_history(page, live_app, rows):
+    open_empty_session(page, live_app[1], rows=rows)
+    expect(page.get_by_text(NO_CHAT, exact=True)).to_be_visible()
+    expect(page.locator(".child-return").get_by_role("button", name="New session")).to_be_visible()
+
+
+def test_a_failed_read_never_claims_a_session_is_empty(page, live_app):
+    peer = live_app[1]
+    peer.discovery_overrides["/api/sessions/empty/messages"] = ({"error": "Unavailable"}, 500)
+    open_empty_session(page, peer)
+    expect(page.locator(".error-banner")).to_be_visible()
+    wait_for_store(page, "state => !state.loading")
+    expect(page.get_by_text(NO_CHAT, exact=True)).to_have_count(0)
+    expect(menu_action(page, "Download transcript")).to_be_enabled()
+    page.keyboard.press("Escape")
+    # Dismissing the error does not turn "unknown" into "empty" either.
+    page.get_by_role("button", name="Dismiss error", exact=True).click()
+    expect(page.get_by_text(NO_CHAT, exact=True)).to_have_count(0)
+
+    del peer.discovery_overrides["/api/sessions/empty/messages"]
+    page.evaluate("async () => (await import('/static/store.js')).refreshHistory('empty')")
+    expect(page.get_by_text(NO_CHAT, exact=True)).to_be_visible()
+
+
+@pytest.mark.parametrize("older_chat", [True, False], ids=["chat-behind", "hidden-all-the-way"])
+def test_a_page_of_hidden_rows_does_not_hide_older_chat(page, live_app, older_chat):
+    older = {"id": 1, "role": "user", "content": "Older question"}
+    if not older_chat:
+        older["display_kind"] = "hidden"
+    hidden = [
+        {"id": i + 2, "role": "user", "content": "Hidden", "display_kind": "hidden"}
+        for i in range(100)
+    ]
+    open_empty_session(page, live_app[1], rows=[older, *hidden])
+    load = page.get_by_role("button", name="Load earlier messages", exact=True)
+    expect(load).to_be_visible()
+    expect(page.get_by_text(NO_CHAT, exact=True)).to_have_count(0)
+    load.click()
+    expect(load).to_have_count(0)
+    if older_chat:
+        expect(page.get_by_text("Older question", exact=True)).to_be_visible()
+        expect(page.get_by_text(NO_CHAT, exact=True)).to_have_count(0)
+    else:
+        expect(page.get_by_text(NO_CHAT, exact=True)).to_be_visible()
+
+
+def test_an_empty_session_fills_in_when_its_app_saves_messages(page, live_app):
+    peer = live_app[1]
+    open_empty_session(page, peer)
+    expect(page.get_by_text(NO_CHAT, exact=True)).to_be_visible()
+    peer.messages["empty"] = [
+        {"id": 1, "role": "user", "content": "Typed in the terminal"},
+        {"id": 2, "role": "assistant", "content": "Answered there"},
+    ]
+    wait_for_timer(page, 15000)
+    fire_timers(page, 15000)
+    expect(page.get_by_text("Answered there", exact=True)).to_be_visible()
+    expect(page.get_by_text(NO_CHAT, exact=True)).to_have_count(0)
+    expect(page.get_by_role("button", name="Continue in a branch", exact=True)).to_be_visible()
+
+
+def test_an_empty_api_session_takes_its_first_message(page, live_app):
+    peer = live_app[1]
+    open_empty_session(page, peer, source="api_server")
+    expect(page.get_by_text(NO_CHAT, exact=True)).to_be_visible()
+    expect(page.get_by_text("Send a message to begin.", exact=True)).to_be_visible()
+    screenshot(page, "no-chat-history-composer")
+    expect(menu_action(page, "Branch session")).to_be_disabled()
+    page.keyboard.press("Escape")
+    page.get_by_label("Message Hermes").fill("hold this first message")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    # Hermes has saved nothing yet, and the turn on screen is what the reader is following.
+    expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_visible()
+    expect(page.get_by_text("hold this first message", exact=True)).to_be_visible()
+    expect(page.get_by_text(NO_CHAT, exact=True)).to_have_count(0)
+    peer.release()
+    expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
+    expect(page.get_by_text(NO_CHAT, exact=True)).to_have_count(0)
+    expect(menu_action(page, "Branch session")).to_be_enabled()
+
+
+def test_a_new_session_never_shows_the_empty_notice_while_starting(page, live_app):
+    peer = live_app[1]
+    page.evaluate(
+        """() => { window.sawNotice = false;
+        new MutationObserver(() => { window.sawNotice ||= !!document.querySelector('.no-chat'); })
+          .observe(document.body, { childList: true, subtree: true }); }"""
+    )
+    send(page, "A brand new session")
+    assert len(peer.sessions) == 1
+    assert page.evaluate("window.sawNotice") is False
+
+
+def test_an_unopened_empty_session_explains_why_it_cannot_branch(page, live_app):
+    peer = live_app[1]
+    seed(peer, count=2)
+    open_empty_session(page, peer)
+    page.get_by_role("link", name="Design notes", exact=True).click()
+    expect(page.get_by_text("Message 001", exact=True)).to_be_visible()
+    # Nothing is known about a session until it opens, so its menu still offers this.
+    page.get_by_role("button", name="Options for session", exact=True).click()
+    page.get_by_role("dialog").get_by_role("button", name="Branch session", exact=True).click()
+    page.get_by_role("button", name="Create branch", exact=True).click()
+    message = "This session has no chat history to branch."
+    expect(page.get_by_role("alert").get_by_text(message, exact=True)).to_be_visible()
+    assert set(peer.sessions) == {"notes", "empty"}
+
+
+def test_an_empty_child_session_still_leads_back_to_its_parent(page, live_app):
+    peer = live_app[1]
+    seed(peer)
+    peer.sessions["empty"] = {"id": "empty", "source": "subagent", "parent_session_id": "notes"}
+    peer.messages["empty"] = []
+    # Hermes leaves subagents out of its session list; a parent's card opens them.
+    page.evaluate(
+        "async () => (await import('/static/store.js'))"
+        ".openSession('empty', { id: 'notes', title: 'Design notes' })"
+    )
+    expect(page.get_by_text(NO_CHAT, exact=True)).to_be_visible()
+    expect(page.locator(".no-chat p")).to_have_count(0)
+    expect(page.get_by_role("button", name="Back to parent session", exact=True)).to_be_visible()
 
 
 def test_saved_child_cards_use_native_tool_results_and_explain_missing_links(page, live_app):

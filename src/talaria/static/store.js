@@ -21,6 +21,9 @@ export const state = {
   sessionsOffset: 0,
   active: null,
   history: [],
+  // Whether Hermes answered for this history: empty then means nothing is saved,
+  // where empty after a failed read means nothing is known.
+  historyLoaded: false,
   historyHasMore: false,
   historyOffset: 0,
   sessionDetails: null,
@@ -190,7 +193,7 @@ export async function connect(configured = true) {
     // A slow session listing must not postpone showing the last reply.
     const sessions = caps.features?.session_resources
       ? refreshSessions()
-      : Promise.resolve(update({ sessions: [], hasMore: false, history: [] }));
+      : Promise.resolve(update({ sessions: [], hasMore: false, history: [], historyLoaded: false }));
     if (caps.features?.model_options) {
       refreshModels().catch(() => {});
     } else update({ models: [], providers: [], defaultModel: null });
@@ -547,6 +550,7 @@ export async function openSession(id, parent = null, replace = false, messageId 
   update({
     active: id,
     history: [],
+    historyLoaded: false,
     loading: true,
     sidebar: false,
     error: "",
@@ -578,6 +582,7 @@ export async function openSession(id, parent = null, replace = false, messageId 
       update({
         active: canonical,
         history,
+        historyLoaded: true,
         loading: false,
         historyHasMore: !!result.has_more,
         historyOffset: result.next_offset ?? (result.data || []).length,
@@ -621,6 +626,7 @@ export async function refreshHistory(id, commit = true, signal) {
     update({
       ...(canonical !== id ? { active: canonical, sessionDetails: null } : {}),
       history,
+      historyLoaded: true,
       loading: false,
       historyHasMore: !!result.has_more,
       historyOffset: result.next_offset ?? (result.data || []).length,
@@ -690,6 +696,7 @@ export function newConversation(replace = false) {
   update({
     active: null,
     history: [],
+    historyLoaded: false,
     loading: false,
     historyHasMore: false,
     historyOffset: 0,

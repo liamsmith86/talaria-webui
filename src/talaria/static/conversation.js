@@ -34,7 +34,7 @@ import {
   loadOlderMessages,
   update,
 } from "./store.js";
-import { guidanceText, isGuidance, isNotice, isRecoveryPrompt, plainContent, userMessage } from "./content.js";
+import { guidanceText, isGuidance, isNotice, isRecoveryPrompt, plainContent, sourceLabel, userMessage } from "./content.js";
 import {
   currentImageMessage,
   messageImages,
@@ -522,6 +522,25 @@ function historyItems(history, live, excerpt = false) {
   return turns.filter((item) => item.role !== "assistant" || item.parts.length);
 }
 
+// Hermes answered and nothing it saved is shown. A failed read is not that, nor
+// is a page of hidden rows with older ones behind it. Hermes's message_count can't
+// decide this: a compaction continuation counts 0 and still has a transcript.
+export function hasNoChat(app) {
+  return !!app.active && app.historyLoaded && !app.loading && !app.historyHasMore &&
+    !app.searchWindow && !historyItems(app.history, null).length;
+}
+
+function NoChatHistory({ source, readOnly }) {
+  const detail = readOnly ? "" : source
+    ? t("Hermes has no saved messages from {source}.", { source: sourceLabel(source) })
+    : t("Send a message to begin.");
+  return html`<div class="no-chat" role="status">
+    <span class="no-chat-icon"><${Icon} name="message" size=${20} /></span>
+    <strong>${t("This session has no chat history.")}</strong>
+    ${detail && html`<p>${detail}</p>`}
+  </div>`;
+}
+
 // Where a command result belongs: before the first row Hermes saved after the
 // command began. In-place compaction re-saves kept rows with new IDs, so
 // Hermes's timestamps, which it keeps, order them.
@@ -531,7 +550,7 @@ function anchorIndex(items, anchor, end) {
   return index < 0 ? end : Math.min(index, end);
 }
 
-export function Conversation({ app, commands = [], onDismissCommand }) {
+export function Conversation({ app, commands = [], onDismissCommand, noChat = false, external = "" }) {
   const { locale, formatLocale } = useLanguage();
   const scroll = useRef();
   const replyStart = useReplyJump(scroll, app.active);
@@ -717,6 +736,7 @@ export function Conversation({ app, commands = [], onDismissCommand }) {
       parts=${live.parts}
     />`);
   transcript.push(...trailing);
+  const empty = noChat && !transcript.length;
   return html`${app.findOpen &&
     html`<${ConversationFind}
       key=${app.active}
@@ -755,7 +775,7 @@ export function Conversation({ app, commands = [], onDismissCommand }) {
         setAway(!sticky.current);
       }}
     >
-      <div class="conversation-content">
+      <div class=${`conversation-content${empty ? " is-empty" : ""}`}>
         ${!app.loading &&
         app.historyHasMore &&
         html`<button
@@ -772,6 +792,7 @@ export function Conversation({ app, commands = [], onDismissCommand }) {
           /><span class="sr-only">${t("Loading session")}</span>
         </div>`}
         ${transcript}
+        ${empty && html`<${NoChatHistory} source=${external} readOnly=${!!app.readOnlyParent} />`}
         ${savedTurn === items.at(-1) &&
         savedTurn &&
         !savedTurn.tools.some((t) => t.kind === "agent") &&

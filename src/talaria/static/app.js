@@ -5,6 +5,7 @@ import {
   useEffect,
   useState,
   useRef,
+  useMemo,
   useMediaQuery,
   Icon,
   IconButton,
@@ -27,7 +28,7 @@ import {
   canBranch,
 } from "./store.js";
 import { Sidebar } from "./sidebar.js";
-import { Conversation } from "./conversation.js";
+import { Conversation, hasNoChat } from "./conversation.js";
 import { useCommandActivity } from "./command-activity.js";
 import { Composer } from "./composer.js";
 import {
@@ -137,6 +138,11 @@ function App() {
   const commands = commandActivity.activities;
   const activeSession = app.sessionDetails || app.sessions.find((s) => s.id === app.active);
   const external = app.active ? externalSource(activeSession) : "";
+  const noChat = useMemo(
+    () => hasNoChat(app),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [app.active, app.history, app.historyLoaded, app.loading, app.historyHasMore, app.searchWindow],
+  );
   const mobile = useMediaQuery("(max-width: 700px)");
   const model = sessionModel(app);
   const [modelOpen, setModelOpen] = useState(false);
@@ -283,7 +289,7 @@ function App() {
         ${t("Update Hermes to a version that supports sessions and chat through its API.")}
       </div>`}
       ${app.active || commands.length
-        ? html`<${Conversation} key=${app.active} app=${app} commands=${app.searchWindow ? [] : commands} onDismissCommand=${commandActivity.dismiss} />`
+        ? html`<${Conversation} key=${app.active} app=${app} commands=${app.searchWindow ? [] : commands} onDismissCommand=${commandActivity.dismiss} noChat=${noChat} external=${external} />`
         : html`<${Welcome} onSuggestion=${setSuggestion} />`}
       ${app.searchWindow
         ? html`<div class="child-return"><span>${t("Search result · surrounding messages")}</span>
@@ -301,12 +307,16 @@ function App() {
         : external
         ? html`<div class="child-return" role="status">
             <span>${t("This conversation belongs to {source}. Hermes accepts new messages for it only there.", { source: sourceLabel(external) })}</span>
-            ${canBranch(activeSession) && html`<button
-              class="text-button"
-              onClick=${() => update({ modal: { type: "fork", session: activeSession } })}
-            >
-              <${Icon} name="branch" size=${17} />${t("Continue in a branch")}
-            </button>`}
+            ${noChat
+              ? html`<button class="text-button" onClick=${() => newConversation()}>
+                  <${Icon} name="plus" size=${17} />${t("New session")}
+                </button>`
+              : canBranch(activeSession) && html`<button
+                  class="text-button"
+                  onClick=${() => update({ modal: { type: "fork", session: activeSession } })}
+                >
+                  <${Icon} name="branch" size=${17} />${t("Continue in a branch")}
+                </button>`}
           </div>`
         : html`<div key="composer-area" class="composer-area">
             <${Composer}
@@ -342,6 +352,7 @@ function App() {
     html`<${ConversationMenu}
       session=${app.modal.session}
       readOnly=${(!!app.readOnlyParent || !!app.searchWindow) && app.modal.session.id === app.active}
+      noChat=${noChat && app.modal.session.id === app.active}
       onClose=${close}
     />`}
     ${app.modal?.type === "details" &&
