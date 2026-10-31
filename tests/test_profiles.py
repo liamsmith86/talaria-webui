@@ -58,6 +58,17 @@ def scoped(path, profile_id):
     return path + ("&" if "?" in path else "?") + "talaria_profile=" + profile_id
 
 
+def test_a_saved_profile_compresses_its_reads_too(live_app, research):
+    profile_id, second = research
+    for index in range(40):
+        sid = f"research-{index}"
+        second.sessions[sid] = {"id": sid, "title": f"Session {index}", "source": "api_server"}
+    with signed_in(live_app[0]) as client:
+        response = client.get(scoped("/api/sessions", profile_id))
+        assert response.headers["content-encoding"] == "gzip"
+        assert len(response.json()["data"]) == 40
+
+
 def test_native_profile_urls_preserve_reverse_proxy_prefixes():
     assert (
         connection_url({"url": "https://example.test/hermes/v1", "profile": "research"})

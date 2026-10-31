@@ -1,7 +1,6 @@
 """Public demo shell: only synthetic fixtures, never private config or Hermes."""
 
 import argparse
-import hashlib
 import os
 from pathlib import Path
 
@@ -11,7 +10,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 
 from . import __version__
-from .app import STATIC, Assets, SecurityHeaders, health, index, robots
+from .app import STATIC, Assets, SecurityHeaders, build_path, health, in_build, index, robots
 from .config import Settings, validate_public_url
 from .hermes_plugin.release import PLUGIN_VERSION
 from .proxy import PublicPath
@@ -21,12 +20,7 @@ def create_demo(*, public_url=""):
     sample_data = Path(__file__).with_name("demo_data.json").read_bytes()
     # A proxy can override revalidation headers. Give each demo build its own
     # asset directory so relative imports also bypass older browser/CDN caches.
-    digest = hashlib.sha256(sample_data)
-    for path in sorted(STATIC.rglob("*")):
-        if path.is_file():
-            digest.update(path.relative_to(STATIC).as_posix().encode() + b"\0")
-            digest.update(path.read_bytes())
-    asset_path = f"static/build-{digest.hexdigest()[:16]}/"
+    asset_path = build_path(STATIC, sample_data)
     assets = GZipMiddleware(Assets(directory=STATIC), minimum_size=1024)
 
     async def bootstrap(request):
@@ -74,16 +68,14 @@ def create_demo(*, public_url=""):
         ],
     )
     app.state.settings = Settings(public_url=validate_public_url(public_url) if public_url else "")
-    app.state.index_html = (
+    app.state.index_html = in_build(
         (STATIC / "index.html")
         .read_text()
         .replace(
             "</head>",
             '<link rel="stylesheet" href="__TALARIA_BASE__static/styles/demo.css" /></head>',
-        )
-        .replace("__TALARIA_BASE__static/", "__TALARIA_BASE__" + asset_path)
-        # The manifest keeps its stable installation identity and launch scope.
-        .replace(asset_path + "app.webmanifest", "static/app.webmanifest")
+        ),
+        asset_path,
     )
     app.add_middleware(SecurityHeaders)
     app.add_middleware(PublicPath, prefix=app.state.settings.base_path)

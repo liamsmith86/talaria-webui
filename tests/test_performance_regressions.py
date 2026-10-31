@@ -6,8 +6,12 @@ import pytest
 from playwright.sync_api import expect
 
 from talaria import server as talaria_server
+from talaria.app import create_app
+from talaria.auth import hash_password
+from talaria.config import Settings
 
-from .conftest import serve
+from .conftest import browser_context, serve
+from .fake_hermes import KEY
 from .test_app import signed_in
 
 
@@ -295,3 +299,35 @@ def test_every_server_bind_lets_asyncio_disable_nagle(monkeypatch):
         "talaria.cli:development_app", factory=True, reload=True, host="127.0.0.1", port=0
     )
     assert reloading[0].proto == socket.IPPROTO_TCP
+
+
+def test_a_return_visit_asks_the_server_for_no_assets(browser, tmp_path):
+    """Each revalidation costs a round trip, and only six run at once on HTTP/1.1."""
+    settings = Settings(
+        api_key=KEY, password_hash=hash_password("test-password"), signing_key="fixture-key"
+    )
+    app = create_app(settings, tmp_path / "config.json", immutable_assets=True)
+    assets = []
+
+    async def counting(scope, receive, send):
+        if scope["type"] == "http" and scope["path"].startswith("/static/"):
+            assets.append(scope["path"])
+        await app(scope, receive, send)
+
+    server, thread, url = serve(counting)
+    try:
+        with browser_context(browser) as context:
+            page = context.new_page()
+            page.goto(url)
+            page.get_by_label("Password", exact=True).wait_for()
+            first = list(assets)
+            assert len(first) > 40
+            assert all("/static/build-" in path for path in first)
+            assets.clear()
+            page.goto("about:blank")
+            page.goto(url)
+            page.get_by_label("Password", exact=True).wait_for()
+            assert [path for path in assets if "/static/build-" in path] == []
+    finally:
+        server.should_exit = True
+        thread.join(6)

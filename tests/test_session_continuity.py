@@ -7,12 +7,12 @@ from urllib.parse import urljoin
 import pytest
 from playwright.sync_api import expect
 
-from .conftest import browser_context, wait_for_store, wait_in_browser
+from .conftest import STORE_URL, browser_context, wait_for_store, wait_in_browser
 from .test_conversation_features import seed
 
 
 def open_session(page, sid):
-    page.evaluate("async id => (await import('/static/store.js')).openSession(id)", sid)
+    page.evaluate(f"async id => (await import({STORE_URL})).openSession(id)", sid)
 
 
 def refresh(page, sid):

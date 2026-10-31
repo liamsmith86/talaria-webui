@@ -62,7 +62,7 @@ def test_public_url_flag_configures_runtime_and_first_start(tmp_path, monkeypatc
     )
     monkeypatch.setattr("talaria.server.run", lambda *a, **kw: None)
     monkeypatch.setattr(
-        "talaria.app.create_app", lambda settings, _: captured.append(settings.public_url)
+        "talaria.app.create_app", lambda settings, _, **kw: captured.append(settings.public_url)
     )
     cli.main()
     assert captured == ["https://example.com/telaria"]

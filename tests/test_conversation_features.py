@@ -82,7 +82,9 @@ def test_complete_exports_and_image_structure(live_app):
     ]
     assert httpx.get(url + f"/api/sessions/{sid}/export").status_code == 401
     with signed_in(url) as client:
-        response = client.get(f"/api/sessions/{sid}/export?format=json")
+        response = client.get(
+            f"/api/sessions/{sid}/export?format=json", headers={"Accept-Encoding": "identity"}
+        )
         assert response.status_code == 200
         exported = response.json()
         assert exported["messages"] == peer.messages[sid]

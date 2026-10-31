@@ -32,7 +32,7 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 from talaria.app import create_app  # noqa: E402
 from talaria.auth import hash_password  # noqa: E402
 from talaria.config import Settings  # noqa: E402
-from tests.conftest import serve, wait_for_store  # noqa: E402
+from tests.conftest import STORE_URL, serve, wait_for_store  # noqa: E402
 from tests.fake_hermes import KEY, FakeHermes  # noqa: E402
 
 PASSWORD = "perf-password"
@@ -423,9 +423,7 @@ class Bench:
         )
 
     def open_session(self, sid):
-        self.page.evaluate(
-            "async (sid) => (await import('/static/store.js')).openSession(sid)", sid
-        )
+        self.page.evaluate(f"async (sid) => (await import({STORE_URL})).openSession(sid)", sid)
         self.store(f"state => state.active === {sid!r} && !state.loading && state.historyLoaded")
         self.settled()
 
@@ -662,7 +660,7 @@ def long_session(bench):
     result["open_ms"] = round(
         bench.time_to(
             lambda: bench.page.evaluate(
-                "async () => { (await import('/static/store.js')).openSession('long'); }"
+                f"async () => {{ (await import({STORE_URL})).openSession('long'); }}"
             ),
             "state => state.active === 'long' && !state.loading && state.historyLoaded",
         )
@@ -695,7 +693,7 @@ def switching(bench, *, network=False):
             times.append(
                 bench.time_to(
                     lambda sid=sid: bench.page.evaluate(
-                        "async (sid) => { (await import('/static/store.js')).openSession(sid); }",
+                        f"async (sid) => {{ (await import({STORE_URL})).openSession(sid); }}",
                         sid,
                     ),
                     f"state => state.active === {sid!r} && !state.loading && state.historyLoaded",
@@ -740,9 +738,7 @@ def sidebar(bench):
     result = dict(bench.memory())
     search = bench.page.get_by_label("Search sessions")
     if not search.is_visible():
-        bench.page.evaluate(
-            "async () => (await import('/static/store.js')).update({ sidebar: true })"
-        )
+        bench.page.evaluate(f"async () => (await import({STORE_URL})).update({{ sidebar: true }})")
     search.wait_for()
     typed = {}
     with bench.span(typed):
@@ -804,7 +800,7 @@ def paged_session(bench, turns=1000):
     bench.sign_in(bench.url)
     bench.open_session("paged")
     bench.throttle(network=False)
-    more = "async () => (await import('/static/store.js')).state.historyHasMore"
+    more = f"async () => (await import({STORE_URL})).state.historyHasMore"
     button = bench.page.locator(".conversation-content > .load-more")
     idle = "state => !document.querySelector('.conversation-content > .load-more[disabled]')"
     pages = []
@@ -902,7 +898,9 @@ def run_scenario(runtime, name, profile):
             password_hash=hash_password(PASSWORD),
             signing_key="perf-signing-key",
         )
-        server, thread, address = serve(create_app(settings, Path(home) / "config.json"))
+        server, thread, address = serve(
+            create_app(settings, Path(home) / "config.json", immutable_assets=True)
+        )
         bench = Bench(runtime, profile, peer)
         bench.url = address
         try:

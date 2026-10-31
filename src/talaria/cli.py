@@ -119,7 +119,9 @@ def serve():
 
         record(host, port)
     run(
-        "talaria.cli:development_app" if args.dev else create_app(settings, args.config),
+        "talaria.cli:development_app"
+        if args.dev
+        else create_app(settings, args.config, immutable_assets=True),
         factory=args.dev,
         reload=args.dev,
         reload_dirs=[str(Path(__file__).parent)] if args.dev else None,
