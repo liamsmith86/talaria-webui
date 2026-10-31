@@ -1,7 +1,6 @@
 import {
   html,
   memo,
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -628,9 +627,11 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
   useLayoutEffect(() => {
     if (sticky.current) follow();
   }, [app.history, live?.tools.length, live?.approval, live?.clarification, follow]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     // Revealed text can grow between network updates. Follow its actual size,
-    // including code highlighting, while respecting a reader scrolling up.
+    // including code highlighting, while respecting a reader scrolling up. Observing
+    // before the first paint matters: a new message is first laid out at its estimated
+    // height, and this delivers its real one before that frame is drawn.
     const content = scroll.current?.querySelector(".conversation-content");
     if (!content) return;
     const observer = new ResizeObserver(() => {

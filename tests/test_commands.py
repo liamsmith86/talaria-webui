@@ -127,7 +127,7 @@ def layout(page):
         """() => [...document.querySelector('.conversation-content').children]
           .filter(c => c.matches('.message,.command-card'))
           .map(c => c.matches('.notice') ? 'compacted' : c.matches('.command-card') ? 'card'
-            : c.querySelector('.user-content,.message-text')?.innerText.trim().split('.')[0])"""
+            : c.querySelector('.user-content,.message-text')?.textContent.trim().split('.')[0])"""
     )
 
 

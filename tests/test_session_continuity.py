@@ -124,8 +124,11 @@ def test_focus_catches_external_changes_without_erasing_draft_or_selection(page,
             document.dispatchEvent(new Event('visibilitychange'));
         }
     }""")
-    expect(page.get_by_text("Externally added", exact=True)).to_be_attached()
-    expect(page.get_by_role("link", name="Renamed elsewhere", exact=True)).to_be_visible()
+    # Not by Playwright's text or role lookups: those render every message that is
+    # skipping rendering, which moves things in a way a reader's browser never does.
+    page.wait_for_function("""() => [...document.querySelectorAll('.message-text p')]
+        .some(e => e.textContent === 'Externally added')""")
+    expect(page.locator(".session-row a", has_text="Renamed elsewhere")).to_be_visible()
     expect(composer).to_have_value("My unsent draft")
     assert page.evaluate("getSelection().toString()") == "Message 041"
     assert (

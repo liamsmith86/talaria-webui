@@ -275,6 +275,43 @@ def test_session_opens_at_its_latest_message_in_its_first_frame(page):
     assert distance < 3
 
 
+def test_offscreen_messages_skip_rendering_and_keep_their_place(page):
+    result = page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      const nextFrame=()=>new Promise(requestAnimationFrame);
+      update({active:'long',loading:false,caps:{features:{}},sessions:[],lives:{},
+        history:Array.from({length:60},(_,i)=>({id:i+1,role:i%2?'assistant':'user',
+          content:('Paragraph '+i+'. ').repeat(i%2?150:1)}))});
+      await nextFrame();
+      await Promise.allSettled(document.querySelector('.conversation-content')
+        .getAnimations({subtree:true}).map(animation=>animation.finished));
+      await nextFrame();
+      await nextFrame();
+      const messages=[...document.querySelectorAll('.message')];
+      const rendered=messages.filter(message=>message.firstElementChild
+        .checkVisibility({contentVisibilityAuto:true})).length;
+      // Scrolling up replaces estimates with real heights, which mustn't move what's on screen.
+      const viewport=document.querySelector('.conversation-viewport');
+      const box=viewport.getBoundingClientRect();
+      const middle=(box.top+box.bottom)/2;
+      let drift=0;
+      while(viewport.scrollTop>400) {
+        const anchor=messages.find(message=>message.getBoundingClientRect().bottom>=middle);
+        const before=anchor.getBoundingClientRect().top;
+        viewport.scrollTop-=400;
+        await nextFrame();
+        await nextFrame();
+        drift=Math.max(drift,Math.abs(anchor.getBoundingClientRect().top-before-400));
+      }
+      return {rendered,drift,total:messages.length,
+        contained:CSS.supports('content-visibility','auto')&&CSS.supports('overflow-anchor','auto')};
+    }""")
+    assert result["total"] == 60
+    # WebKit can't hold a reader's place through a height change, so it renders everything.
+    assert result["rendered"] < 20 if result["contained"] else result["rendered"] == 60
+    assert result["drift"] < 2
+
+
 def test_text_deltas_reuse_sidebar_rows_and_tool_cards(page):
     result = page.evaluate("""async () => {
       const {state,update}=await import('/static/store.js');

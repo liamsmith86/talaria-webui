@@ -177,6 +177,22 @@
   align-items: flex-end;
   margin-bottom: 30px;
 }
+/* Nearly all of a transcript is off screen. Skip its style, layout and paint, for
+   switching sessions, opening anything that makes the page inert, and every frame
+   after. A message's real height replaces the estimate as it nears the screen, which
+   only scroll anchoring can do without moving what the reader is looking at. A trade-off
+   we accept: Chromium keeps skipped text out of the accessibility tree until then. */
+@supports (content-visibility: auto) and (overflow-anchor: auto) {
+  .message {
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 800px;
+    /* Paint containment must not clip hover rows, or focus rings at a message's edge. */
+    overflow-clip-margin: 12px;
+  }
+  .message.user {
+    contain-intrinsic-block-size: auto 100px;
+  }
+}
 .user-content {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
