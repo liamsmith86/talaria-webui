@@ -1,4 +1,4 @@
-import { html, useEffect, useLayoutEffect, useMemo, useRef, useState } from "./lib.js";
+import { html, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "./lib.js";
 import { marked } from "./vendor/marked.js";
 import DOMPurify from "./vendor/purify.js";
 import { MarkdownStream, flatList } from "./markdown-stream.js";
@@ -57,6 +57,34 @@ export function renderMarkdown(text, highlight = true) {
   );
 }
 
+const inline = (tokens) => sanitize(marked.Parser.parseInline(tokens, marked.defaults));
+const TableRow = memo(({ cells }) => html`<tr>
+  ${cells.map((cell) => {
+    const tag = cell.header ? "th" : "td";
+    return html`<${tag}
+      align=${cell.align || undefined}
+      dangerouslySetInnerHTML=${{ __html: inline(cell.tokens) }}
+    />`;
+  })}
+</tr>`);
+const ListItem = memo(({ item }) => html`<li
+  dangerouslySetInnerHTML=${{ __html: inline(item.tokens[0]?.tokens || []) }}
+/>`);
+const Block = memo(({ block }) => {
+  if (block.content) return html`<div class="markdown-block">${block.content}</div>`;
+  if (block.parts)
+    return html`<div class="markdown-block">
+      <p>
+        ${block.parts.map((part, i) => html`<span
+          class="markdown-inline"
+          key=${i}
+          dangerouslySetInnerHTML=${{ __html: part.markup }}
+        />`)}
+      </p>
+    </div>`;
+  return html`<div class="markdown-block" dangerouslySetInnerHTML=${{ __html: block.markup }} />`;
+});
+
 function copyLabel(button) {
   if (button.dataset.copyState === "copied") return t("Copied");
   if (button.dataset.copyState === "failed") return t("Select text to copy");
@@ -91,6 +119,8 @@ export function Markdown({
     !deferHighlight || nearby || !globalThis.IntersectionObserver;
   useEffect(() => {
     if (highlightVisible || !root.current) return;
+    // Saved text without code has nothing to highlight on approach.
+    if (!streamed.current && !root.current.querySelector(".code-block")) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
@@ -98,30 +128,16 @@ export function Markdown({
           observer.disconnect();
         }
       },
-      { rootMargin: "300px" },
+      // The margin only reaches past the viewport from the element that scrolls.
+      { root: root.current.closest(".conversation-viewport"), rootMargin: "300px" },
     );
     observer.observe(root.current);
     return () => observer.disconnect();
-  }, [highlightVisible]);
+  }, [text, highlightVisible]);
+  // A saved message is highlighted in place below, so approaching it must not parse it again.
+  const highlightBlocks = (streamed.current || streaming) && highlightVisible;
   const previous = useRef([]);
   const scanner = useRef(new MarkdownStream());
-  const pieces = useRef(new WeakMap());
-  function row(cells, index) {
-    let view = pieces.current.get(cells);
-    if (!view) {
-      view = html`<tr key=${index}>
-        ${cells.map((cell) => {
-          const tag = cell.header ? "th" : "td";
-          return html`<${tag}
-            align=${cell.align || undefined}
-            dangerouslySetInnerHTML=${{ __html: sanitize(marked.Parser.parseInline(cell.tokens, marked.defaults)) }}
-          />`;
-        })}
-      </tr>`;
-      pieces.current.set(cells, view);
-    }
-    return view;
-  }
   const blocks = useMemo(() => {
     streamed.current ||= streaming;
     // Saved messages need one sanitization pass. Offscreen code stays readable
@@ -133,7 +149,7 @@ export function Markdown({
     const visible = tokens.filter((token) => token.type !== "space");
     const next = visible.map((token, index) => {
       const highlight =
-        highlightVisible && (!streaming || index < visible.length - 1);
+        highlightBlocks && (!streaming || index < visible.length - 1);
       const old = previous.current[index];
       if (
         old?.raw === token.raw &&
@@ -203,12 +219,12 @@ export function Markdown({
         >
           <table>
             <thead>
-              ${row(token.header, "header")}
+              <${TableRow} key="header" cells=${token.header} />
             </thead>
             ${
               token.rows.length > 0 &&
               html`<tbody>
-                ${token.rows.map(row)}
+                ${token.rows.map((cells, i) => html`<${TableRow} key=${i} cells=${cells} />`)}
               </tbody>`
             }
           </table>
@@ -220,17 +236,7 @@ export function Markdown({
           );
         const tag = token.ordered ? "ol" : "ul";
         block.content = html`<${tag} start=${token.ordered && token.start !== 1 ? token.start : undefined}>
-          ${token.items.map((item, i) => {
-            let view = pieces.current.get(item);
-            if (!view) {
-              view = html`<li
-                key=${i}
-                dangerouslySetInnerHTML=${{ __html: sanitize(marked.Parser.parseInline(item.tokens[0]?.tokens || [], marked.defaults)) }}
-              />`;
-              pieces.current.set(item, view);
-            }
-            return view;
-          })}
+          ${token.items.map((item, i) => html`<${ListItem} key=${i} item=${item} />`)}
         </${tag}>`;
       }
       if (block.content) return block;
@@ -265,7 +271,7 @@ export function Markdown({
     });
     previous.current = next;
     return next;
-  }, [text, streaming, highlightVisible, deferHighlight, smooth]);
+  }, [text, streaming, highlightBlocks, deferHighlight, smooth]);
   useLayoutEffect(() => {
     // Update owned labels in place. Locale changes must not reparse Markdown,
     // replace code nodes, or discard focus, selection, scrolling, and copy state.
@@ -310,30 +316,6 @@ export function Markdown({
       }
     }}
   >
-    ${blocks.map(
-      (block, index) =>
-        (block.view ||= block.content
-          ? html`<div class="markdown-block" key=${index}>
-              ${block.content}
-            </div>`
-          : block.parts
-            ? html`<div class="markdown-block" key=${index}>
-                <p>
-                  ${block.parts.map(
-                (part, i) =>
-                  html`<span
-                    class="markdown-inline"
-                    key=${i}
-                    dangerouslySetInnerHTML=${{ __html: part.markup }}
-                  />`,
-              )}
-                </p>
-              </div>`
-            : html`<div
-                class="markdown-block"
-                key=${index}
-                dangerouslySetInnerHTML=${{ __html: block.markup }}
-              />`),
-    )}
+    ${blocks.map((block, index) => html`<${Block} key=${index} block=${block} />`)}
   </div>`;
 }

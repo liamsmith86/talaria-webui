@@ -1,7 +1,7 @@
 import {
   state, openSession, newConversation, revalidateSessions, refreshHistory, refreshCommands,
   refreshActivity, refreshSessionDetails, navigationVersion, navigationSignal, fail, update,
-  beforeHistoryUpdate,
+  beforeHistoryUpdate, holdsNewestSaved,
 } from "./store.js";
 import { selectedSession, selectedMessage } from "./session-navigation.js";
 import { followRun, refreshStreams, running, showOutcome } from "./runs.js";
@@ -141,7 +141,8 @@ export function observePage() {
   // Between focus changes, cheap checks follow other devices: recent sessions,
   // every session's runs, and the open session's commands and details. Its
   // transcript reloads when Hermes reports a change since the last read here.
-  // Opening reads details after the transcript, so the first check always reads.
+  // Opening reads details after the transcript, so the first check has nothing to
+  // compare them with, and confirms the transcript has the newest saved row instead.
   let ticking, read = "";
   async function tick() {
     const id = state.active, generation = navigationVersion();
@@ -155,7 +156,9 @@ export function observePage() {
           tasks.push(refreshSessionDetails(id).then(async (session) => {
             const seen = `${generation}:${changes(session)}`;
             if (seen === read || stopped || running(id)) return;
-            await refreshHistory(id, () => !stopped && generation === navigationVersion());
+            const first = !read.startsWith(`${generation}:`);
+            if (!first || !await holdsNewestSaved(id))
+              await refreshHistory(id, () => !stopped && generation === navigationVersion());
             read = seen;
           }));
         }

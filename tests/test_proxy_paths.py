@@ -1,15 +1,68 @@
 """Public subpaths must preserve authentication, assets, profiles, and streaming."""
 
+import re
+import shutil
+
 import httpx
 import pytest
 from playwright.sync_api import expect
 
+from talaria import app as application
 from talaria.app import create_app
 from talaria.auth import hash_password
 from talaria.config import Settings, validate_public_url
 
 from .conftest import capture_browser_errors, serve
 from .fake_hermes import KEY, FakeHermes
+
+
+@pytest.mark.parametrize("path", ["", "/apps/talaria"])
+async def test_a_build_directory_is_immutable_and_names_its_contents(tmp_path, monkeypatch, path):
+    settings = Settings(
+        public_url="https://example.com" + path,
+        password_hash=hash_password("test-password"),
+        signing_key="key",
+        api_key=KEY,
+    )
+
+    async def entry(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url="https://example.com"
+        ) as client:
+            page = await client.get(path + "/")
+            assert page.headers["cache-control"] == "no-store"
+            return page.text, re.search(r'src="([^"]+/)boot\.js"', page.text)[1]
+
+    app = create_app(settings, tmp_path / "config.json", immutable_assets=True)
+    document, build = await entry(app)
+    assert re.fullmatch(rf"{path}/static/build-[a-f0-9]{{16}}/", build)
+    # Only the manifest stays put: it holds the installed app's identity and scope.
+    stable = set(re.findall(rf'"{path}/static/(?!build-)([^"]+)"', document))
+    assert stable == {"app.webmanifest"}
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app), base_url="https://example.com"
+    ) as client:
+        for asset in ["app.js", "paths.js", "styles/theme.css", "vendor/inter.woff2"]:
+            response = await client.get(build + asset)
+            assert response.status_code == 200
+            assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+        # Release checks and tabs from before this scheme use the stable names.
+        assert (await client.get(path + "/static/app.js")).headers["cache-control"] == "no-cache"
+
+    # Any changed file moves every file, so a browser can never mix two builds.
+    assets = tmp_path / "release"
+    shutil.copytree(application.STATIC, assets)
+    with (assets / "lib.js").open("a") as file:
+        file.write("\n// A new release.\n")
+    monkeypatch.setattr(application, "STATIC", assets)
+    replacement = create_app(settings, tmp_path / "config.json", immutable_assets=True)
+    _, next_build = await entry(replacement)
+    assert next_build != build
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(replacement), base_url="https://example.com"
+    ) as client:
+        assert (await client.get(build + "lib.js")).status_code == 404
+        assert (await client.get(next_build + "lib.js")).text.endswith("// A new release.\n")
 
 
 @pytest.mark.parametrize("path", ["/telaria", "/apps/talaria", "/v1"])

@@ -7,12 +7,12 @@ from urllib.parse import urljoin
 import pytest
 from playwright.sync_api import expect
 
-from .conftest import browser_context, wait_for_store, wait_in_browser
+from .conftest import STORE_URL, browser_context, wait_for_store, wait_in_browser
 from .test_conversation_features import seed
 
 
 def open_session(page, sid):
-    page.evaluate("async id => (await import('/static/store.js')).openSession(id)", sid)
+    page.evaluate(f"async id => (await import({STORE_URL})).openSession(id)", sid)
 
 
 def refresh(page, sid):
@@ -124,8 +124,11 @@ def test_focus_catches_external_changes_without_erasing_draft_or_selection(page,
             document.dispatchEvent(new Event('visibilitychange'));
         }
     }""")
-    expect(page.get_by_text("Externally added", exact=True)).to_be_attached()
-    expect(page.get_by_role("link", name="Renamed elsewhere", exact=True)).to_be_visible()
+    # Not by Playwright's text or role lookups: those render every message that is
+    # skipping rendering, which moves things in a way a reader's browser never does.
+    page.wait_for_function("""() => [...document.querySelectorAll('.message-text p')]
+        .some(e => e.textContent === 'Externally added')""")
+    expect(page.locator(".session-row a", has_text="Renamed elsewhere")).to_be_visible()
     expect(composer).to_have_value("My unsent draft")
     assert page.evaluate("getSelection().toString()") == "Message 041"
     assert (
@@ -162,10 +165,14 @@ def test_open_session_follows_other_devices_without_focus(page, live_app):
                 page.wait_for_timeout(50)  # Fixed wait: the interval of this poll.
         raise AssertionError(finished)
 
-    # The first check reads the transcript, which may have changed during the open.
+    # The transcript may have changed during the open: the first check asks, without reloading it.
     with page.expect_event("requestfinished", lambda request: "/messages" in request.url):
         revalidate()
-    # Nothing changed since: the check doesn't reload it.
+    page.clock.run_for(1000)
+    assert [url for url in finished if "/messages" in url] == [
+        f"{live_app[0]}/api/sessions/{sid}/messages?limit=1"
+    ]
+    # Nothing changed since: the check doesn't read it at all.
     revalidate()
     page.clock.run_for(1000)
     assert not [url for url in finished if "/messages" in url]
@@ -177,6 +184,26 @@ def test_open_session_follows_other_devices_without_focus(page, live_app):
     revalidate()
     expect(page.get_by_text("Answered on another laptop", exact=True)).to_be_visible()
     expect(page.get_by_role("link", name="Renamed on another laptop", exact=True)).to_be_visible()
+
+
+@pytest.mark.clock
+def test_a_first_check_reloads_a_transcript_that_changed_during_the_open(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "watched", count=2)
+    open_session(page, sid)
+    expect(page.get_by_text("Message 001", exact=True)).to_be_visible()
+    wait_for_store(page, "s => !!s.sessionDetails")
+    # Details first read after this, as when another device answers between the two reads.
+    peer.messages[sid].append(
+        {"id": 3, "role": "assistant", "content": "Answered during the open", "timestamp": 5.0}
+    )
+    wait_in_browser(
+        page,
+        lambda: (
+            page.clock.fast_forward(15001)
+            or page.get_by_text("Answered during the open", exact=True).is_visible()
+        ),
+    )
 
 
 @pytest.mark.clock

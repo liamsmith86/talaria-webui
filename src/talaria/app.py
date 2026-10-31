@@ -41,6 +41,7 @@ from .session_state import SessionState, StateUnavailable
 
 STATIC = Path(__file__).parent / "static"
 STATE_UNAVAILABLE = "Talaria could not use its saved session data. Its server log has the reason."
+IMMUTABLE = "public, max-age=31536000, immutable"
 log = logging.getLogger(__name__)
 
 
@@ -110,12 +111,46 @@ class BrowserBoundary:
 
 
 class Assets(StaticFiles):
+    def __init__(self, *, cache_control="no-cache", **kwargs):
+        super().__init__(**kwargs)
+        self.cache_control = cache_control
+
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
-        # Filenames are stable across releases: revalidate with ETag instead of
-        # risking a mixture of cached modules from different app versions.
-        response.headers["Cache-Control"] = "no-cache"
+        # Stable filenames revalidate with ETag instead of risking a mixture of
+        # cached modules from different app versions. A build's own directory never
+        # changes, so browsers keep its files without asking.
+        response.headers["Cache-Control"] = self.cache_control
         return response
+
+
+def build_path(directory, seed=b""):
+    """A static path naming this exact build, so its relative imports stay within it."""
+    digest = hashlib.sha256(seed)
+    for path in sorted(directory.rglob("*")):
+        if path.is_file():
+            digest.update(path.relative_to(directory).as_posix().encode() + b"\0")
+            digest.update(path.read_bytes())
+    return f"static/build-{digest.hexdigest()[:16]}/"
+
+
+def in_build(document, build):
+    return (
+        document.replace("__TALARIA_BASE__static/", "__TALARIA_BASE__" + build)
+        # The manifest keeps its stable installation identity and launch scope.
+        .replace(build + "app.webmanifest", "static/app.webmanifest")
+    )
+
+
+def asset_routes(immutable):
+    """The static mounts, and the document that loads its assets from them."""
+    document = (STATIC / "index.html").read_text()
+    stable = Mount("/static", Assets(directory=STATIC))
+    if not immutable:
+        return [stable], document
+    build = build_path(STATIC)
+    named = Mount("/" + build.rstrip("/"), Assets(directory=STATIC, cache_control=IMMUTABLE))
+    return [named, stable], in_build(document, build)
 
 
 async def index(request):
@@ -159,6 +194,7 @@ def create_app(
     *,
     transport=None,
     development=False,
+    immutable_assets=False,
     profiles=None,
     profile_id="default",
 ) -> Starlette:
@@ -171,6 +207,7 @@ def create_app(
             await app.state.command_followers.close()
             await app.state.profiles.close()
 
+    assets, index_html = asset_routes(immutable_assets)
     app = Starlette(
         lifespan=lifespan,
         exception_handlers={
@@ -225,10 +262,7 @@ def create_app(
             Route("/api/runs/{run_id}", routes.run),
             Route("/api/runs/{run_id}/discard", routes.discard, methods=["POST"]),
             Route("/api/runs/{run_id}/{action}", routes.control, methods=["POST"]),
-            Mount(
-                "/static",
-                GZipMiddleware(Assets(directory=STATIC), minimum_size=1024, compresslevel=6),
-            ),
+            *assets,
         ],
     )
     app.state.settings, app.state.config_path = settings, config_path
@@ -237,7 +271,7 @@ def create_app(
     app.state.cookie_name = "talaria_dev_session" if development else auth.COOKIE
     if settings.base_path:
         app.state.cookie_name += "_" + hashlib.sha256(settings.base_path.encode()).hexdigest()[:10]
-    app.state.index_html = (STATIC / "index.html").read_text()
+    app.state.index_html = index_html
     # Resolve runtime secrets separately from settings so saves never persist them.
     key = os.environ.get("TALARIA_HERMES_API_KEY") if profile_id == "default" else None
     if key is not None and (not valid_api_key(key) or len(key) > 4096):
@@ -265,6 +299,8 @@ def create_app(
     )
     if profiles is None:
         app.add_middleware(ProfileRouter, profiles=app.state.profiles)
+        # Outside every profile's app. Starlette leaves event streams uncompressed.
+        app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
         app.add_middleware(BrowserBoundary)
         app.add_middleware(SecurityHeaders)
         app.add_middleware(PublicPath, prefix=settings.base_path)

@@ -18,3 +18,7 @@ hermes_agent._active_session_turn_lease_ttl_seconds  # noqa: B018
 # sqlite3 reads this connection attribute to build mapping rows.
 sqlite_connection = SimpleNamespace()
 sqlite_connection.row_factory  # noqa: B018
+
+# Read by Uvicorn's server loop; contrib/perf.py sets it to stop its servers.
+uvicorn_server = SimpleNamespace()
+uvicorn_server.should_exit  # noqa: B018

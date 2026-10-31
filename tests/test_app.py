@@ -46,6 +46,7 @@ def test_session_lifecycle(live_app):
             client.patch(f"/api/sessions/{sid}", json={"title": "A better thought"}).status_code
             == 200
         )
+        live_app[1].messages[sid] = [{"id": 1, "role": "user", "content": "A thought"}]
         fork = client.post(f"/api/sessions/{sid}/fork", json={"title": "A branch"}).json()
         assert fork["id"] != sid
         assert len(client.get("/api/sessions").json()["data"]) == 2

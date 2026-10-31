@@ -35,7 +35,9 @@ export class MarkdownStream {
     } else if (delta && this.extend(delta)) {
       tokens = this.tokens;
     } else {
-      const tail = marked.lexer(source.slice(this.offset));
+      // Tokens are substrings of what the lexer reads, and a substring keeps its whole
+      // parent alive. Read a copy, so a finished block can't pin the reply as it stood.
+      const tail = marked.lexer(structuredClone(source.slice(this.offset)));
       if (Object.keys(tail.links).length) {
         tokens = marked.lexer(source);
         this.offset = this.count = 0;

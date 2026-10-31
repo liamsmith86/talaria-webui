@@ -104,6 +104,8 @@ export async function enableDemo(signal, version, pluginVersion) {
     }
     if (method === "DELETE" && !action) { sessions.delete(session.id); return {}; }
     if (method === "POST" && action === "fork") {
+      if (!session.messages.length)
+        throw new RequestError(msg("This session has no chat history to branch."), 409, "no_history");
       const index = body.message_id === undefined ? session.messages.length - 1
         : session.messages.findIndex((message) => message.id === body.message_id && message.role === "assistant");
       if (index < 0 && body.message_id !== undefined) return missing();

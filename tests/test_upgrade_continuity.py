@@ -4,6 +4,7 @@ import shutil
 from urllib.parse import urlsplit
 
 import httpx
+import pytest
 from playwright.sync_api import expect
 
 from talaria import app as application
@@ -16,7 +17,10 @@ from .test_conversation_features import seed
 from .test_session_continuity import open_session
 
 
-def test_old_tab_keeps_draft_and_auth_across_service_cutover(browser, tmp_path, monkeypatch):
+@pytest.mark.parametrize("immutable", [False, True])
+def test_old_tab_keeps_draft_and_auth_across_service_cutover(
+    browser, tmp_path, monkeypatch, immutable
+):
     peer = FakeHermes()
     upstream, upstream_thread, native_url = serve(peer.app)
     settings = Settings(
@@ -25,7 +29,7 @@ def test_old_tab_keeps_draft_and_auth_across_service_cutover(browser, tmp_path, 
         password_hash=hash_password("test-password"),
         signing_key="fixture-key",
     )
-    old = application.create_app(settings, tmp_path / "config.json")
+    old = application.create_app(settings, tmp_path / "config.json", immutable_assets=immutable)
     server, thread, address = serve(old)
     context = browser.new_context()
     errors = capture_browser_errors(context)
@@ -46,7 +50,9 @@ def test_old_tab_keeps_draft_and_auth_across_service_cutover(browser, tmp_path, 
         with (assets / "lib.js").open("a") as file:
             file.write('\nwindow.releaseProbe = "replacement";\n')
         monkeypatch.setattr(application, "STATIC", assets)
-        replacement = application.create_app(settings, tmp_path / "config.json")
+        replacement = application.create_app(
+            settings, tmp_path / "config.json", immutable_assets=immutable
+        )
         server.should_exit = True
         thread.join(6)
         assert not thread.is_alive()

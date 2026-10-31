@@ -157,11 +157,18 @@
   margin: 0 auto;
   min-height: 100%;
   padding-top: 20px;
+  /* One animation for a whole transcript: one per message promotes each to a layer. */
+  animation: fade-in 0.2s ease;
+}
+.conversation-content.is-loading {
+  animation: none;
+}
+.message.live {
+  animation: arrive 0.2s ease;
 }
 .message {
   position: relative;
   margin: 0 0 29px;
-  animation: arrive 0.2s ease;
   min-width: 0;
 }
 .message.user {
@@ -169,6 +176,25 @@
   flex-direction: column;
   align-items: flex-end;
   margin-bottom: 30px;
+}
+/* Nearly all of a transcript is off screen. Skip its style, layout and paint, for
+   switching sessions, opening anything that makes the page inert, and every frame
+   after. A message's real height replaces the estimate as it nears the screen, and only
+   Blink holds the reader's place through that: Firefox 153 and WebKit 26.5 move the text
+   by up to 190 px on the way up. Only Blink has app-region, so this selects the engine,
+   and test_offscreen_messages_skip_rendering_and_keep_their_place fails if another
+   engine gains it without holding the place. A trade-off we accept: Chromium keeps
+   skipped text out of the accessibility tree until it nears the screen. */
+@supports (content-visibility: auto) and (app-region: none) {
+  .message {
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 800px;
+    /* Paint containment must not clip hover rows, or focus rings at a message's edge. */
+    overflow-clip-margin: 12px;
+  }
+  .message.user {
+    contain-intrinsic-block-size: auto 100px;
+  }
 }
 .user-content {
   white-space: pre-wrap;
@@ -777,6 +803,44 @@
 }
 .history-loading {
   padding: 20px 0;
+}
+.conversation-content.is-empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.no-chat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  /* Sits above true centre, where a reader's eye expects it. */
+  padding: 24px 24px 12vh;
+  text-align: center;
+  text-wrap: balance;
+  animation: arrive 0.2s ease;
+}
+.no-chat-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 11px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  color: var(--faint);
+}
+.no-chat strong {
+  font-size: 15.5px;
+  font-weight: 500;
+  letter-spacing: -0.1px;
+}
+.no-chat p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
 }
 .skeleton {
   height: 12px;

@@ -88,7 +88,8 @@ def serve(app, port=0):
     # Some hosts allocate low ephemeral ports, including browser-blocked ports.
     # Keep the socket bound while selecting a port outside that range.
     while True:
-        sock = socket.socket()
+        # Naming TCP matters: asyncio sets TCP_NODELAY only then, as for a production bind.
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind(("127.0.0.1", port))
         bound_port = sock.getsockname()[1]
@@ -282,10 +283,17 @@ def wait_for_timer(page, delay):
     page.wait_for_function("d => [...heldTimers.values()].some((t) => t.delay === d)", arg=delay)
 
 
+# The store instance the page runs, wherever its document loaded the modules from.
+STORE_URL = (
+    "new URL('store.js', document.querySelector('script[type=module]')?.src"
+    " ?? new URL('/static/', location))"
+)
+
+
 def wait_for_store(page, predicate):
     # Playwright polls synchronously: an async predicate is a truthy Promise,
     # so it can resolve false once instead of waiting for the desired state.
-    state = page.evaluate_handle("async () => (await import('/static/store.js')).state")
+    state = page.evaluate_handle(f"async () => (await import({STORE_URL})).state")
     try:
         page.wait_for_function(predicate, arg=state)
     finally:

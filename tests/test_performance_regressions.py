@@ -1,9 +1,17 @@
 import gzip
+import socket
 
 import httpx
 import pytest
 from playwright.sync_api import expect
 
+from talaria import server as talaria_server
+from talaria.app import create_app
+from talaria.auth import hash_password
+from talaria.config import Settings
+
+from .conftest import browser_context, serve
+from .fake_hermes import KEY
 from .test_app import signed_in
 
 
@@ -35,6 +43,68 @@ def test_static_compression_revalidation_and_uncompressed_event_streams(live_app
             assert response.headers["content-type"].startswith("text/event-stream")
             first = next(line for line in response.iter_lines() if line.startswith("data:"))
             assert first
+
+
+def test_a_memoized_view_skips_renders_but_keeps_its_own_state(module_page):
+    # A view rendered inline would put its hooks on the memo, whose props check then
+    # discards each state update: an edit box in a saved message would stop responding.
+    result = module_page.evaluate("""async () => {
+      const {html, memo, render, useState} = await import('/static/lib.js');
+      const root = document.createElement('div');
+      document.body.append(root);
+      const settle = () => new Promise((done) => requestAnimationFrame(() => setTimeout(done)));
+      let renders = 0, bump;
+      const View = memo(({label}) => {
+        renders++;
+        const [count, setCount] = useState(0);
+        bump = () => setCount((value) => value + 1);
+        return html`<output>${label} ${count}</output>`;
+      });
+      try {
+        render(html`<${View} label="first" />`, root);
+        render(html`<${View} label="first" />`, root);
+        const skipped = renders;
+        bump();
+        await settle();
+        const updated = root.textContent;
+        render(html`<${View} label="second" />`, root);
+        return {skipped, updated, changed: root.textContent};
+      } finally {
+        render(null, root);
+        root.remove();
+      }
+    }""")
+    assert result == {"skipped": 1, "updated": "first 1", "changed": "second 1"}
+
+
+def test_templates_do_not_keep_the_vnodes_of_static_elements(module_page):
+    # A VNode kept for the life of the page points at the tree it first rendered in, so
+    # one static element would hold a finished conversation and all of its DOM.
+    assert module_page.evaluate("""async () => {
+      const {html} = await import('/static/lib.js');
+      const view = (title) => html`<div title=${title}><span /></div>`;
+      return view('first').props.children !== view('second').props.children;
+    }""")
+
+
+def test_reading_a_transcript_compresses_it(live_app):
+    url, peer = live_app[0], live_app[1]
+    peer.sessions["long"] = {"id": "long", "title": "Long", "source": "api_server"}
+    prose = " ".join(f"The {index} plan keeps the relay honest." for index in range(40))
+    peer.messages["long"] = [
+        {"id": index + 1, "role": "assistant", "content": prose} for index in range(60)
+    ]
+    with (
+        signed_in(url) as client,
+        client.stream(
+            "GET", "/api/sessions/long/messages", headers={"Accept-Encoding": "gzip"}
+        ) as response,
+    ):
+        sent = b"".join(response.iter_raw())
+        assert response.headers["content-encoding"] == "gzip"
+        assert "Accept-Encoding" in response.headers["vary"]
+        assert response.headers["cache-control"] == "no-store"
+    assert len(gzip.decompress(sent)) > 3 * len(sent)
 
 
 def test_restoration_prioritizes_visible_run_with_bounded_concurrency(module_page):
@@ -110,6 +180,36 @@ def test_historical_code_highlights_on_approach_and_find_still_reaches_it(page):
     expect(first.locator("code")).to_be_in_viewport()
 
 
+def test_saved_message_parses_once_and_only_code_waits_for_approach(page):
+    result = page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      const {marked}=await import('/static/vendor/marked.js');
+      const proto=IntersectionObserver.prototype,observe=proto.observe,parse=marked.parse;
+      let watched=0,parses=0;
+      proto.observe=function(target){
+        if(target.matches('.markdown'))watched++;
+        return observe.call(this,target);
+      };
+      marked.parse=(...args)=>{parses++;return parse(...args)};
+      try {
+        update({active:'parsed',sessions:[{id:'parsed',title:'Parsed'}],loading:false,history:[
+          {id:1,role:'assistant',content:'```javascript\\nconst oldest = 42;\\n```'},
+          ...Array.from({length:60},(_,i)=>({id:i+2,role:'assistant',content:'Plain reply '+i})),
+        ]});
+        await new Promise(resolve=>setTimeout(resolve,200));
+        const counts={watched,parses};
+        document.querySelector('.message').scrollIntoView();
+        while(!document.querySelector('.message .token'))
+          await new Promise(resolve=>setTimeout(resolve,20));
+        return {...counts,reparsed:parses-counts.parses};
+      } finally {
+        proto.observe=observe;
+        marked.parse=parse;
+      }
+    }""")
+    assert result == {"watched": 1, "parses": 61, "reparsed": 0}
+
+
 @pytest.mark.parametrize("payload_size", [50000, 1000000])
 def test_completed_response_cache_is_bounded_without_losing_recovery_state(page, payload_size):
     page.evaluate(
@@ -140,6 +240,76 @@ def test_completed_response_cache_is_bounded_without_losing_recovery_state(page,
     }""")
     count = min(16, (8 * 1024 * 1024) // (payload_size * 2))
     assert result == {"cached": count, "bytes": count * payload_size, "protected": True}
+
+
+def test_opening_a_session_runs_one_entrance_and_a_reply_runs_its_own(page):
+    result = page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      const nextFrame=()=>new Promise(requestAnimationFrame);
+      update({active:'opening',loading:false,caps:{features:{}},sessions:[],lives:{},
+        history:Array.from({length:40},(_,i)=>({id:i+1,role:i%2?'assistant':'user',
+          content:'Saved message '+i}))});
+      await nextFrame();
+      const opened=[...document.querySelectorAll('.message')]
+        .filter(message=>message.getAnimations().length).length;
+      update({lives:{opening:{id:'run',requestId:'request',status:'running',text:'Reply',tools:[],
+        baseHistoryLength:40,baseMessageId:40,createdAt:Date.now()}}});
+      await nextFrame();
+      return {opened,
+        reply:document.querySelector('.message.live')?.getAnimations()
+          .map(animation=>animation.animationName)};
+    }""")
+    assert result == {"opened": 0, "reply": ["arrive"]}
+
+
+def test_session_opens_at_its_latest_message_in_its_first_frame(page):
+    distance = page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      update({active:'opening',loading:false,caps:{features:{}},sessions:[],lives:{},
+        history:Array.from({length:40},(_,i)=>({id:i+1,role:i%2?'assistant':'user',
+          content:('Saved message '+i+'. ').repeat(40)}))});
+      await new Promise(requestAnimationFrame);
+      const el=document.querySelector('.conversation-viewport');
+      return el.scrollHeight-el.scrollTop-el.clientHeight;
+    }""")
+    assert distance < 3
+
+
+def test_offscreen_messages_skip_rendering_and_keep_their_place(page):
+    result = page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      const nextFrame=()=>new Promise(requestAnimationFrame);
+      update({active:'long',loading:false,caps:{features:{}},sessions:[],lives:{},
+        history:Array.from({length:60},(_,i)=>({id:i+1,role:i%2?'assistant':'user',
+          content:('Paragraph '+i+'. ').repeat(i%2?150:1)}))});
+      await nextFrame();
+      await Promise.allSettled(document.querySelector('.conversation-content')
+        .getAnimations({subtree:true}).map(animation=>animation.finished));
+      await nextFrame();
+      await nextFrame();
+      const messages=[...document.querySelectorAll('.message')];
+      const rendered=messages.filter(message=>message.firstElementChild
+        .checkVisibility({contentVisibilityAuto:true})).length;
+      // Scrolling up replaces estimates with real heights, which mustn't move what's on screen.
+      const viewport=document.querySelector('.conversation-viewport');
+      const box=viewport.getBoundingClientRect();
+      const middle=(box.top+box.bottom)/2;
+      let drift=0;
+      while(viewport.scrollTop>400) {
+        const anchor=messages.find(message=>message.getBoundingClientRect().bottom>=middle);
+        const before=anchor.getBoundingClientRect().top;
+        viewport.scrollTop-=400;
+        await nextFrame();
+        await nextFrame();
+        drift=Math.max(drift,Math.abs(anchor.getBoundingClientRect().top-before-400));
+      }
+      return {rendered,drift,total:messages.length,
+        contained:getComputedStyle(messages[0]).contentVisibility==='auto'};
+    }""")
+    assert result["total"] == 60
+    # A browser that can't hold a reader's place through a height change renders everything.
+    assert result["rendered"] < 20 if result["contained"] else result["rendered"] == 60
+    assert result["drift"] < 2
 
 
 def test_text_deltas_reuse_sidebar_rows_and_tool_cards(page):
@@ -228,6 +398,30 @@ def test_find_updates_before_a_continuous_stream_stops(page):
     expect(page.locator(".find-count")).to_have_text("1 of 20")
 
 
+def test_the_home_screen_does_not_fade_in_for_longer_than_the_rest_of_the_app(page):
+    """Chromium reports the largest paint when this fade ends, and a reader waits for it too."""
+    assert (
+        page.locator(".welcome").evaluate("element => getComputedStyle(element).animationDuration")
+        == "0.2s"
+    )
+
+
+def test_typing_does_not_search_the_document_for_open_dialogs(page):
+    page.evaluate("""() => {
+      const original=document.querySelector.bind(document);
+      window.dialogSearches=0;
+      document.querySelector=selector=>{
+        if(selector==='dialog[open]')window.dialogSearches++;
+        return original(selector);
+      };
+    }""")
+    page.get_by_label("Message Hermes").press_sequentially("typing")
+    assert page.evaluate("dialogSearches") == 0
+    page.keyboard.press("Control+k")
+    expect(page.locator(".sidebar .search-field input")).to_be_focused()
+    assert page.evaluate("dialogSearches") == 1
+
+
 def test_startup_history_and_catalog_do_not_wait_for_sidebar_listing(page):
     page.evaluate("""async () => {
       const {connect,update}=await import('/static/store.js');
@@ -261,3 +455,66 @@ def test_startup_history_and_catalog_do_not_wait_for_sidebar_listing(page):
           ['/api/models','/api/readiness'].every(path=>startupCheck.calls.includes(path))""")
     finally:
         page.evaluate("async()=>{startupCheck.release?.();await startupCheck.done}")
+
+
+def test_every_server_bind_lets_asyncio_disable_nagle(monkeypatch):
+    """asyncio sets TCP_NODELAY only on a listener naming TCP. Without it each response stalls
+    about 40 ms between headers and body, which production doesn't, so a measurement must not."""
+
+    async def app(scope, receive, send):
+        raise AssertionError("Nothing connects")
+
+    server, thread, _ = serve(app)
+    try:
+        assert server.servers[0].sockets[0].proto == socket.IPPROTO_TCP
+    finally:
+        server.should_exit = True
+        thread.join(6)
+
+    reloading = []
+
+    class Reloader:
+        def __init__(self, config, target, sockets):
+            reloading.extend(sockets)
+
+        def run(self):
+            pass
+
+    monkeypatch.setattr(talaria_server, "ChangeReload", Reloader)
+    talaria_server.run(
+        "talaria.cli:development_app", factory=True, reload=True, host="127.0.0.1", port=0
+    )
+    assert reloading[0].proto == socket.IPPROTO_TCP
+
+
+def test_a_return_visit_asks_the_server_for_no_assets(browser, tmp_path):
+    """Each revalidation costs a round trip, and only six run at once on HTTP/1.1."""
+    settings = Settings(
+        api_key=KEY, password_hash=hash_password("test-password"), signing_key="fixture-key"
+    )
+    app = create_app(settings, tmp_path / "config.json", immutable_assets=True)
+    assets = []
+
+    async def counting(scope, receive, send):
+        if scope["type"] == "http" and scope["path"].startswith("/static/"):
+            assets.append(scope["path"])
+        await app(scope, receive, send)
+
+    server, thread, url = serve(counting)
+    try:
+        with browser_context(browser) as context:
+            page = context.new_page()
+            page.goto(url)
+            page.get_by_label("Password", exact=True).wait_for()
+            first = list(assets)
+            assert len(first) > 40
+            # A manifest's URL identifies the app, so it isn't versioned. WebKit reads it each load.
+            assert all("/static/build-" in path for path in first if "manifest" not in path)
+            assets.clear()
+            page.goto("about:blank")
+            page.goto(url)
+            page.get_by_label("Password", exact=True).wait_for()
+            assert [path for path in assets if "/static/build-" in path] == []
+    finally:
+        server.should_exit = True
+        thread.join(6)

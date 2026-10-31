@@ -1,6 +1,7 @@
 """Real native fork/resume behavior, temporary storage and synthetic messages only."""
 
 import asyncio
+import inspect
 import json
 import sys
 import threading
@@ -93,6 +94,7 @@ async def main():
         await verify_failed_branches(client, adapter, db, headers)
         await verify_failed_copy(client, db, headers)
         await verify_command_heads(client, headers)
+        await verify_empty_sessions(client, db, headers)
     await adapter.disconnect()
     db.close()
 
@@ -185,6 +187,36 @@ async def verify_failed_copy(client, db, headers):
     assert response.status == 409
     assert db.get_session("existing-session") == existing
     assert db.get_session("copy-failure-parent") == source
+
+
+async def verify_empty_sessions(client, db, headers):
+    async def transcript(sid):
+        response = await client.get(
+            f"/api/sessions/{sid}/messages",
+            headers=headers,
+            params={"order": "latest", "limit": "100", "include_compacted": "true"},
+        )
+        assert response.status == 200, await response.text()
+        return await response.json()
+
+    # A launch stub is Talaria's "no chat history": a session, and truly nothing in it.
+    db.create_session("launch-stub", "tui")
+    db.end_session("launch-stub", "tui_close")
+    assert db.get_session("launch-stub")["message_count"] == 0
+    stub = await transcript("launch-stub")
+    assert stub["session_id"] == "launch-stub" and stub["data"] == []
+
+    # The count cannot decide that: a compaction continuation counts none of its
+    # parent's rows, and it still has a transcript to show.
+    db.create_session("counted-root", "tui")
+    db.append_message("counted-root", "user", "Before compaction")
+    db.end_session("counted-root", "compression")
+    db.create_session("counted-tip", "tui", parent_session_id="counted-root")
+    assert db.get_session("counted-tip")["message_count"] == 0
+    # Older API servers return only a session's own rows.
+    if "include_ancestors" in inspect.signature(db.get_messages).parameters:
+        tip = await transcript("counted-tip")
+        assert [row["content"] for row in tip["data"]] == ["Before compaction"]
 
 
 async def verify_command_heads(client, headers):

@@ -7,7 +7,7 @@ import { count, money, numberValue, sourceLabel } from "./content.js";
 import { cachedAttachments } from "./attachments.js";
 import { t, msg } from "./i18n.js";
 
-export function ConversationMenu({ session, onClose, readOnly = false }) {
+export function ConversationMenu({ session, onClose, readOnly = false, noChat = false }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const actions = [
@@ -46,6 +46,7 @@ export function ConversationMenu({ session, onClose, readOnly = false }) {
             class=${type === "delete" ? "danger-text" : ""}
             disabled=${busy ||
             (type === "fork" && !canBranch(session)) ||
+            (noChat && ["fork", "download"].includes(type)) ||
             (type === "delete" && running(session.id))}
             onClick=${() => update({ modal: { type, session } })}
           >

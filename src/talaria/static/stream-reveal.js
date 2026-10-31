@@ -1,7 +1,25 @@
-import { html, useLayoutEffect, useRef, useState } from "./lib.js";
+import { html, memo, useLayoutEffect, useRef, useState } from "./lib.js";
 
 const motionQuery = "(prefers-reduced-motion: reduce)";
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const motion = matchMedia(motionQuery);
+
+// Fades in progress, each with the StreamText showing it. Preact never unmounts a
+// StreamText that raw HTML replaces, such as a code block once it is highlighted,
+// so listeners of its own would stay for the life of the page. These never do.
+const fades = new Map();
+function finishFades(owner) {
+  for (const [fade, shownBy] of fades)
+    if (!owner || shownBy === owner) {
+      fade.cancel();
+      fades.delete(fade);
+    }
+}
+function settleFades() {
+  if (document.hidden || motion.matches) finishFades();
+}
+document.addEventListener("visibilitychange", settleFades);
+motion.addEventListener("change", settleFades);
 
 // Presentation only: transport, recovery receipts, and saved output always
 // retain all received text. A terminal result bypasses the reveal queue.
@@ -83,36 +101,17 @@ export function useStreamReveal(text, active) {
   return !active || state.reduced || !text.startsWith(shown) ? text : shown;
 }
 
+const StreamPart = memo(({ text, onAdded }) => html`<span ref=${onAdded}>${text}</span>`);
+
 // Small groups keep text-node identity and selections stable while limiting
 // DOM growth to roughly one span per 64 characters, rather than per token.
 // Opacity is advanced by the browser, independently of reveal timers.
 export function StreamText({ text, active }) {
-  const previous = useRef({ text: "", parts: [] });
-  const animations = useRef(new Set());
-  function finish() {
-    for (const animation of animations.current) animation.cancel();
-    animations.current.clear();
-  }
-  useLayoutEffect(() => {
-    if (!active) {
-      finish();
-      return;
-    }
-    const media = matchMedia(motionQuery);
-    const settle = () => {
-      if (document.hidden || media.matches) finish();
-    };
-    document.addEventListener("visibilitychange", settle);
-    media.addEventListener("change", settle);
-    return () => {
-      finish();
-      document.removeEventListener("visibilitychange", settle);
-      media.removeEventListener("change", settle);
-    };
-  }, [active]);
-  const old = previous.current;
+  const old = useRef({ text: "", parts: [] }).current;
+  // Its fades end when it stops being the growing tail, or leaves the page.
+  useLayoutEffect(() => () => finishFades(old), [active, old]);
   if (!text.startsWith(old.text)) {
-    finish();
+    finishFades(old);
     old.text = "";
     old.parts = [];
   }
@@ -121,7 +120,6 @@ export function StreamText({ text, active }) {
     const last = old.parts.at(-1);
     if (last && last.text.length < 64) {
       last.text += delta;
-      last.view = null;
     } else {
       old.parts.push({
         text: delta,
@@ -131,20 +129,20 @@ export function StreamText({ text, active }) {
             !active ||
             delta.length > 256 ||
             document.hidden ||
-            matchMedia(motionQuery).matches
+            motion.matches
           )
             return;
-          const animation = element.animate(
+          const fade = element.animate(
             [{ opacity: 0.4 }, { opacity: 1 }],
             {
               duration: 160,
               easing: "linear",
             },
           );
-          animations.current.add(animation);
-          animation.onfinish = () => {
-            animations.current.delete(animation);
-            animation.cancel();
+          fades.set(fade, old);
+          fade.onfinish = () => {
+            fades.delete(fade);
+            fade.cancel();
           };
         },
       });
@@ -153,10 +151,7 @@ export function StreamText({ text, active }) {
   }
   return html`<span class="markdown-inline"
     >${old.parts.map(
-      (part, i) =>
-        (part.view ||= html`<span key=${i} ref=${part.ref}
-          >${part.text}</span
-        >`),
+      (part, i) => html`<${StreamPart} key=${i} text=${part.text} onAdded=${part.ref} />`,
     )}</span
   >`;
 }

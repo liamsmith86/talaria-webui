@@ -409,6 +409,11 @@ class Chat:
 
     def reply(self):
         last = self.page.locator(".conversation-content > .message.assistant").last
+        # A message skips rendering until its first frame, and has no innerText before then.
+        self.page.wait_for_function(
+            "message => message.firstElementChild.checkVisibility({contentVisibilityAuto: true})",
+            arg=last.element_handle(),
+        )
         return last.locator(".message-text").last.inner_text()
 
     def snapshot(self):

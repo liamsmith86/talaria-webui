@@ -21,6 +21,9 @@ export const state = {
   sessionsOffset: 0,
   active: null,
   history: [],
+  // Whether Hermes answered for this history: empty then means nothing is saved,
+  // where empty after a failed read means nothing is known.
+  historyLoaded: false,
   historyHasMore: false,
   historyOffset: 0,
   sessionDetails: null,
@@ -190,7 +193,7 @@ export async function connect(configured = true) {
     // A slow session listing must not postpone showing the last reply.
     const sessions = caps.features?.session_resources
       ? refreshSessions()
-      : Promise.resolve(update({ sessions: [], hasMore: false, history: [] }));
+      : Promise.resolve(update({ sessions: [], hasMore: false, history: [], historyLoaded: false }));
     if (caps.features?.model_options) {
       refreshModels().catch(() => {});
     } else update({ models: [], providers: [], defaultModel: null });
@@ -547,6 +550,7 @@ export async function openSession(id, parent = null, replace = false, messageId 
   update({
     active: id,
     history: [],
+    historyLoaded: false,
     loading: true,
     sidebar: false,
     error: "",
@@ -578,6 +582,7 @@ export async function openSession(id, parent = null, replace = false, messageId 
       update({
         active: canonical,
         history,
+        historyLoaded: true,
         loading: false,
         historyHasMore: !!result.has_more,
         historyOffset: result.next_offset ?? (result.data || []).length,
@@ -594,6 +599,10 @@ export async function openSession(id, parent = null, replace = false, messageId 
   } finally {
     if (opening === controller) opening = null;
   }
+}
+function withoutRows(rows, loaded) {
+  const existing = new Set(loaded.map((message) => message.id));
+  return rows.filter((message) => message.id == null || !existing.has(message.id));
 }
 export async function refreshHistory(id, commit = true, signal) {
   const generation = navigation;
@@ -618,12 +627,16 @@ export async function refreshHistory(id, commit = true, signal) {
     if (!canCommit()) return history;
     reconcile?.();
     historyCommitted = request;
+    // This read covers the window it began with. Keep what the reader loaded above that since.
+    const added = canonical === id ? state.history.slice(0, Math.max(0, state.history.indexOf(previous[0]))) : [];
+    const older = withoutRows(added, history);
     update({
       ...(canonical !== id ? { active: canonical, sessionDetails: null } : {}),
-      history,
+      history: [...older, ...history],
+      historyLoaded: true,
       loading: false,
-      historyHasMore: !!result.has_more,
-      historyOffset: result.next_offset ?? (result.data || []).length,
+      historyHasMore: older.length ? state.historyHasMore : !!result.has_more,
+      historyOffset: (result.next_offset ?? (result.data || []).length) + older.length,
     });
     if (canonical !== id) refreshSessionDetails(canonical).catch(() => {});
   } else if (state.active !== id || state.searchWindow) {
@@ -633,6 +646,14 @@ export async function refreshHistory(id, commit = true, signal) {
     reconcile?.();
   }
   return history;
+}
+// Whether the newest row Hermes saved is the newest one here. Anything another device
+// added, a rewind and a compaction all change it, for far less than a transcript costs.
+export async function holdsNewestSaved(id) {
+  const newest = state.history.at(-1)?.id;
+  if (newest == null) return false;
+  const page = await api(`/sessions/${encodeURIComponent(id)}/messages?limit=1`);
+  return (page.session_id ?? id) === id && page.data?.at(-1)?.id === newest;
 }
 export function loadOlderMessages() {
   const id = state.active;
@@ -664,14 +685,8 @@ export function loadOlderMessages() {
       result.data || [],
     );
     if (current()) {
-      const existing = new Set(state.history.map((message) => message.id));
       update({
-        history: [
-          ...history.filter(
-            (message) => message.id == null || !existing.has(message.id),
-          ),
-          ...state.history,
-        ],
+        history: [...withoutRows(history, state.history), ...state.history],
         historyHasMore: !!result.has_more,
         historyOffset: result.next_offset ?? offset + history.length,
       });
@@ -690,6 +705,7 @@ export function newConversation(replace = false) {
   update({
     active: null,
     history: [],
+    historyLoaded: false,
     loading: false,
     historyHasMore: false,
     historyOffset: 0,

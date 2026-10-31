@@ -1,6 +1,6 @@
 import {
   html,
-  useEffect,
+  memo,
   useLayoutEffect,
   useRef,
   useState,
@@ -34,7 +34,7 @@ import {
   loadOlderMessages,
   update,
 } from "./store.js";
-import { guidanceText, isGuidance, isNotice, isRecoveryPrompt, plainContent, userMessage } from "./content.js";
+import { guidanceText, isGuidance, isNotice, isRecoveryPrompt, plainContent, sourceLabel, userMessage } from "./content.js";
 import {
   currentImageMessage,
   messageImages,
@@ -180,7 +180,7 @@ function Message({
   const showActions = !streaming &&
     !!(text || images.length || tools.length || reasoning || parts?.length);
   return html`<article
-    class=${`message ${role} ${matched ? "search-match" : ""}`}
+    class=${`message ${role}${record ? "" : " live"}${matched ? " search-match" : ""}`}
     tabindex=${role === "assistant" ? -1 : undefined}
     aria-label=${role === "user" ? t("Your message") : t("{name} response", { name: agentName })}
   >
@@ -268,6 +268,19 @@ function Message({
         />`}`}
     </div>`}
   </article>`;
+}
+
+// Older pages and revalidation change a few rows of a long transcript at most.
+// The other messages neither render nor visit their tool cards again. A live reply
+// must use this too: one component throughout keeps its DOM when the reply is saved.
+const TranscriptMessage = memo(Message);
+
+function sameData(a, b) {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object" ||
+      Array.isArray(a) !== Array.isArray(b)) return false;
+  const names = Object.keys(a);
+  return names.length === Object.keys(b).length && names.every((name) => sameData(a[name], b[name]));
 }
 
 function Approval({ sid, request }) {
@@ -522,6 +535,31 @@ function historyItems(history, live, excerpt = false) {
   return turns.filter((item) => item.role !== "assistant" || item.parts.length);
 }
 
+// Hermes answered and nothing it saved is shown. A failed read is not that, nor
+// is a page of hidden rows with older ones behind it. Hermes's message_count can't
+// decide this: a compaction continuation counts 0 and still has a transcript.
+// Most sessions have a row that plainly shows, so they need no full pass over the history.
+const plainlyShows = (row) =>
+  (row?.role === "user" || row?.role === "assistant") && row.display_kind !== "hidden" &&
+  typeof row.content === "string" && !!row.content.trim() && !isRecoveryPrompt(row);
+
+export function hasNoChat(app) {
+  return !!app.active && app.historyLoaded && !app.loading && !app.historyHasMore &&
+    !app.searchWindow && !app.history.some(plainlyShows) &&
+    !historyItems(app.history, null).length;
+}
+
+function NoChatHistory({ source, readOnly }) {
+  const detail = readOnly ? "" : source
+    ? t("Hermes has no saved messages from {source}.", { source: sourceLabel(source) })
+    : t("Send a message to begin.");
+  return html`<div class="no-chat" role="status">
+    <span class="no-chat-icon"><${Icon} name="message" size=${20} /></span>
+    <strong>${t("This session has no chat history.")}</strong>
+    ${detail && html`<p>${detail}</p>`}
+  </div>`;
+}
+
 // Where a command result belongs: before the first row Hermes saved after the
 // command began. In-place compaction re-saves kept rows with new IDs, so
 // Hermes's timestamps, which it keeps, order them.
@@ -531,7 +569,7 @@ function anchorIndex(items, anchor, end) {
   return index < 0 ? end : Math.min(index, end);
 }
 
-export function Conversation({ app, commands = [], onDismissCommand }) {
+export function Conversation({ app, commands = [], onDismissCommand, noChat = false, external = "" }) {
   const { locale, formatLocale } = useLanguage();
   const scroll = useRef();
   const replyStart = useReplyJump(scroll, app.active);
@@ -554,14 +592,22 @@ export function Conversation({ app, commands = [], onDismissCommand }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [app.history, live?.persisted, live?.baseMessageId, live?.userText],
   );
+  const previousItems = useRef(new Map());
   const items = useMemo(
-    () => historyItems(shown, live, !!app.searchWindow),
+    () => {
+      const next = historyItems(shown, live, !!app.searchWindow).map((item) => {
+        const previous = previousItems.current.get(item.id);
+        return previous && sameData(previous, item) ? previous : item;
+      });
+      previousItems.current = new Map(next.map((item) => [item.id, item]));
+      return next;
+    },
     // Snapshot live metadata when saved history/image reconciliation changes, not on text deltas.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [shown, live?.persisted, live?.userImages, app.searchWindow],
   );
   const streaming = !app.searchWindow && running(app.active, app.lives);
-  useEffect(() => {
+  useLayoutEffect(() => {
     sticky.current = !app.searchWindow;
     setAway(false);
     if (sticky.current) follow();
@@ -576,12 +622,16 @@ export function Conversation({ app, commands = [], onDismissCommand }) {
     const target = tools[0] || scroll.current?.querySelector(".search-match");
     target?.scrollIntoView({ block: "center", behavior: "instant" });
   }, [app.searchWindow, app.loading, app.history]);
-  useEffect(() => {
+  // Before painting, so a session opens at its latest message without drawing its
+  // start first. Text growth needs no call here: the observer below follows it.
+  useLayoutEffect(() => {
     if (sticky.current) follow();
-  }, [app.history, live?.text, live?.tools.length, live?.approval, live?.clarification, follow]);
-  useEffect(() => {
+  }, [app.history, live?.tools.length, live?.approval, live?.clarification, follow]);
+  useLayoutEffect(() => {
     // Revealed text can grow between network updates. Follow its actual size,
-    // including code highlighting, while respecting a reader scrolling up.
+    // including code highlighting, while respecting a reader scrolling up. Observing
+    // before the first paint matters: a new message is first laid out at its estimated
+    // height, and this delivers its real one before that frame is drawn.
     const content = scroll.current?.querySelector(".conversation-content");
     if (!content) return;
     const observer = new ResizeObserver(() => {
@@ -639,7 +689,7 @@ export function Conversation({ app, commands = [], onDismissCommand }) {
         (m) => m.role === "notice"
           ? html`<${Notice} key=${messageKeys.get(m.id)} kind=${m.kind} text=${m.text} time=${m.time}
               matched=${app.searchWindow && String(m.record.id) === String(app.searchWindow)} />`
-          : html`<${Message}
+          : html`<${TranscriptMessage}
             key=${messageKeys.get(m.id)}
             ...${m}
             agentName=${agentName}
@@ -694,7 +744,7 @@ export function Conversation({ app, commands = [], onDismissCommand }) {
     if (index < saved.length) transcript.push(saved[index]);
   }
   if (showUser)
-    transcript.push(html`<${Message}
+    transcript.push(html`<${TranscriptMessage}
       key=${`${liveKey}:user`}
       role="user"
       locale=${locale}
@@ -704,7 +754,7 @@ export function Conversation({ app, commands = [], onDismissCommand }) {
     />`);
   if (live && !live.persisted &&
       (streaming || live.text || live.reasoning || live.tools.length))
-    transcript.push(html`<${Message}
+    transcript.push(html`<${TranscriptMessage}
       key=${`${liveKey}:assistant`}
       role="assistant"
       locale=${locale}
@@ -717,6 +767,7 @@ export function Conversation({ app, commands = [], onDismissCommand }) {
       parts=${live.parts}
     />`);
   transcript.push(...trailing);
+  const empty = noChat && !transcript.length;
   return html`${app.findOpen &&
     html`<${ConversationFind}
       key=${app.active}
@@ -755,7 +806,7 @@ export function Conversation({ app, commands = [], onDismissCommand }) {
         setAway(!sticky.current);
       }}
     >
-      <div class="conversation-content">
+      <div class=${`conversation-content${empty ? " is-empty" : ""}${app.loading ? " is-loading" : ""}`}>
         ${!app.loading &&
         app.historyHasMore &&
         html`<button
@@ -772,6 +823,7 @@ export function Conversation({ app, commands = [], onDismissCommand }) {
           /><span class="sr-only">${t("Loading session")}</span>
         </div>`}
         ${transcript}
+        ${empty && html`<${NoChatHistory} source=${external} readOnly=${!!app.readOnlyParent} />`}
         ${savedTurn === items.at(-1) &&
         savedTurn &&
         !savedTurn.tools.some((t) => t.kind === "agent") &&

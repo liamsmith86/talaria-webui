@@ -291,7 +291,7 @@ kbd {
   justify-content: center;
   text-align: center;
   padding: 30px 30px 35px;
-  animation: arrive 0.45s ease;
+  animation: arrive 0.2s ease;
 }
 .welcome-mark {
   margin-bottom: 25px;
