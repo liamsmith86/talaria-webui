@@ -269,18 +269,23 @@ class Bench:
             **(runtime.devices[device] if device else {"viewport": {"width": 1440, "height": 960}})
         )
         self.context.add_init_script(PROBE)
-        self.page = self.context.new_page()
-        self.cdp = self.context.new_cdp_session(self.page)
         self.system = self.browser.new_browser_cdp_session()
-        for domain in ("Performance", "Network", "HeapProfiler", "Runtime"):
-            self.cdp.send(f"{domain}.enable")
         self.encoded = {}
         self.requests = []
+        self.request_urls = {}
+        self.open_tab()
+
+    def open_tab(self):
+        self.page = self.context.new_page()
+        self.cdp = self.context.new_cdp_session(self.page)
+        for domain in ("Performance", "Network", "HeapProfiler", "Runtime"):
+            self.cdp.send(f"{domain}.enable")
         self.cdp.on("Network.requestWillBeSent", self._on_request)
         self.cdp.on("Network.loadingFinished", self._on_finished)
 
     def _on_request(self, event):
         self.requests.append(event["request"]["url"])
+        self.request_urls[event["requestId"]] = event["request"]["url"]
 
     def _on_finished(self, event):
         self.encoded[event["requestId"]] = event["encodedDataLength"]
@@ -371,6 +376,9 @@ class Bench:
         result.update(
             wall_s=rounded(wall, 2),
             main_cpu_pct=rounded(100 * delta("TaskDuration") / wall),
+            # Everything the main thread did. Prefer it to script_ms, which leaves out
+            # promise callbacks, and so nearly every Preact render.
+            task_ms=round(delta("TaskDuration") * 1000),
             script_ms=round(delta("ScriptDuration") * 1000),
             layout_ms=round(delta("LayoutDuration") * 1000),
             style_ms=round(delta("RecalcStyleDuration") * 1000),
@@ -404,7 +412,9 @@ class Bench:
     def send(self, text):
         # Enter adds a line on a phone, so press Send as a person would on either device.
         self.page.get_by_label("Message Hermes").fill(text)
-        self.page.get_by_role("button", name="Send message", exact=True).click()
+        # A role lookup reads computed styles, which would force every off-screen message
+        # to render, and so measure the profiler rather than Talaria.
+        self.page.locator('.composer button[type="submit"]').click()
 
     def wait_idle(self):
         self.store(
@@ -482,6 +492,7 @@ def cold_load(bench):
     bench.ready()
     bench.settled()
     result["cold_ready_ms"] = round((time.perf_counter() - start) * 1000)
+    bench.page.wait_for_timeout(1000)  # Fixed wait: the largest paint can follow readiness.
     result.update({f"cold_{key}": value for key, value in navigation(bench).items()})
     result["cold_long_tasks"] = len(bench.page.evaluate("() => __perf.drain().long"))
     result.update(bench.memory())
@@ -490,12 +501,86 @@ def cold_load(bench):
     bench.ready()
     bench.settled()
     result["warm_ready_ms"] = round((time.perf_counter() - start) * 1000)
+    bench.page.wait_for_timeout(1000)  # Fixed wait: the largest paint can follow readiness.
     result.update({f"warm_{key}": value for key, value in navigation(bench).items()})
+    return result
+
+
+def return_visit(bench):
+    """Opening Talaria again later in a new tab, back to the last session, over the network."""
+    for index in range(40):
+        bench.peer.add_session(f"s{index}", f"Session {index}")
+    bench.peer.add_session("open", "Open", transcript(30))
+    bench.sign_in(bench.url)
+    bench.open_session("open")
+    bench.page.goto("about:blank")
+    bench.page.close()
+    bench.open_tab()
+    bench.throttle()
+    bench.request_urls.clear()
+    bench.encoded.clear()
+    start = time.perf_counter()
+    bench.page.goto(bench.url)
+    bench.ready()
+    bench.page.locator(".message").first.wait_for()
+    bench.settled()
+    result = {"visible_ms": round((time.perf_counter() - start) * 1000)}
+    bench.page.wait_for_timeout(1000)  # Fixed wait: the largest paint can follow readiness.
+    result.update(navigation(bench))
+    # A file from the disk cache also reports a request, without a byte crossing the network.
+    sent = [url for key, url in bench.request_urls.items() if bench.encoded.get(key)]
+    result["static_requests"] = sum("/static/" in url for url in sent)
+    result["api_requests"] = sum("/api/" in url for url in sent)
     return result
 
 
 def idle(bench):
     """A session on screen, nothing happening: this should cost close to nothing."""
+    bench.peer.add_session("idle", "Idle", transcript(10))
+    bench.sign_in(bench.url)
+    bench.open_session("idle")
+    bench.throttle(network=False)
+    bench.page.wait_for_timeout(2000)  # Fixed wait: the page finishes its startup work.
+    result = {}
+    with bench.span(result, frames=False):
+        bench.page.wait_for_timeout(30_000)  # Fixed wait: idle cost is measured over time.
+    return result
+
+
+def listed_session(rng, index):
+    """A row with every field Hermes lists for clients, which the plain peer leaves out."""
+    return {
+        "user_id": None,
+        "model": "hermes-test-model",
+        "ended_at": None,
+        "end_reason": None,
+        "tool_call_count": rng.randrange(200),
+        "input_tokens": rng.randrange(10**6),
+        "output_tokens": rng.randrange(10**5),
+        "cache_read_tokens": rng.randrange(10**6),
+        "cache_write_tokens": rng.randrange(10**5),
+        "reasoning_tokens": 0,
+        "estimated_cost_usd": round(rng.random() * 3, 6),
+        "actual_cost_usd": None,
+        "api_call_count": rng.randrange(1, 100),
+        "parent_session_id": None,
+        "last_active": 1790000000 + index,
+        "preview": sentence(rng)[:63],
+        "_lineage_root_id": None,
+        "archived": False,
+        "hidden": False,
+        "has_system_prompt": True,
+        "has_model_config": True,
+        "is_internal_child": False,
+    }
+
+
+def idle_sidebar(bench):
+    """As idle, with a full first page of sessions, which the periodic check reads each time."""
+    rng = random.Random(3)
+    for index in range(100):
+        fields = listed_session(rng, index)
+        bench.peer.add_session(f"s{index}", f"Session {index} about {NOUNS[index % 11]}", **fields)
     bench.peer.add_session("idle", "Idle", transcript(10))
     bench.sign_in(bench.url)
     bench.open_session("idle")
@@ -594,13 +679,13 @@ def long_session(bench):
     return result
 
 
-def switching(bench):
+def switching(bench, *, network=False):
     """Move between two sessions repeatedly: quick each time, keeping nothing behind."""
     bench.peer.add_session("left", "Left", transcript(30, seed=1))
     bench.peer.add_session("right", "Right", transcript(30, seed=2))
     bench.sign_in(bench.url)
     bench.open_session("left")
-    bench.throttle(network=False)
+    bench.throttle(network=network)
     first = bench.memory()
     times = []
     result = {}
@@ -625,6 +710,11 @@ def switching(bench):
         listener_growth=last["listeners"] - first["listeners"],
     )
     return result
+
+
+def switching_network(bench):
+    """As switching, with each transcript crossing the profile's network."""
+    return switching(bench, network=True)
 
 
 def typing(bench):
@@ -663,6 +753,25 @@ def sidebar(bench):
     return result
 
 
+def revisit(bench):
+    """Leave a long reply and return, twice: a chat out of view must not stay in memory."""
+    bench.peer.plan("long", markdown(100_000), chunk=40, delay=0.01)
+    bench.peer.add_session("stream", "Stream")
+    bench.peer.add_session("other", "Other", transcript(2))
+    bench.sign_in(bench.url)
+    bench.open_session("stream")
+    bench.throttle(network=False)
+    bench.send("long")
+    bench.store("state => Object.keys(state.lives).length > 0")
+    bench.wait_idle()
+    bench.settled()
+    result = {f"after_{key}": value for key, value in bench.memory().items()}
+    for label, sid in (("left", "other"), ("back", "stream"), ("left_again", "other")):
+        bench.open_session(sid)
+        result.update({f"{label}_{key}": value for key, value in bench.memory().items()})
+    return result
+
+
 def repeat_replies(bench):
     """Twenty short replies in a row: a long chat must not get heavier per turn than it saves."""
     bench.peer.plan("again", markdown(1500), chunk=30, delay=0.002)
@@ -689,11 +798,84 @@ def repeat_replies(bench):
     return result
 
 
+def paged_session(bench, turns=1000):
+    """Page a very long session back to its start, then scroll it, type below it and refocus."""
+    bench.peer.add_session("paged", "Paged", transcript(turns))
+    bench.sign_in(bench.url)
+    bench.open_session("paged")
+    bench.throttle(network=False)
+    more = "async () => (await import('/static/store.js')).state.historyHasMore"
+    button = bench.page.locator(".conversation-content > .load-more")
+    idle = "state => !document.querySelector('.conversation-content > .load-more[disabled]')"
+    pages = []
+    while bench.page.evaluate(more):
+        record = {}
+        with bench.span(record, frames=False):
+            # The page's own response, as a revalidation in flight can also move the offset.
+            with bench.page.expect_response(
+                lambda r: "/messages?offset=" in r.url and "limit=" not in r.url
+            ):
+                button.click()
+            bench.store(idle)
+            bench.settled()
+        pages.append(record["task_ms"])
+    result = {"pages": len(pages), "page_task_first_ms": pages[0], "page_task_last_ms": pages[-1]}
+    result.update({f"full_{key}": value for key, value in bench.memory().items()})
+    viewport = "document.querySelector('.conversation-viewport')"
+    bench.page.evaluate(f"() => {{ {viewport}.scrollTop = 0; }}")
+    bench.settled()
+    scroll = {}
+    with bench.span(scroll):
+        bench.swipe(-40_000, speed=4000)
+    result.update({f"scroll_{key}": value for key, value in scroll.items()})
+    box = bench.page.get_by_label("Message Hermes")
+    box.focus()
+    typed = {}
+    with bench.span(typed):
+        box.press_sequentially(sentence(random.Random(4)) * 2, delay=30)
+    result.update({f"type_{key}": value for key, value in typed.items()})
+    return result
+
+
+def paged_session_2000(bench):
+    """Twice the length of paged_session, to show the shape of its curve."""
+    return paged_session(bench, 2000)
+
+
+def enormous_loose_list(bench):
+    """A 1 MB saved reply: an ordered list with a blank line between its items."""
+    rows = [
+        f"{index}. Check the **{NOUNS[index % len(NOUNS)]}** and move it"
+        for index in range(1, 26_000)
+    ]
+    bench.peer.add_session(
+        "list",
+        "List",
+        [
+            {"id": 1, "role": "user", "content": "Show me"},
+            {"id": 2, "role": "assistant", "content": "\n\n".join(rows)},
+        ],
+    )
+    bench.sign_in(bench.url)
+    bench.throttle(network=False)
+    result = {}
+    with bench.span(result):
+        bench.open_session("list")
+        bench.settled()
+    result.update(bench.memory())
+    return result
+
+
 SCENARIOS = {
     scenario.__name__: scenario
     for scenario in (
+        paged_session,
+        paged_session_2000,
+        enormous_loose_list,
         cold_load,
+        return_visit,
         idle,
+        idle_sidebar,
         waiting,
         stream_typical,
         stream_long,
@@ -701,8 +883,10 @@ SCENARIOS = {
         tool_storm,
         long_session,
         switching,
+        switching_network,
         typing,
         sidebar,
+        revisit,
         repeat_replies,
     )
 }
