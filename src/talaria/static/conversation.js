@@ -181,7 +181,7 @@ function Message({
   const showActions = !streaming &&
     !!(text || images.length || tools.length || reasoning || parts?.length);
   return html`<article
-    class=${`message ${role} ${matched ? "search-match" : ""}`}
+    class=${`message ${role}${record ? "" : " live"}${matched ? " search-match" : ""}`}
     tabindex=${role === "assistant" ? -1 : undefined}
     aria-label=${role === "user" ? t("Your message") : t("{name} response", { name: agentName })}
   >
@@ -617,9 +617,11 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
     const target = tools[0] || scroll.current?.querySelector(".search-match");
     target?.scrollIntoView({ block: "center", behavior: "instant" });
   }, [app.searchWindow, app.loading, app.history]);
-  useEffect(() => {
+  // Before painting, so a session opens at its latest message without drawing its
+  // start first. Text growth needs no call here: the observer below follows it.
+  useLayoutEffect(() => {
     if (sticky.current) follow();
-  }, [app.history, live?.text, live?.tools.length, live?.approval, live?.clarification, follow]);
+  }, [app.history, live?.tools.length, live?.approval, live?.clarification, follow]);
   useEffect(() => {
     // Revealed text can grow between network updates. Follow its actual size,
     // including code highlighting, while respecting a reader scrolling up.
@@ -797,7 +799,7 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
         setAway(!sticky.current);
       }}
     >
-      <div class=${`conversation-content${empty ? " is-empty" : ""}`}>
+      <div class=${`conversation-content${empty ? " is-empty" : ""}${app.loading ? " is-loading" : ""}`}>
         ${!app.loading &&
         app.historyHasMore &&
         html`<button

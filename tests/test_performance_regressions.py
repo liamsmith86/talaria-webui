@@ -242,6 +242,39 @@ def test_completed_response_cache_is_bounded_without_losing_recovery_state(page,
     assert result == {"cached": count, "bytes": count * payload_size, "protected": True}
 
 
+def test_opening_a_session_runs_one_entrance_and_a_reply_runs_its_own(page):
+    result = page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      const nextFrame=()=>new Promise(requestAnimationFrame);
+      update({active:'opening',loading:false,caps:{features:{}},sessions:[],lives:{},
+        history:Array.from({length:40},(_,i)=>({id:i+1,role:i%2?'assistant':'user',
+          content:'Saved message '+i}))});
+      await nextFrame();
+      const opened=[...document.querySelectorAll('.message')]
+        .filter(message=>message.getAnimations().length).length;
+      update({lives:{opening:{id:'run',requestId:'request',status:'running',text:'Reply',tools:[],
+        baseHistoryLength:40,baseMessageId:40,createdAt:Date.now()}}});
+      await nextFrame();
+      return {opened,
+        reply:document.querySelector('.message.live')?.getAnimations()
+          .map(animation=>animation.animationName)};
+    }""")
+    assert result == {"opened": 0, "reply": ["arrive"]}
+
+
+def test_session_opens_at_its_latest_message_in_its_first_frame(page):
+    distance = page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      update({active:'opening',loading:false,caps:{features:{}},sessions:[],lives:{},
+        history:Array.from({length:40},(_,i)=>({id:i+1,role:i%2?'assistant':'user',
+          content:('Saved message '+i+'. ').repeat(40)}))});
+      await new Promise(requestAnimationFrame);
+      const el=document.querySelector('.conversation-viewport');
+      return el.scrollHeight-el.scrollTop-el.clientHeight;
+    }""")
+    assert distance < 3
+
+
 def test_text_deltas_reuse_sidebar_rows_and_tool_cards(page):
     result = page.evaluate("""async () => {
       const {state,update}=await import('/static/store.js');
@@ -326,6 +359,30 @@ def test_find_updates_before_a_continuous_stream_stops(page):
     }""")
     assert result
     expect(page.locator(".find-count")).to_have_text("1 of 20")
+
+
+def test_the_home_screen_does_not_fade_in_for_longer_than_the_rest_of_the_app(page):
+    """Chromium reports the largest paint when this fade ends, and a reader waits for it too."""
+    assert (
+        page.locator(".welcome").evaluate("element => getComputedStyle(element).animationDuration")
+        == "0.2s"
+    )
+
+
+def test_typing_does_not_search_the_document_for_open_dialogs(page):
+    page.evaluate("""() => {
+      const original=document.querySelector.bind(document);
+      window.dialogSearches=0;
+      document.querySelector=selector=>{
+        if(selector==='dialog[open]')window.dialogSearches++;
+        return original(selector);
+      };
+    }""")
+    page.get_by_label("Message Hermes").press_sequentially("typing")
+    assert page.evaluate("dialogSearches") == 0
+    page.keyboard.press("Control+k")
+    expect(page.locator(".sidebar .search-field input")).to_be_focused()
+    assert page.evaluate("dialogSearches") == 1
 
 
 def test_startup_history_and_catalog_do_not_wait_for_sidebar_listing(page):

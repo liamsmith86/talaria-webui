@@ -151,18 +151,9 @@ function App() {
   const restored = useRef(false);
   useEffect(observePage, []);
   useEffect(() => {
-    const keydown = (e) => {
-      if (
-        e.defaultPrevented ||
-        isIMEKey(e) ||
-        document.querySelector("dialog[open]")
-      )
-        return;
-      if (
-        (e.metaKey || e.ctrlKey) &&
-        e.key.toLowerCase() === "f" &&
-        state.active
-      ) {
+    const shortcuts = new Map([
+      ["f", (e) => {
+        if (!state.active) return;
         e.preventDefault();
         update({ findOpen: true });
         requestAnimationFrame(() =>
@@ -170,8 +161,8 @@ function App() {
             .querySelector(".conversation-find input")
             ?.focus(),
         );
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      }],
+      ["k", (e) => {
         e.preventDefault();
         if (!matchMedia("(max-width: 700px)").matches) collapseSidebar(false);
         update({ sidebar: true });
@@ -180,12 +171,25 @@ function App() {
             .querySelector(".sidebar .search-field input")
             ?.focus(),
         );
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
+      }],
+      ["n", (e) => {
         e.preventDefault();
         newConversation();
-      }
-      if (e.key === "Escape") update({ sidebar: false });
+      }],
+    ]);
+    const keydown = (e) => {
+      const action = e.metaKey || e.ctrlKey
+        ? shortcuts.get(e.key.toLowerCase())
+        : e.key === "Escape" && (() => update({ sidebar: false }));
+      // Ordinary typing stops at the first check: the last one walks the whole transcript.
+      if (
+        !action ||
+        e.defaultPrevented ||
+        isIMEKey(e) ||
+        document.querySelector("dialog[open]")
+      )
+        return;
+      action(e);
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
