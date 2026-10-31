@@ -162,10 +162,14 @@ def test_open_session_follows_other_devices_without_focus(page, live_app):
                 page.wait_for_timeout(50)  # Fixed wait: the interval of this poll.
         raise AssertionError(finished)
 
-    # The first check reads the transcript, which may have changed during the open.
+    # The transcript may have changed during the open: the first check asks, without reloading it.
     with page.expect_event("requestfinished", lambda request: "/messages" in request.url):
         revalidate()
-    # Nothing changed since: the check doesn't reload it.
+    page.clock.run_for(1000)
+    assert [url for url in finished if "/messages" in url] == [
+        f"{live_app[0]}/api/sessions/{sid}/messages?limit=1"
+    ]
+    # Nothing changed since: the check doesn't read it at all.
     revalidate()
     page.clock.run_for(1000)
     assert not [url for url in finished if "/messages" in url]
@@ -177,6 +181,26 @@ def test_open_session_follows_other_devices_without_focus(page, live_app):
     revalidate()
     expect(page.get_by_text("Answered on another laptop", exact=True)).to_be_visible()
     expect(page.get_by_role("link", name="Renamed on another laptop", exact=True)).to_be_visible()
+
+
+@pytest.mark.clock
+def test_a_first_check_reloads_a_transcript_that_changed_during_the_open(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "watched", count=2)
+    open_session(page, sid)
+    expect(page.get_by_text("Message 001", exact=True)).to_be_visible()
+    wait_for_store(page, "s => !!s.sessionDetails")
+    # Details first read after this, as when another device answers between the two reads.
+    peer.messages[sid].append(
+        {"id": 3, "role": "assistant", "content": "Answered during the open", "timestamp": 5.0}
+    )
+    wait_in_browser(
+        page,
+        lambda: (
+            page.clock.fast_forward(15001)
+            or page.get_by_text("Answered during the open", exact=True).is_visible()
+        ),
+    )
 
 
 @pytest.mark.clock
