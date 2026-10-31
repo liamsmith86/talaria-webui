@@ -106,6 +106,46 @@ def test_replacements_and_unmount_discard_pending_reveal_work(reveal):
     assert result == {"replaced": True, "detached": True, "animations": 0}
 
 
+def test_streamed_code_leaves_no_listeners_behind(module_page):
+    # Preact doesn't unmount a StreamText that raw HTML replaces, which is what happens
+    # to the code once it can be highlighted, so an effect of its own never cleans up.
+    result = module_page.evaluate(r"""async () => {
+      const {html, render} = await import('/static/lib.js');
+      const {Markdown} = await import('/static/markdown.js');
+      const root = document.createElement('div'); document.body.append(root);
+      const shown = (text, streaming) =>
+        render(html`<${Markdown} text=${text} streaming=${streaming} smooth=${true} />`, root);
+      const added = new Map();
+      const {addEventListener: add, removeEventListener: remove} = EventTarget.prototype;
+      const count = (target, type, by) => {
+        if (target === document && type === 'visibilitychange'
+            || target instanceof MediaQueryList && type === 'change')
+          added.set(type, (added.get(type) || 0) + by);
+      };
+      EventTarget.prototype.addEventListener = function (type, ...rest) {
+        count(this, type, 1); return add.call(this, type, ...rest);
+      };
+      EventTarget.prototype.removeEventListener = function (type, ...rest) {
+        count(this, type, -1); return remove.call(this, type, ...rest);
+      };
+      try {
+        const code = '```javascript\nconst one = 1;\n';
+        shown(code, true);
+        const streaming = !!root.querySelector('code .markdown-inline');
+        shown(code + '```', false);
+        const highlighted = root.querySelectorAll('code .token').length > 0;
+        render(null, root);
+        return {streaming, highlighted, net: [...added.values()]};
+      } finally {
+        EventTarget.prototype.addEventListener = add;
+        EventTarget.prototype.removeEventListener = remove;
+        root.remove();
+      }
+    }""")
+    assert result["streaming"] and result["highlighted"], result
+    assert not any(result["net"]), result
+
+
 def test_fades_do_not_replay_or_replace_settled_text(reveal):
     result = reveal.evaluate(r"""async () => {
       const original=Element.prototype.animate;

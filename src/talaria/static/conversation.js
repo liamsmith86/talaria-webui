@@ -1,5 +1,6 @@
 import {
   html,
+  memo,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -268,6 +269,19 @@ function Message({
         />`}`}
     </div>`}
   </article>`;
+}
+
+// Older pages and revalidation change a few rows of a long transcript at most.
+// The other messages neither render nor visit their tool cards again. A live reply
+// must use this too: one component throughout keeps its DOM when the reply is saved.
+const TranscriptMessage = memo(Message);
+
+function sameData(a, b) {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object" ||
+      Array.isArray(a) !== Array.isArray(b)) return false;
+  const names = Object.keys(a);
+  return names.length === Object.keys(b).length && names.every((name) => sameData(a[name], b[name]));
 }
 
 function Approval({ sid, request }) {
@@ -573,14 +587,22 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [app.history, live?.persisted, live?.baseMessageId, live?.userText],
   );
+  const previousItems = useRef(new Map());
   const items = useMemo(
-    () => historyItems(shown, live, !!app.searchWindow),
+    () => {
+      const next = historyItems(shown, live, !!app.searchWindow).map((item) => {
+        const previous = previousItems.current.get(item.id);
+        return previous && sameData(previous, item) ? previous : item;
+      });
+      previousItems.current = new Map(next.map((item) => [item.id, item]));
+      return next;
+    },
     // Snapshot live metadata when saved history/image reconciliation changes, not on text deltas.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [shown, live?.persisted, live?.userImages, app.searchWindow],
   );
   const streaming = !app.searchWindow && running(app.active, app.lives);
-  useEffect(() => {
+  useLayoutEffect(() => {
     sticky.current = !app.searchWindow;
     setAway(false);
     if (sticky.current) follow();
@@ -658,7 +680,7 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
         (m) => m.role === "notice"
           ? html`<${Notice} key=${messageKeys.get(m.id)} kind=${m.kind} text=${m.text} time=${m.time}
               matched=${app.searchWindow && String(m.record.id) === String(app.searchWindow)} />`
-          : html`<${Message}
+          : html`<${TranscriptMessage}
             key=${messageKeys.get(m.id)}
             ...${m}
             agentName=${agentName}
@@ -713,7 +735,7 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
     if (index < saved.length) transcript.push(saved[index]);
   }
   if (showUser)
-    transcript.push(html`<${Message}
+    transcript.push(html`<${TranscriptMessage}
       key=${`${liveKey}:user`}
       role="user"
       locale=${locale}
@@ -723,7 +745,7 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
     />`);
   if (live && !live.persisted &&
       (streaming || live.text || live.reasoning || live.tools.length))
-    transcript.push(html`<${Message}
+    transcript.push(html`<${TranscriptMessage}
       key=${`${liveKey}:assistant`}
       role="assistant"
       locale=${locale}

@@ -45,6 +45,68 @@ def test_static_compression_revalidation_and_uncompressed_event_streams(live_app
             assert first
 
 
+def test_a_memoized_view_skips_renders_but_keeps_its_own_state(module_page):
+    # A view rendered inline would put its hooks on the memo, whose props check then
+    # discards each state update: an edit box in a saved message would stop responding.
+    result = module_page.evaluate("""async () => {
+      const {html, memo, render, useState} = await import('/static/lib.js');
+      const root = document.createElement('div');
+      document.body.append(root);
+      const settle = () => new Promise((done) => requestAnimationFrame(() => setTimeout(done)));
+      let renders = 0, bump;
+      const View = memo(({label}) => {
+        renders++;
+        const [count, setCount] = useState(0);
+        bump = () => setCount((value) => value + 1);
+        return html`<output>${label} ${count}</output>`;
+      });
+      try {
+        render(html`<${View} label="first" />`, root);
+        render(html`<${View} label="first" />`, root);
+        const skipped = renders;
+        bump();
+        await settle();
+        const updated = root.textContent;
+        render(html`<${View} label="second" />`, root);
+        return {skipped, updated, changed: root.textContent};
+      } finally {
+        render(null, root);
+        root.remove();
+      }
+    }""")
+    assert result == {"skipped": 1, "updated": "first 1", "changed": "second 1"}
+
+
+def test_templates_do_not_keep_the_vnodes_of_static_elements(module_page):
+    # A VNode kept for the life of the page points at the tree it first rendered in, so
+    # one static element would hold a finished conversation and all of its DOM.
+    assert module_page.evaluate("""async () => {
+      const {html} = await import('/static/lib.js');
+      const view = (title) => html`<div title=${title}><span /></div>`;
+      return view('first').props.children !== view('second').props.children;
+    }""")
+
+
+def test_reading_a_transcript_compresses_it(live_app):
+    url, peer = live_app[0], live_app[1]
+    peer.sessions["long"] = {"id": "long", "title": "Long", "source": "api_server"}
+    prose = " ".join(f"The {index} plan keeps the relay honest." for index in range(40))
+    peer.messages["long"] = [
+        {"id": index + 1, "role": "assistant", "content": prose} for index in range(60)
+    ]
+    with (
+        signed_in(url) as client,
+        client.stream(
+            "GET", "/api/sessions/long/messages", headers={"Accept-Encoding": "gzip"}
+        ) as response,
+    ):
+        sent = b"".join(response.iter_raw())
+        assert response.headers["content-encoding"] == "gzip"
+        assert "Accept-Encoding" in response.headers["vary"]
+        assert response.headers["cache-control"] == "no-store"
+    assert len(gzip.decompress(sent)) > 3 * len(sent)
+
+
 def test_restoration_prioritizes_visible_run_with_bounded_concurrency(module_page):
     module_page.evaluate("""async () => {
       const {restoreRuns} = await import('/static/runs.js');
@@ -116,6 +178,36 @@ def test_historical_code_highlights_on_approach_and_find_still_reaches_it(page):
     page.get_by_label("Find text in session").fill("entry0")
     expect(first.locator(".token").first).to_be_attached()
     expect(first.locator("code")).to_be_in_viewport()
+
+
+def test_saved_message_parses_once_and_only_code_waits_for_approach(page):
+    result = page.evaluate("""async () => {
+      const {update}=await import('/static/store.js');
+      const {marked}=await import('/static/vendor/marked.js');
+      const proto=IntersectionObserver.prototype,observe=proto.observe,parse=marked.parse;
+      let watched=0,parses=0;
+      proto.observe=function(target){
+        if(target.matches('.markdown'))watched++;
+        return observe.call(this,target);
+      };
+      marked.parse=(...args)=>{parses++;return parse(...args)};
+      try {
+        update({active:'parsed',sessions:[{id:'parsed',title:'Parsed'}],loading:false,history:[
+          {id:1,role:'assistant',content:'```javascript\\nconst oldest = 42;\\n```'},
+          ...Array.from({length:60},(_,i)=>({id:i+2,role:'assistant',content:'Plain reply '+i})),
+        ]});
+        await new Promise(resolve=>setTimeout(resolve,200));
+        const counts={watched,parses};
+        document.querySelector('.message').scrollIntoView();
+        while(!document.querySelector('.message .token'))
+          await new Promise(resolve=>setTimeout(resolve,20));
+        return {...counts,reparsed:parses-counts.parses};
+      } finally {
+        proto.observe=observe;
+        marked.parse=parse;
+      }
+    }""")
+    assert result == {"watched": 1, "parses": 61, "reparsed": 0}
 
 
 @pytest.mark.parametrize("payload_size", [50000, 1000000])

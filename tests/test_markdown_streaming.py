@@ -2,6 +2,8 @@
 
 from playwright.sync_api import expect
 
+from .conftest import hold_timers
+
 
 def test_streamed_markdown_matches_full_parse_at_every_prefix(module_page):
     result = module_page.evaluate(r"""async () => {
@@ -82,6 +84,53 @@ def test_incremental_scanning_bounds_work_for_long_replies(module_page):
         assert case["scanned"] < case["characters"] * 6, case
 
 
+def test_streaming_keeps_vnodes_for_the_page_and_not_for_each_render(module_page):
+    # A VNode kept across renders still points at the tree it first rendered in, which
+    # holds that render's text and earlier kept VNodes, so every render stayed in memory.
+    hold_timers(module_page, 32)
+    result = module_page.evaluate(r"""async () => {
+      const {html, render} = await import('/static/lib.js');
+      const {Markdown} = await import('/static/markdown.js');
+      const root = document.createElement('div'); document.body.append(root);
+      const reachable = () => {
+        const seen = new Set(), pending = [root.__k];
+        let vnodes = 0;
+        while (pending.length) {
+          const value = pending.pop();
+          if (!value || typeof value !== 'object' || seen.has(value) || value instanceof Node)
+            continue;
+          seen.add(value);
+          if ('__k' in value && 'type' in value) vnodes++;
+          pending.push(...Object.values(value));
+        }
+        return vnodes;
+      };
+      const flush = () => new Promise((done) => requestAnimationFrame(() => setTimeout(done)));
+      let text = 'First **paragraph**.\n\n- One\n- Two\n\nThe last paragraph grows';
+      const view = () => html`<div><${Markdown} text=${text} streaming smooth /></div>`;
+      try {
+        const counts = [];
+        render(view(), root);
+        for (let delta = 0; delta < 60; delta++) {
+          text += ' more';
+          // The page renders on each delta and again without new text, and the reveal
+          // timer renders the Markdown alone, in between.
+          render(view(), root);
+          fireHeldTimers(32);
+          await flush();
+          render(view(), root);
+          await flush();
+          if (delta === 9 || delta === 59) counts.push(reachable());
+        }
+        return {counts, elements: root.querySelectorAll('*').length};
+      } finally { render(null, root); root.remove(); }
+    }""")
+    early, late = result["counts"]
+    assert late < 4 * result["elements"] + 40, result
+    # Fifty more renders add a span or so of text, never a copy of the tree.
+    assert late - early < 40, result
+
+
 def test_rows_and_items_keep_nodes_through_appends_and_final_reconciliation(module_page):
     result = module_page.evaluate(r"""async () => {
       const {html,render}=await import('/static/lib.js');
@@ -135,6 +184,39 @@ def test_completed_blocks_keep_nodes_selection_and_code_scroll_during_stream(mod
     assert result["sameParagraph"] and result["sameCode"]
     assert result["selection"] == "A selectable paragraph."
     assert result["scroll"] == result["previousScroll"]
+
+
+def test_finished_blocks_do_not_pin_each_copy_of_the_reply(module_page):
+    # A token's text is a substring of what the lexer read, and in V8 a substring keeps
+    # its whole parent alive. No other engine's heap can be asked, and script can't tell
+    # a sliced string from any other.
+    if module_page.context.browser.browser_type.name != "chromium":
+        return
+    cdp = module_page.context.new_cdp_session(module_page)
+
+    def heap():
+        for _ in range(2):
+            cdp.send("HeapProfiler.collectGarbage")
+        return cdp.send("Runtime.getHeapUsage")["usedSize"]
+
+    module_page.evaluate(r"""async () => {
+      const {MarkdownStream}=await import('/static/markdown-stream.js');
+      window.keptScanner=new MarkdownStream();
+    }""")
+    before = heap()
+    characters = module_page.evaluate(r"""() => {
+      const block='A *useful* paragraph, with [a link](https://example.com).\n\n- One\n- Two\n\n';
+      // Appending makes each delta's text a new string to flatten, as a stream's does.
+      let source='';
+      for(let round=0;round<600;round++) {
+        source+=block;
+        keptScanner.read(source,true);
+      }
+      return source.length;
+    }""")
+    grown = heap() - before
+    # About 40 times the text for its parsed blocks, and over 300 times with copies of it.
+    assert grown < 100 * characters, (grown, characters)
 
 
 def test_stream_tail_defers_highlighting_and_finalizes_without_losing_literal_text(module_page):

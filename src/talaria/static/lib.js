@@ -1,11 +1,16 @@
-import { h, render } from "./vendor/preact.js";
+import { Component, h, render } from "./vendor/preact.js";
 import htm from "./vendor/htm.js";
 import { useEffect, useState } from "./vendor/hooks.js";
 import { storagePrefix } from "./profile-context.js";
 import { formatDate } from "./i18n.js";
 export { useEffect, useState };
 export { useRef, useMemo, useCallback, useLayoutEffect } from "./vendor/hooks.js";
-export const html = htm.bind(h);
+// htm would otherwise keep the VNode of a fully static element in its template for
+// the life of the page, and through it the first tree that element rendered in.
+export const html = htm.bind(function (type, props, ...children) {
+  this[0] = 3;
+  return h(type, props, ...children);
+});
 export { render };
 
 // getRandomValues also works on HTTP LAN origins; randomUUID requires HTTPS.
@@ -17,6 +22,22 @@ export function randomId() {
 // Some IMEs dispatch their final keydown after compositionend (MDN keydown).
 // Do not add a timer: the next ordinary Enter must remain immediately usable.
 export const isIMEKey = (event) => event.isComposing || event.keyCode === 229;
+
+// Skip re-rendering a subtree whose props are unchanged. Keeping its VNode instead
+// would pin memory: Preact renders a VNode it has seen through a copy, so the kept
+// one still points at the whole tree of the render it first appeared in. The view
+// is its own component, so state inside it still updates while this skips a render.
+export function memo(view) {
+  return class extends Component {
+    shouldComponentUpdate(next) {
+      for (const key in next) if (next[key] !== this.props[key]) return true;
+      return false;
+    }
+    render(props) {
+      return h(view, props);
+    }
+  };
+}
 
 export function useMediaQuery(query) {
   const [matches, setMatches] = useState(() => matchMedia(query).matches);

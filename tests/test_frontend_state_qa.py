@@ -242,6 +242,38 @@ def test_api_preserves_body_abort_and_http_error_status(module_page):
     assert result == {"aborted": "AbortError", "failed": 503, "empty": {}}
 
 
+def test_older_pages_and_revalidation_leave_loaded_messages_alone(page, live_app):
+    sid = seed(live_app[1], "paged", count=300)
+    result = page.evaluate(
+        """async sid => {
+      const store=await import('/static/store.js');
+      const {options}=await import('/static/vendor/preact.js');
+      await store.openSession(sid);
+      const before=options.diffed;
+      let renders=0;
+      options.diffed=vnode=>{if(vnode.type?.name==='Message')renders++;before?.(vnode)};
+      const settled=()=>new Promise(resolve=>setTimeout(resolve,100));
+      try {
+        await settled();
+        renders=0;
+        await store.loadOlderMessages();
+        await settled();
+        const page=renders;
+        renders=0;
+        await store.refreshHistory(sid);
+        await settled();
+        return {page,refresh:renders,rows:store.state.history.length};
+      } finally {
+        options.diffed=before;
+      }
+    }""",
+        sid,
+    )
+    assert result["rows"] == 200
+    assert result["page"] <= 100
+    assert result["refresh"] == 0
+
+
 def test_history_refresh_cannot_overwrite_a_reopened_session(module_page):
     result = module_page.evaluate("""async () => {
         const store = await import('/static/store.js');
@@ -351,6 +383,43 @@ def test_older_page_cannot_prepend_into_a_reopened_session(module_page):
         }
     }""")
     assert result == [9]
+
+
+def test_revalidation_keeps_an_older_page_loaded_during_its_read(module_page):
+    result = module_page.evaluate("""async () => {
+        const store = await import('/static/store.js');
+        const fetch = window.fetch;
+        const reads = [], pages = [];
+        window.fetch = (url, options) => String(url).includes('/qa-keep/messages')
+            ? new Promise(resolve => (String(url).includes('limit=') ? reads : pages).push(resolve))
+            : fetch(url, options);
+        const row = id => ({id, role:'user', content:`Row ${id}`});
+        const sent = list => new Promise(resolve => {
+            const check = () => list.length ? resolve() : setTimeout(check);
+            check();
+        });
+        try {
+            store.update({
+                active:'qa-keep', history:[row(3)], loading:false, historyLoaded:true,
+                historyHasMore:true, historyOffset:1,
+            });
+            const refresh = store.refreshHistory('qa-keep');
+            await sent(reads);
+            const older = store.loadOlderMessages();
+            await sent(pages);
+            pages[0](Response.json({data:[row(2)], has_more:true, next_offset:2}));
+            await older;
+            reads[0](Response.json({data:[row(3)], has_more:true, next_offset:1}));
+            await refresh;
+            return {
+                ids:store.state.history.map(m => m.id), offset:store.state.historyOffset,
+                more:store.state.historyHasMore,
+            };
+        } finally {
+            window.fetch = fetch;
+        }
+    }""")
+    assert result == {"ids": [2, 3], "offset": 2, "more": True}
 
 
 def test_session_refresh_supersedes_stale_pagination(module_page):
