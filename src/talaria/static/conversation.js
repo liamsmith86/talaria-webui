@@ -539,9 +539,15 @@ function historyItems(history, live, excerpt = false) {
 // Hermes answered and nothing it saved is shown. A failed read is not that, nor
 // is a page of hidden rows with older ones behind it. Hermes's message_count can't
 // decide this: a compaction continuation counts 0 and still has a transcript.
+// Most sessions have a row that plainly shows, so they need no full pass over the history.
+const plainlyShows = (row) =>
+  (row?.role === "user" || row?.role === "assistant") && row.display_kind !== "hidden" &&
+  typeof row.content === "string" && !!row.content.trim() && !isRecoveryPrompt(row);
+
 export function hasNoChat(app) {
   return !!app.active && app.historyLoaded && !app.loading && !app.historyHasMore &&
-    !app.searchWindow && !historyItems(app.history, null).length;
+    !app.searchWindow && !app.history.some(plainlyShows) &&
+    !historyItems(app.history, null).length;
 }
 
 function NoChatHistory({ source, readOnly }) {
