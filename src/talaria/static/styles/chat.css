@@ -179,10 +179,13 @@
 }
 /* Nearly all of a transcript is off screen. Skip its style, layout and paint, for
    switching sessions, opening anything that makes the page inert, and every frame
-   after. A message's real height replaces the estimate as it nears the screen, which
-   only scroll anchoring can do without moving what the reader is looking at. A trade-off
-   we accept: Chromium keeps skipped text out of the accessibility tree until then. */
-@supports (content-visibility: auto) and (overflow-anchor: auto) {
+   after. A message's real height replaces the estimate as it nears the screen, and only
+   Blink holds the reader's place through that: Firefox 153 and WebKit 26.5 move the text
+   by up to 190 px on the way up. Only Blink has app-region, so this selects the engine,
+   and test_offscreen_messages_skip_rendering_and_keep_their_place fails if another
+   engine gains it without holding the place. A trade-off we accept: Chromium keeps
+   skipped text out of the accessibility tree until it nears the screen. */
+@supports (content-visibility: auto) and (app-region: none) {
   .message {
     content-visibility: auto;
     contain-intrinsic-block-size: auto 800px;

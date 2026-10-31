@@ -304,10 +304,10 @@ def test_offscreen_messages_skip_rendering_and_keep_their_place(page):
         drift=Math.max(drift,Math.abs(anchor.getBoundingClientRect().top-before-400));
       }
       return {rendered,drift,total:messages.length,
-        contained:CSS.supports('content-visibility','auto')&&CSS.supports('overflow-anchor','auto')};
+        contained:getComputedStyle(messages[0]).contentVisibility==='auto'};
     }""")
     assert result["total"] == 60
-    # WebKit can't hold a reader's place through a height change, so it renders everything.
+    # A browser that can't hold a reader's place through a height change renders everything.
     assert result["rendered"] < 20 if result["contained"] else result["rendered"] == 60
     assert result["drift"] < 2
 
@@ -508,7 +508,8 @@ def test_a_return_visit_asks_the_server_for_no_assets(browser, tmp_path):
             page.get_by_label("Password", exact=True).wait_for()
             first = list(assets)
             assert len(first) > 40
-            assert all("/static/build-" in path for path in first)
+            # A manifest's URL identifies the app, so it isn't versioned. WebKit reads it each load.
+            assert all("/static/build-" in path for path in first if "manifest" not in path)
             assets.clear()
             page.goto("about:blank")
             page.goto(url)
