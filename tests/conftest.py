@@ -88,7 +88,8 @@ def serve(app, port=0):
     # Some hosts allocate low ephemeral ports, including browser-blocked ports.
     # Keep the socket bound while selecting a port outside that range.
     while True:
-        sock = socket.socket()
+        # Naming TCP matters: asyncio sets TCP_NODELAY only then, as for a production bind.
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind(("127.0.0.1", port))
         bound_port = sock.getsockname()[1]

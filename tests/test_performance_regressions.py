@@ -1,9 +1,13 @@
 import gzip
+import socket
 
 import httpx
 import pytest
 from playwright.sync_api import expect
 
+from talaria import server as talaria_server
+
+from .conftest import serve
 from .test_app import signed_in
 
 
@@ -261,3 +265,33 @@ def test_startup_history_and_catalog_do_not_wait_for_sidebar_listing(page):
           ['/api/models','/api/readiness'].every(path=>startupCheck.calls.includes(path))""")
     finally:
         page.evaluate("async()=>{startupCheck.release?.();await startupCheck.done}")
+
+
+def test_every_server_bind_lets_asyncio_disable_nagle(monkeypatch):
+    """asyncio sets TCP_NODELAY only on a listener naming TCP. Without it each response stalls
+    about 40 ms between headers and body, which production doesn't, so a measurement must not."""
+
+    async def app(scope, receive, send):
+        raise AssertionError("Nothing connects")
+
+    server, thread, _ = serve(app)
+    try:
+        assert server.servers[0].sockets[0].proto == socket.IPPROTO_TCP
+    finally:
+        server.should_exit = True
+        thread.join(6)
+
+    reloading = []
+
+    class Reloader:
+        def __init__(self, config, target, sockets):
+            reloading.extend(sockets)
+
+        def run(self):
+            pass
+
+    monkeypatch.setattr(talaria_server, "ChangeReload", Reloader)
+    talaria_server.run(
+        "talaria.cli:development_app", factory=True, reload=True, host="127.0.0.1", port=0
+    )
+    assert reloading[0].proto == socket.IPPROTO_TCP
