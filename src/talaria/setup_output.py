@@ -4,6 +4,7 @@ import os
 import sys
 
 ACCENT = "1;36"
+COMMAND = "36"
 HEADING = "1"
 SUCCESS = "1;32"
 WARNING = "1;33"
@@ -18,7 +19,7 @@ def styled(text, code, stream=None):
     return text
 
 
-def print_section(title, rows, code=HEADING):
+def print_section(title, rows, code=ACCENT):
     """Print a title over aligned rows of (label, value) or (label, value, style)."""
     print(f"\n{styled(title, code)}")
     width = max(len(label) for label, *_ in rows)

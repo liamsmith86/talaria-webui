@@ -37,7 +37,17 @@ from .hermes_owner import execution_identity, select_owner, validate_execution
 from .hermes_runtime import LAUNCHER, hermes_runtime, launcher_behind
 from .installation import read_json
 from .setup_command import install_command, print_linger_hint, sudo_prefix
-from .setup_output import ACCENT, ERROR, HEADING, MUTED, SUCCESS, WARNING, print_section, styled
+from .setup_output import (
+    ACCENT,
+    COMMAND,
+    ERROR,
+    HEADING,
+    MUTED,
+    SUCCESS,
+    WARNING,
+    print_section,
+    styled,
+)
 from .setup_services import (
     describe,
     install_service,
@@ -520,11 +530,11 @@ def setup_lock(root, stack):
 
 def print_management_commands(root, command, *, start=None):
     run_as = sudo_prefix() + command
-    rows = [("Start", start)] if start else []
+    rows = [("Start", start, COMMAND)] if start else []
     rows += [
-        ("Change password", f"{run_as} --set-password"),
-        ("Update", f"{run_as} update"),
-        ("Uninstall", f"{run_as} uninstall"),
+        ("Change password", f"{run_as} --set-password", COMMAND),
+        ("Update", f"{run_as} update", COMMAND),
+        ("Uninstall", f"{run_as} uninstall", COMMAND),
     ]
     print_section("Manage Talaria", rows)
     print_linger_hint(read_json(root / "deployment.json").get("setup", {}))
@@ -992,7 +1002,8 @@ def report_setup(
     print_management_commands(root, command, start=None if plan or existing_service else command)
     if plan:
         print_section(
-            "Service", [(action.capitalize(), line) for action, line in describe(plan).items()]
+            "Service",
+            [(action.capitalize(), line, COMMAND) for action, line in describe(plan).items()],
         )
     elif existing_service:
         scope = metadata.get("scope", "user")
