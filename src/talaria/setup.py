@@ -34,6 +34,7 @@ from .deployment import (
     main as manage,
 )
 from .hermes_owner import execution_identity, select_owner, validate_execution
+from .hermes_runtime import LAUNCHER, hermes_runtime, launcher_behind
 from .installation import read_json
 from .setup_command import install_command, print_linger_hint, sudo_prefix
 from .setup_services import (
@@ -153,16 +154,22 @@ def check_port(host, port):
 
 def find_hermes_python(home, command=None):
     candidates = [
-        home / "hermes-agent/venv/bin/python",
-        home / "venv/bin/python",
-        home.parent / "hermes-agent/venv/bin/python",
-        Path.home() / "hermes-agent/venv/bin/python",
-        Path("/usr/local/lib/hermes-agent/venv/bin/python"),
+        path
+        for install in (
+            home / "hermes-agent",
+            home,
+            home.parent / "hermes-agent",
+            Path.home() / "hermes-agent",
+            Path("/usr/local/lib/hermes-agent"),
+        )
+        for path in (install / LAUNCHER, install / "venv/bin/python")
     ]
     cli_candidates = []
     executable = command or shutil.which("hermes")
     if executable:
         script = Path(executable).resolve()
+        if launcher := launcher_behind(script):
+            cli_candidates.append(launcher)
         if (script.parent.parent / "pyvenv.cfg").is_file():
             cli_candidates.append(script.parent / "python")
         try:
@@ -195,9 +202,18 @@ def hermes_request(python, home, *, owner=None, **request):
     identity = execution_identity(owner, groups=True)
     python = validate_execution(home, python, owner)
     env["HOME"] = owner.pw_dir
+    python, root = hermes_runtime(python, env=env, cwd=home, identity=identity)
+    python = validate_execution(home, python, owner)
+    if root:
+        env["TALARIA_HERMES_ROOT"] = str(root)
     try:
         result = subprocess.run(
-            [str(python), "-c", Path(__file__).with_name("setup_hermes.py").read_text()],
+            [
+                str(python),
+                *(["-I"] if root else []),
+                "-c",
+                Path(__file__).with_name("setup_hermes.py").read_text(),
+            ],
             input=json.dumps(request),
             text=True,
             capture_output=True,

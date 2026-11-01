@@ -23,6 +23,14 @@ def backup_hermes(home):
 
 
 def add_hermes_root():
+    # Started as Hermes's launcher starts it, which selects the dependencies too.
+    if root := os.environ.get("TALARIA_HERMES_ROOT"):
+        for name in ("PYTHONHOME", "PYTHONPATH", "VIRTUAL_ENV"):
+            os.environ.pop(name, None)
+        sys.path.insert(0, root)
+        import hermes_bootstrap  # noqa: F401
+
+        return
     # An editable install lists root modules from when it was installed, so an updated
     # Hermes can have newer ones. Its own CLI puts its root on the path the same way.
     import hermes_cli

@@ -58,6 +58,7 @@ INSTALL_FILES = {
     "tests/test_uninstall.py",
     "src/talaria/setup.py",
     "src/talaria/setup_command.py",
+    "src/talaria/hermes_runtime.py",
     "src/talaria/setup_services.py",
     "src/talaria/setup_hermes.py",
     "tests/test_setup.py",

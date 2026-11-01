@@ -10,6 +10,7 @@ import httpx
 from .deployment import Deployment, DeploymentError, locked, write_json
 from .hermes_owner import execution_identity, select_owner, validate_execution
 from .hermes_plugin.release import fingerprint
+from .hermes_runtime import hermes_runtime
 
 
 def run_as_owner(home, source, restart=True, command=None, *, owner=None):
@@ -33,6 +34,8 @@ def run_as_owner(home, source, restart=True, command=None, *, owner=None):
     python = find_hermes_python(home, command=command)
     if python is None:
         raise DeploymentError("Cannot locate Hermes's Python for local plugin maintenance.")
+    python = validate_execution(home, python, owner)
+    python, _ = hermes_runtime(python, env=env, cwd=home, identity=identity)
     python = validate_execution(home, python, owner)
     verify = (
         (lambda: restart_and_verify(home, home / "plugins/talaria-webui", command, owner=owner))
