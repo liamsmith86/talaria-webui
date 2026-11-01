@@ -59,6 +59,8 @@ def prepare_gate_repo(destination):
         "contrib/check.py",
         "contrib/i18n.mjs",
         "contrib/i18n.py",
+        "contrib/vendor.py",
+        "contrib/vendor/package-lock.json",
         ".gitignore",
     ):
         target = destination / name
@@ -69,6 +71,7 @@ def prepare_gate_repo(destination):
     catalogs.mkdir(parents=True)
     (catalogs / "en.json").write_text("{}\n")
     (catalogs.parent / "i18n.js").write_text('export const languages = [{ code: "en" }];\n')
+    shutil.copytree(ROOT / "src/talaria/static/vendor", catalogs.parent / "vendor")
     (destination / ".github/scripts").mkdir(parents=True)
     (destination / ".github/scripts/check.py").write_text("print(42)\n")
     (destination / ".git/info/exclude").write_text("node_modules\n")

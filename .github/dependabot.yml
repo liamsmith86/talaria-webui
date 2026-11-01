@@ -23,6 +23,14 @@ updates:
       npm:
         update-types: [minor, patch]
 
+  # Each of these needs contrib/vendor.py run on its pull request, so they stay separate.
+  - package-ecosystem: npm
+    directory: /contrib/vendor
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
   - package-ecosystem: github-actions
     directories:
       - /
