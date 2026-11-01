@@ -245,10 +245,10 @@ def configure_hermes(args, prompts, settings, home, python, info, *, owner=None)
 
     apply_hermes_credentials(args, settings)
     if args.skip_hermes:
-        return False
+        return None
     if info is None:
         configure_remote_hermes(args, prompts, settings)
-        return False
+        return None
     owner = owner or select_owner(home)
     print(
         f"Found Hermes {info.get('version', '')} at {home} "
@@ -278,24 +278,31 @@ def configure_hermes(args, prompts, settings, home, python, info, *, owner=None)
     if prompts.terminal is None:
         plugin = args.plugin
     info = apply_local_hermes(args, settings, home, python, info, enable, plugin, owner=owner)
-    changed = info.get("changed", False)
-    if changed:
-        print(f"Hermes configuration backup: {home}/{{config.yaml,.env}}.before-talaria")
+    if info.get("changed"):
+        print(f"Hermes configuration backup: {home}/config.yaml.before-talaria")
         if info.get("multiplex"):
             print(
                 "Multiplexed gateway: also enable the plugin in its primary profile. "
                 "Use --hermes-url for a routed /p/PROFILE endpoint."
             )
-    pending = changed or hermes_restart_pending(home)
-    restart = pending and (
-        args.restart_hermes or prompts.yes("Restart Hermes now? Active work may be interrupted.")
-    )
-    if restart:
+    return info
+
+
+def apply_hermes_restart(args, prompts, home, python, info, *, owner=None):
+    """Return whether Hermes still has to restart. A failure here can't undo the install."""
+    if not info or not (info.get("changed") or hermes_restart_pending(home)):
+        return False
+    if args.restart_hermes or prompts.yes("Restart Hermes now? Active work may be interrupted."):
         print("Restarting Hermes…", flush=True)
-        restart_setup_hermes(home, python, owner=owner, plugin_enabled=info.get("plugin_enabled"))
-    elif pending:
-        print("Restart the Hermes gateway to apply its configuration changes.")
-    return pending and not restart
+        try:
+            restart_setup_hermes(
+                home, python, owner=owner, plugin_enabled=info.get("plugin_enabled")
+            )
+            return False
+        except (ValueError, OSError, DeploymentError) as exc:
+            print(Prompts(sys.stderr).highlight(f"Warning: {exc}", "1;33"), file=sys.stderr)
+    print("Restart the Hermes gateway to apply its configuration changes.")
+    return True
 
 
 def hermes_restart_pending(home):
@@ -591,7 +598,7 @@ def _setup(args, prompts, stack):
     settings = load(config)
     original = (settings.host, settings.port, settings.public_url)
     home, python, info, owner = inspect_hermes(args, prompts)
-    configure_binding(args, prompts, settings, config, info)
+    configure_binding(args, prompts, settings, config)
     existing_service = metadata.get("service")
     if existing_service and original != (settings.host, settings.port, settings.public_url):
         raise ValueError(
@@ -604,7 +611,7 @@ def _setup(args, prompts, stack):
         preflight(plan, root, config, resuming=bool(metadata) or pending_setup.exists())
     configure_password(args, prompts, settings)
     write_json(pending_setup, {"service": kind, "config": str(config)})
-    pending = configure_hermes(args, prompts, settings, home, python, info, owner=owner)
+    info = configure_hermes(args, prompts, settings, home, python, info, owner=owner)
     settings_changed = settings != load(config)
     password_path = initialize_password(config, settings)
     # Shared runtime files must be readable by the optional dedicated service user.
@@ -617,6 +624,7 @@ def _setup(args, prompts, stack):
             activate_setup_service(plan, root, config, deployment, settings)
     finally:
         os.umask(old_mask)
+    pending = apply_hermes_restart(args, prompts, home, python, info, owner=owner)
     report_setup(
         args, settings, root, config, password_path, pending, plan, existing_service, metadata
     )
@@ -835,18 +843,16 @@ def inspect_hermes(args, prompts):
     return home, python, hermes_request(python, home, owner=owner), owner
 
 
-def configure_binding(args, prompts, settings, config, info):
+def configure_binding(args, prompts, settings, config):
     if args.host:
         settings.host = args.host
     elif args.bind:
         settings.host = {"local": "127.0.0.1", "all": "0.0.0.0"}.get(args.bind) or lan_address()
     elif not config.exists():
-        suggested = str(info["host"]) if info else "127.0.0.1"
-        default = "all" if suggested in {"0.0.0.0", "::"} and prompts.terminal else "local"
         if prompts.terminal is not None:
             print("local = this machine; lan = local network; all = all network interfaces.")
         binding = prompts.ask(
-            "Allow connections from (local/lan/all)", default, ("local", "lan", "all")
+            "Allow connections from (local/lan/all)", "local", ("local", "lan", "all")
         )
         settings.host = {"local": "127.0.0.1", "all": "0.0.0.0"}.get(binding) or lan_address()
     settings.port = args.port if args.port is not None else settings.port
@@ -962,8 +968,8 @@ def report_setup(
     connection = "restart required" if pending else verify_hermes(settings)
     print("Hermes: " + connection)
     if plan:
-        for action, command in describe(plan).items():
-            print(f"{action.capitalize()}: {command}")
+        for action, service_command in describe(plan).items():
+            print(f"{action.capitalize()}: {service_command}")
     elif existing_service:
         print(f"Service: {existing_service} ({metadata.get('scope', 'user')})")
     else:
