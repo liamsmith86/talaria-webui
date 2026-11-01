@@ -68,6 +68,25 @@ jobs:
           uv sync --locked
           uv run --locked pytest -q -m quality --fail-on-skip
 
+  fuzz:
+    name: Fuzz streamed Markdown
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm install --global npm@12.2.1 --ignore-scripts
+        working-directory: ${{ runner.temp }}
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      # Pull requests repeat one seed so they can't fail at random. This one explores.
+      - run: node tests/markdown_stream_fuzz.mjs 100000 "$GITHUB_RUN_ID"
+
   behavior:
     name: PR behavior
     needs: lint

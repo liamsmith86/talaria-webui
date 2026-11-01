@@ -187,6 +187,7 @@ def test_docs_only_ref_cannot_skip_a_code_update_to_another_ref(repo, monkeypatc
         ),
         (["contrib/check.py"], ["tests/test_local_checks.py", "tests/test_quality.py"], False, []),
         (["src/talaria/static/markdown.js"], None, True, []),
+        (["src/talaria/static/markdown-stream.js"], [check.MARKDOWN_FUZZ], True, []),
         (["src/talaria/routes.py"], [], True, []),
         (["uv.lock"], [], True, ["tests"]),
         (["unknown-new-component.py"], [], True, []),

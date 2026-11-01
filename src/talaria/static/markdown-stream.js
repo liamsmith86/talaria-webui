@@ -57,6 +57,8 @@ export class MarkdownStream {
     while (keep > this.count && remaining) {
       if (tokens[--keep].type !== "space") remaining--;
     }
+    // Only a blank line settles a block: an adjacent one can still merge with what follows.
+    while (keep > this.count && tokens[keep - 1].type !== "space") keep--;
     while (this.count < keep) {
       const raw = tokens[this.count].raw;
       if (!source.startsWith(raw, this.offset)) break;
