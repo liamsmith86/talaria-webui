@@ -526,7 +526,7 @@ def test_required_barrier_cannot_hide_missing_behavior_or_release_jobs(
     jobs = {name: {"result": "skipped"} for name in ci["jobs"]["required"]["needs"]}
     required = {"lint", "catalog"}
     if full:
-        required.update({"platforms", "browsers", "hermes", "wsl"})
+        required.update({"platforms", "browsers", "hermes", "install", "wsl"})
     if pull_request:
         required.add("behavior")
     for name in required - {failed}:

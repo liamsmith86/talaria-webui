@@ -44,6 +44,7 @@ PLATFORM_TESTS = [
     "tests/test_container_health.py",
 ]
 INSTALL_FILES = {
+    "contrib/install_walkthrough.py",
     "src/talaria/control.py",
     "src/talaria/supervisor.py",
     "src/talaria/supervisor_cli.py",
@@ -327,9 +328,14 @@ def ci_scope(paths):
 
 
 def ci_check(base, describe=False):
-    scope = ci_scope(changed_paths(base, "HEAD"))
+    paths = changed_paths(base, "HEAD")
+    scope = ci_scope(paths)
     if describe:
-        print(f"runtime={str(scope['backend'] is not None or scope['browsers']).lower()}")
+        install = any(path in INSTALL_FILES for path in paths)
+        print(
+            f"runtime={str(scope['backend'] is not None or scope['browsers'] or install).lower()}"
+        )
+        print(f"install={str(install).lower()}")
         print(f"browser={str(scope['browsers']).lower()}")
         return
     env = environment()
