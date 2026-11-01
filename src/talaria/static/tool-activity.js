@@ -3,7 +3,7 @@
 import { html, useMemo, useState, Icon, humanTime } from "./lib.js";
 import { Markdown } from "./markdown.js";
 import { ToolCode } from "./tool-code.js";
-import { ToolResult } from "./tool-result.js";
+import { ToolResult, readResult } from "./tool-result.js";
 import { duration, money, numberValue } from "./content.js";
 import { state, openSession } from "./store.js";
 import { t, msg, n, rich, formatList } from "./i18n.js";
@@ -200,6 +200,7 @@ function BlockedCode() {
 
 export function ToolRow({ tool, matched = false, initiallyOpen = false, onToggle }) {
   const [open, setOpen] = useState(initiallyOpen);
+  const result = useMemo(() => (tool.output === undefined ? null : readResult(tool.output)), [tool.output]);
   // A path or query already shown in the row needs no second copy. Commands
   // keep their block for copying and highlighting.
   const input = tool.input ?? tool.subject;
@@ -208,36 +209,35 @@ export function ToolRow({ tool, matched = false, initiallyOpen = false, onToggle
     tool.exitCode != null && tool.exitCode !== 0 && t("exit {code}", { code: tool.exitCode }),
     elapsed(tool.duration),
   ].filter(Boolean).join(" · ");
+  const card = {
+    class: `tool-card${tool.status === "running" ? " working" : ""}${matched ? " search-tool-match" : ""}`,
+    "data-search-target": matched ? "true" : undefined,
+  };
+  const row = html`<span class="tool-icon"><${Icon} name=${toolIcon(tool)} size=${14} /></span
+    ><span class=${`tool-label${details ? "" : " findable"}`}>${toolLabel(tool, tool.status === "running")}</span
+    >${meta && html`<span class="tool-meta">${meta}</span>`}<${ToolStatus} tool=${tool} />`;
+  // The row already says everything known, so it offers nothing to open. A
+  // call that is still running gains a real card if a result arrives.
+  if (!details && (!result || result.empty))
+    return html`<div ...${card}><div class="tool-row">${row}</div></div>`;
   return html`<details
-    class=${`tool-card${tool.status === "running" ? " working" : ""}${matched ? " search-tool-match" : ""}`}
-    data-search-target=${matched ? "true" : undefined}
+    ...${card}
     open=${initiallyOpen}
     onToggle=${(event) => {
       setOpen(event.currentTarget.open);
       onToggle?.(event.currentTarget.open);
     }}
   >
-    <summary>
-      <span class="tool-icon"><${Icon} name=${toolIcon(tool)} size=${14} /></span
-      ><span class=${`tool-label${details ? "" : " findable"}`}>${toolLabel(tool, tool.status === "running")}</span
-      >${meta && html`<span class="tool-meta">${meta}</span>`}<${ToolStatus} tool=${tool}
-      /><${Icon} name="chevron" size=${14} />
-    </summary>
+    <summary>${row}<${Icon} name="chevron" size=${14} /></summary>
     <div class="tool-content">
       ${details &&
       html`<${ToolCode} text=${input} label=${t("Tool details")}
         shell=${tool.name === "terminal"} enabled=${open} />`}
       ${blockedBySetting(tool)
         ? html`<${BlockedCode} />`
-        : tool.output !== undefined
-        ? html`<small>${t("Result")}</small>
-            <${ToolResult} text=${tool.output}
-              enabled=${open && tool.status !== "running"} />`
-        : !details && html`<p>
-            ${tool.status === "running"
-              ? t("Hermes is using this tool.")
-              : t("This tool has finished.")}
-          </p>`}
+        : result && html`<small>${t("Result")}</small>
+            <${ToolResult} result=${result}
+              enabled=${open && tool.status !== "running"} />`}
     </div>
   </details>`;
 }

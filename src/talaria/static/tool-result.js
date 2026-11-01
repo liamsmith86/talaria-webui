@@ -1,4 +1,4 @@
-import { html, useMemo } from "./lib.js";
+import { html } from "./lib.js";
 import { ToolCode } from "./tool-code.js";
 import { t } from "./i18n.js";
 
@@ -7,7 +7,7 @@ const PREVIEW_LIMIT = 20000;
 // millisecond. Only unusually large payloads stay raw.
 const PARSE_LIMIT = 1000000;
 
-function resultText(text) {
+function parseResult(text) {
   if (text.length > PARSE_LIMIT) return { body: text, facts: [] };
   try {
     const value = JSON.parse(text);
@@ -26,6 +26,13 @@ function resultText(text) {
   }
 }
 
+// A result's payload and sibling fields, and whether it has anything to show.
+export function readResult(text) {
+  const { body, facts } = parseResult(typeof text === "string" ? text : "");
+  const blank = !body.trim();
+  return { body, facts, blank, empty: blank && facts.length === 0 };
+}
+
 function download(text) {
   const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
   const link = document.createElement("a");
@@ -38,13 +45,12 @@ function download(text) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function ToolResult({ text, enabled }) {
-  const { body, facts } = useMemo(() => resultText(typeof text === "string" ? text : ""), [text]);
+export function ToolResult({ result: { body, facts, blank }, enabled }) {
   const shortened = body.length > PREVIEW_LIMIT;
   // Do not split an astral character at the preview boundary.
   const end = shortened && /[\uD800-\uDBFF]/.test(body[PREVIEW_LIMIT - 1])
     ? PREVIEW_LIMIT - 1 : PREVIEW_LIMIT;
-  return html`<${ToolCode} text=${body.slice(0, end) || t("No output")}
+  return html`<${ToolCode} text=${blank ? t("No output") : body.slice(0, end)}
     label=${t("Tool result")} enabled=${enabled} />
     ${facts.length > 0 && html`<dl class="tool-facts">
       ${facts.map(([field, value]) => html`<div><dt>${field}</dt><dd>${value}</dd></div>`)}

@@ -154,6 +154,7 @@ def test_small_results_preserve_plain_malformed_and_single_payload_forms(page, l
         ('{"partial":', '{"partial":'),
         ('{"output":"hello"}', "hello"),
         ('{"output":""}', "No output"),
+        ('{"output":" \\n"}', "No output"),
         ("[1,2]", "[\n  1,\n  2\n]"),
         ("0", "0"),
     ]

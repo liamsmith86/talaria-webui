@@ -240,12 +240,13 @@ def started(call_id, tool, preview, at):
     }
 
 
-def completed(call_id, seconds, at):
+def completed(call_id, seconds, at, **fields):
     return {
         "event": "tool.completed",
         "tool_call_id": call_id,
         "duration": seconds,
         "timestamp": at,
+        **fields,
     }
 
 
@@ -273,7 +274,7 @@ def test_an_opened_step_stays_open_when_the_run_becomes_a_group(page, live_app):
         sid,
         {"event": "talaria.reasoning.delta", "block_id": "r", "delta": "Planning"},
         started("a", "read_file", "app.py", 1),
-        completed("a", 0.2, 1.2),
+        completed("a", 0.2, 1.2, preview="1|print('app')"),
     )
     page.locator(".tool-stack > .tool-card > summary").click()
     expect(page.locator(".tool-card[open]")).to_have_count(1)
@@ -512,3 +513,63 @@ def test_a_background_result_appears_while_the_session_is_open(page, live_app):
     expect(page.locator(".message.notice")).to_be_visible(timeout=20000)
     held = "d => [...heldTimers.values()].some((t) => t.delay === d)"
     assert not page.evaluate(held, BACKGROUND_CHECK), "Polling continued after the result arrived"
+
+
+def test_a_step_with_nothing_to_show_does_not_offer_to_open(page, live_app):
+    sid = seed(live_app[1], "nothing-to-show")
+    open_session(page, sid)
+    running = page.locator(".tool-card.working")
+    apply_live(page, sid, started("empty", "write_file", "notes.md", 1))
+    expect(running).to_contain_text("notes.md")
+    expect(running.locator("summary")).to_have_count(0)
+
+    # Hermes's session API turns report completion with an empty preview.
+    apply_live(page, sid, completed("empty", 0.2, 2, preview=""))
+    step = page.locator(".tool-card").filter(has_text="Wrote notes.md")
+    expect(step.locator(".tool-status")).to_have_text("Completed")
+    expect(step.locator("summary")).to_have_count(0)
+    expect(page.get_by_role("region", name="Tool result", exact=True)).to_have_count(0)
+
+
+def test_an_unreported_live_result_is_not_called_empty(page, live_app):
+    sid = seed(live_app[1], "unreported")
+    open_session(page, sid)
+    apply_live(
+        page,
+        sid,
+        started("run", "terminal", "cat notes.md", 1),
+        completed("run", 0.2, 2, preview=""),
+    )
+    step = page.locator(".tool-card")
+    step.locator("summary").click()
+    expect(step.get_by_role("region", name="Tool details", exact=True)).to_have_text("cat notes.md")
+    expect(step.get_by_role("region", name="Tool result", exact=True)).to_have_count(0)
+
+
+def test_a_step_with_anything_to_show_still_opens(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "something-to-show")
+    tools = [
+        ("path", "read_file", {"path": "a.md"}, {"output": "", "error": "Missing"}, "Missing"),
+        ("input", "write_file", {"path": "b.md", "content": "Body"}, {"output": ""}, "Body"),
+        ("command", "terminal", {"command": "true"}, {"output": "", "exit_code": 0}, "No output"),
+    ]
+    peer.messages[sid] = [
+        {"id": 1, "role": "user", "content": "Go"},
+        {
+            "id": 2,
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [call(call_id, name, **args) for call_id, name, args, _, _ in tools],
+        },
+        *[
+            {"id": 3 + index, **result(call_id, content)}
+            for index, (call_id, _, _, content, _) in enumerate(tools)
+        ],
+        {"id": 9, "role": "assistant", "content": "Done"},
+    ]
+    open_session(page, sid)
+    page.locator(".activity > summary").click()
+    for step, (_, _, _, _, shown) in zip(page.locator(".tool-card").all(), tools, strict=True):
+        step.locator("summary").click()
+        expect(step.locator(".tool-content")).to_contain_text(shown)
