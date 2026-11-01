@@ -42,7 +42,7 @@ import {
 } from "./attachments.js";
 import { Images } from "./images.js";
 import { ConversationFind } from "./conversation-find.js";
-import { responseParts } from "./response-parts.js";
+import { responseParts, savedReasoning } from "./response-parts.js";
 import { useReplyJump, useScrollControls, scrollBehavior } from "./reply-jump.js";
 import { useHistoryAnchor } from "./history-anchor.js";
 import { t, msg, useLanguage } from "./i18n.js";
@@ -486,7 +486,7 @@ function historyItems(history, live, excerpt = false) {
         isCurrentImage: message === currentImage,
         tools,
         time: message.timestamp || message.created_at,
-        reasoning: message.reasoning || message.reasoning_content || "",
+        reasoning: savedReasoning(message),
         id: message.id || message.row_id || items.length,
       });
     }

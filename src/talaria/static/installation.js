@@ -19,13 +19,7 @@ const phases = {
   recovering: msg("Restoring previous release…"),
 };
 
-const channels = {
-  stable: { label: msg("Stable"), help: msg("Installs tested releases.") },
-  nightly: {
-    label: msg("Nightly"),
-    help: msg("Installs every change as soon as it's merged, before release. Things may break."),
-  },
-};
+const channels = { stable: msg("Stable"), nightly: msg("Nightly") };
 
 function delay(signal) {
   return new Promise((resolve, reject) => {
@@ -192,11 +186,10 @@ export function Installation({ pluginOnly = false, readOnly = false }) {
         <span>${t("Update channel")}</span>
         <select value=${shownChannel} disabled=${readOnly} aria-busy=${busy}
           onChange=${(event) => act("channel", event.target.value)}>
-          ${Object.entries(channels).map(([value, { label }]) => html`<option key=${value} value=${value}
+          ${Object.entries(channels).map(([value, label]) => html`<option key=${value} value=${value}
             disabled=${busy && value !== shownChannel}>${t(label)}</option>`)}
         </select>
       </label>
-      <p class="field-help">${t(channels[shownChannel].help)}</p>
       ${channelFailed && html`<p class="form-error" role="alert">${t("Could not switch the update channel. Nothing changed.")}</p>`}`}
       <p class="installation-status" role="status">${pluginOnly && !busy ? t("Talaria: {status}", { status }) : status}</p>
       ${problem && !busy && html`<p class="form-error" role="alert">${t(problem)}</p>`}

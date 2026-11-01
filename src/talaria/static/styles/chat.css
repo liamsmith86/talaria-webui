@@ -130,12 +130,6 @@
   background: var(--accent);
   animation: breathe 1.8s infinite;
 }
-.composer-hint {
-  color: var(--faint);
-  text-align: right;
-  font-size: 10px;
-  padding: 12px 2px 0;
-}
 .conversation-shell {
   flex: 1;
   min-height: 0;
@@ -452,6 +446,7 @@
 }
 .tool-card > summary,
 .tool-card > .tool-row,
+.reasoning > .tool-row,
 .reasoning > summary,
 .activity > summary,
 .notice > details > summary {
@@ -468,7 +463,8 @@
 }
 /* A step with nothing to open has no hover or pointer, and keeps its status in
    line with the rows whose chevron (14px and an 8px gap) follows it. */
-.tool-card > .tool-row {
+.tool-card > .tool-row,
+.reasoning > .tool-row {
   padding-right: 30px;
   cursor: default;
 }

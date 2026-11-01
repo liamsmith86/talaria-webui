@@ -330,7 +330,7 @@ SNAPSHOT = """() => {
     return copy.textContent.replace(/\\s+/g, " ").trim();
   };
   const parts = ".user-content, .message-text, .activity > summary .tool-label, "
-    + ".tool-card > summary .tool-label, .tool-status.failed, .reasoning > summary .tool-label, "
+    + ".tool-card > summary .tool-label, .tool-status.failed, .reasoning .tool-label, "
     + ".guidance, .agent-card > summary, .run-notice, .run-error, .notice summary";
   return [...document.querySelectorAll(".conversation-content > .message")].map((message) => {
     const role = ["user", "assistant", "notice"].find((r) => message.classList.contains(r));

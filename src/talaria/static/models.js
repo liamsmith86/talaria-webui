@@ -49,7 +49,6 @@ export function modelInventory(data) {
                   free: p.pricing[id].free === true,
                 }
               : null,
-            warning: text(p.warning),
           };
         })
         .filter((m) => m.id),

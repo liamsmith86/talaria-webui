@@ -162,7 +162,9 @@ def test_saved_turn_keeps_tools_code_selection_and_identity_across_the_next_run(
         'A selectable introduction.\n\n```javascript\nconst wide = "' + "word " * 150 + '";\n```'
     )
     text = "The final answer."
-    start_reply(page, live_app, text, prefix=prefix, reasoning="A considered answer.")
+    start_reply(
+        page, live_app, text, prefix=prefix, reasoning="A considered answer.\n\nWith a second line."
+    )
     page.locator(".tool-card summary").click()
     page.locator(".reasoning summary").click()
     page.evaluate("""() => {

@@ -4,6 +4,7 @@ import { Dialog } from "./dialogs.js";
 import { count, duration, numberValue } from "./content.js";
 import { reasoningNames } from "./models.js";
 import { compacted } from "./command-activity.js";
+import { savedReasoning } from "./response-parts.js";
 import { t, n, msg, formatNumber } from "./i18n.js";
 
 function useDetails(path, enabled, initial = null) {
@@ -37,7 +38,7 @@ export function ResponseDetails({ session, message, enabled, onClose }) {
     {
       timestamp: message.timestamp,
       finish_reason: message.finish_reason,
-      has_reasoning: !!(message.reasoning || message.reasoning_content),
+      has_reasoning: !!savedReasoning(message),
       status:
         message.responseStatus === "cancelled"
           ? "interrupted"
@@ -55,7 +56,7 @@ export function ResponseDetails({ session, message, enabled, onClose }) {
     ],
     [
       msg("Reasoning text"),
-      data?.has_reasoning || message.reasoning || message.reasoning_content
+      data?.has_reasoning || savedReasoning(message)
         ? t("Available")
         : t("Not shared"),
     ],

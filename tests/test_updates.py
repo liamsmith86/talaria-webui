@@ -252,7 +252,6 @@ def test_channel_switch_offers_the_new_commit_without_installing(page, update_ui
     expect(status).to_have_text("Checking for updates…")
     expect(channel).to_have_value("nightly")
     expect(channel).to_be_focused()
-    expect(page.get_by_role("tabpanel")).to_contain_text("Things may break")
     assert page.evaluate(
         "[...document.querySelectorAll('.select-control option')]"
         ".map((option) => [option.value, option.disabled])"

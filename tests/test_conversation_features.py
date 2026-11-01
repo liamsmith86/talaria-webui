@@ -279,7 +279,7 @@ def test_model_without_published_levels_offers_the_full_reasoning_range(page, li
     assert next(iter(live_app[1].runs.values()))["model_options"]["reasoning"]["effort"] == "max"
 
 
-def test_catalog_warnings_prices_and_unavailable_models(page, live_app):
+def test_catalog_prices_and_unavailable_models(page, live_app):
     peer = live_app[1]
     peer.discovery_overrides["/api/model/options"] = (
         {
@@ -295,7 +295,6 @@ def test_catalog_warnings_prices_and_unavailable_models(page, live_app):
                     "unavailable_models": ["locked"],
                     "featured_models": ["available"],
                     "pricing": {"available": {"input": "$0.25", "output": "$1.00"}},
-                    "warning": "Account information needs refreshing.",
                     "capabilities": {
                         "available": {"reasoning": True, "can_disable_reasoning": False},
                         "plain": {"reasoning": False},
@@ -309,8 +308,6 @@ def test_catalog_warnings_prices_and_unavailable_models(page, live_app):
     page.get_by_role("button", name="Choose model", exact=True).click()
     expect(page.get_by_role("button", name=re.compile("locked.*Unavailable"))).to_be_disabled()
     expect(page.get_by_text("Per 1M tokens", exact=False)).to_contain_text("$0.25")
-    page.locator(".catalog-warnings summary").click()
-    expect(page.get_by_text("Account information needs refreshing.", exact=False)).to_be_visible()
     page.get_by_role("button", name="Refresh model catalog").click()
     expect(page.get_by_role("button", name="Refresh model catalog")).to_be_enabled()
     assert ("GET", "/api/model/options", {"refresh": "1"}) in peer.calls
@@ -673,7 +670,9 @@ def test_sessions_owned_by_other_apps_continue_in_a_branch(page, live_app, autho
         expect(page.get_by_label("Message Hermes")).to_be_visible()
         return
     expect(page.get_by_label("Message Hermes")).to_have_count(0)
-    notice = "This conversation belongs to CLI. Hermes accepts new messages for it only there."
+    notice = (
+        "This session is managed by CLI. Hermes Agent does not accept new messages for it via API."
+    )
     expect(page.get_by_text(notice, exact=True)).to_be_visible()
     branch = page.get_by_role("button", name="Continue in a branch", exact=True)
     if not plugin:
@@ -718,7 +717,10 @@ def test_session_with_nothing_saved_says_so_and_offers_a_new_session(page, live_
     expect(
         page.get_by_text("Hermes has no saved messages from Terminal.", exact=True)
     ).to_be_visible()
-    notice = "This conversation belongs to Terminal. Hermes accepts new messages for it only there."
+    notice = (
+        "This session is managed by Terminal. "
+        "Hermes Agent does not accept new messages for it via API."
+    )
     expect(page.get_by_text(notice, exact=True)).to_be_visible()
     expect(page.get_by_label("Message Hermes")).to_have_count(0)
     # There is nothing to continue, so a branch would only make an empty session.

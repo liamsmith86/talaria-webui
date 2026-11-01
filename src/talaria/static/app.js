@@ -48,7 +48,7 @@ import { ProfilePicker } from "./profiles.js";
 import { ContextIndicator, ResponseDetails } from "./message-insights.js";
 import { MessageAction } from "./message-actions.js";
 import { sessionModel, sessionReasoning } from "./models.js";
-import { restoreRuns, running } from "./runs.js";
+import { restoreRuns } from "./runs.js";
 import { observePage } from "./page-lifecycle.js";
 import { Startup } from "./startup.js";
 import { LanguageSelector } from "./language.js";
@@ -310,7 +310,7 @@ function App() {
           </div>`
         : external
         ? html`<div class="child-return" role="status">
-            <span>${t("This conversation belongs to {source}. Hermes accepts new messages for it only there.", { source: sourceLabel(external) })}</span>
+            <span>${t("This session is managed by {source}. Hermes Agent does not accept new messages for it via API.", { source: sourceLabel(external) })}</span>
             ${noChat
               ? html`<button class="text-button" onClick=${() => newConversation()}>
                   <${Icon} name="plus" size=${17} />${t("New session")}
@@ -331,11 +331,6 @@ function App() {
               draftSuggestion=${suggestion}
               commandActivity=${commandActivity}
             />
-            <p class="composer-hint">
-              ${running(app.active)
-                ? t("Your agent keeps working if you leave.")
-                : t("Shift + Enter for a new line")}
-            </p>
           </div>`}
     </main>
     ${app.toast &&
