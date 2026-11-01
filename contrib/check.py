@@ -78,6 +78,11 @@ CHECK_FILES = {
     "package-lock.json",
     ".npmrc",
 }
+MARKDOWN_FUZZ = "tests/test_markdown_fuzz.py"
+MARKDOWN_STREAM_FILES = {
+    "src/talaria/static/markdown-stream.js",
+    "src/talaria/static/vendor/marked.js",
+}
 BROWSERS = ("chromium", "firefox", "webkit")
 # Where CONTRIBUTING.md puts the verified axe-core script.
 AXE = ".local/axe.min.js"
@@ -134,7 +139,8 @@ def plan(paths=None):
         }
         for path in paths
     )
-    backend = None if frontend else []
+    streamed = any(path in MARKDOWN_STREAM_FILES for path in paths)
+    backend = ([MARKDOWN_FUZZ] if streamed else None) if frontend else []
     if local:
         backend = ["tests/test_local_checks.py", "tests/test_quality.py"]
     elif installer:
@@ -321,7 +327,9 @@ def ci_scope(paths):
     # Quality-gate self-tests need the full developer toolchain at release time.
     backend = scope["backend"]
     if backend and all(
-        path in {"tests/test_local_checks.py", "tests/test_quality.py"} for path in backend
+        path
+        in {"tests/test_local_checks.py", "tests/test_quality.py", MARKDOWN_FUZZ, I18N_CATALOGS}
+        for path in backend
     ):
         backend = None
     return {**scope, "backend": backend}

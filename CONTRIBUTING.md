@@ -44,6 +44,10 @@ plausibly break again and that nothing else covers, and delete tests that don't
 meet that bar. Keep real sessions and credentials out of tests. Don't bypass the lockfiles or
 the 7-day dependency cooldown.
 
+`tests/markdown_stream_fuzz.mjs` checks streamed Markdown against a full parse. Pull requests repeat
+one seed and a nightly job tries a new one. To reproduce a failure, pass its seed:
+`node tests/markdown_stream_fuzz.mjs 100000 <seed>`.
+
 Dependabot updates the Python and npm lockfiles, GitHub Actions and the Docker base image weekly.
 It also tracks the browser libraries in `src/talaria/static/vendor/` through
 `contrib/vendor/package-lock.json`. On one of those pull requests, run
