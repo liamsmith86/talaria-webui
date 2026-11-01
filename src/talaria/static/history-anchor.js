@@ -27,7 +27,7 @@ export function useHistoryAnchor(root, session, history, following) {
     const nodes = messages.flatMap((message) => [
       ...visibleBoundary(message.querySelectorAll(
         ".message-text .markdown-block > *, .tool-stack > .tool-card, .activity > summary, " +
-        ".activity[open] > .activity-steps > li, .message > .reasoning > summary, " +
+        ".activity[open] > .activity-steps > li, .message > .reasoning > :is(summary, .tool-row), " +
         ".message > .reasoning[open] .markdown-block > *, .user-content",
       ), top),
       message,

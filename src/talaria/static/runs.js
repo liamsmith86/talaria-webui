@@ -25,7 +25,7 @@ import {
   withoutImagePlaceholders,
 } from "./attachments.js";
 import { plainContent, userMessage } from "./content.js";
-import { responseParts, appendText, finishText, interimText } from "./response-parts.js";
+import { responseParts, savedReasoning, appendText, finishText, interimText } from "./response-parts.js";
 import { msg } from "./i18n.js";
 
 const sources = new Map();
@@ -189,10 +189,14 @@ export function applyEvent(live, event) {
   if (type === "talaria.reasoning.delta" && typeof event.delta === "string") {
     const parts = responseParts(live);
     const tail = parts.at(-1);
-    next.parts = tail?.kind === "reasoning" && tail.id === event.block_id
-      ? [...parts.slice(0, -1), { ...tail, text: tail.text + event.delta }]
-      : [...parts, { kind: "reasoning", id: event.block_id, text: event.delta }];
-    next.reasoning = (live.reasoning || "") + event.delta;
+    const growing = tail?.kind === "reasoning" && tail.id === event.block_id;
+    // A thought starts with its first text, so blank reasoning never shows a row.
+    if (growing || event.delta.trim()) {
+      next.parts = growing
+        ? [...parts.slice(0, -1), { ...tail, text: tail.text + event.delta }]
+        : [...parts, { kind: "reasoning", id: event.block_id, text: event.delta }];
+      next.reasoning = (live.reasoning || "") + event.delta;
+    }
     next.statusText = "";
   }
   if (type === "talaria.status" && typeof event.text === "string")
@@ -229,7 +233,7 @@ export function applyEvent(live, event) {
     if (event.already_streamed !== true) next.text = (live.text || "") + event.text;
     next.statusText = "";
   }
-  if (type === "reasoning.available" && typeof event.text === "string") {
+  if (type === "reasoning.available" && typeof event.text === "string" && event.text.trim()) {
     next.reasoning = event.text;
     const parts = responseParts(live);
     // Hermes can report reasoning after the call's text deltas. Place it
@@ -733,8 +737,7 @@ export function responseSaved(history, live) {
       message.display_kind !== "hidden" &&
       (message.content ||
         message.tool_calls?.length ||
-        message.reasoning ||
-        message.reasoning_content),
+        savedReasoning(message)),
   );
   if (!final) return false;
   if (typeof live.baseMessageId === "number" && typeof final.id === "number")

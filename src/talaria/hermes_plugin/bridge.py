@@ -320,7 +320,11 @@ async def session_details(request, db, sid, action):
             {
                 "timestamp": row.get("timestamp"),
                 "finish_reason": row.get("finish_reason"),
-                "has_reasoning": bool(row.get("reasoning") or row.get("reasoning_content")),
+                # Hermes can save a blank value when a model's API requires the field.
+                "has_reasoning": any(
+                    isinstance(value, str) and value.strip()
+                    for value in (row.get("reasoning"), row.get("reasoning_content"))
+                ),
                 **(detail or {}),
                 "message_id": message_id,
             }

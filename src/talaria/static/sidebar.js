@@ -27,24 +27,30 @@ import { t, msg, useLanguage } from "./i18n.js";
 
 const NONE = {};
 
-function groupName(session, day) {
-  const now = new Date(day);
-  now.setHours(0, 0, 0, 0);
+// When each period starts, newest first. A session belongs to the first period
+// it falls in, so a week that began last month still reads as this week.
+function sessionPeriods(day) {
+  const today = new Date(day);
+  const [year, month, date] = [today.getFullYear(), today.getMonth(), today.getDate()];
+  const monday = date - (today.getDay() + 6) % 7;
+  return [
+    [today, msg("Today")],
+    [new Date(year, month, date - 1), msg("Yesterday")],
+    [new Date(year, month, monday), msg("This week")],
+    [new Date(year, month, monday - 7), msg("Last week")],
+    [new Date(year, month, 1), msg("This month")],
+    [new Date(year, month - 1, 1), msg("Last month")],
+  ];
+}
+
+function groupName(session, periods) {
   const raw =
     session.last_active ||
     session.updated_at ||
     session.started_at ||
     session.created_at;
   const date = new Date(typeof raw === "number" ? raw * 1000 : raw);
-  date.setHours(0, 0, 0, 0);
-  const days = Math.round((now - date) / 86400000);
-  return days <= 0
-    ? msg("Today")
-    : days === 1
-      ? msg("Yesterday")
-      : days < 7
-        ? msg("Previous 7 days")
-        : msg("Earlier");
+  return periods.find(([start]) => date >= start)?.[1] ?? msg("Earlier");
 }
 
 export function Sidebar({ app }) {
@@ -81,11 +87,12 @@ export function Sidebar({ app }) {
   // selection, date grouping, or running indicators actually change.
   const rows = useMemo(() => {
     const labels = new Map(JSON.parse(liveKey));
+    const periods = sessionPeriods(day);
     let lastGroup = "";
     return sessions.map((session) => {
       const { status, label } = labels.get(session.id) || {};
       const working = status === "running";
-      const group = session.pinned ? msg("Pinned") : query ? "" : groupName(session, day);
+      const group = session.pinned ? msg("Pinned") : query ? "" : groupName(session, periods);
       const heading = group && group !== lastGroup;
       lastGroup = group;
       return html`<div key=${session.id}>

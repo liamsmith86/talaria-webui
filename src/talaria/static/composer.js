@@ -365,11 +365,9 @@ export function Composer({
         aria-autocomplete="list"
         aria-controls=${commands.expanded ? "command-picker" : undefined}
         aria-activedescendant=${commands.expanded ? commands.option : undefined}
-        placeholder=${!active
-          ? t("Message Hermes")
-          : live.clarification ? t("Answer your agent’s question…")
-            : live.approval ? t("Answer the approval request to continue…")
-              : t("Guide Hermes while it works…")}
+        placeholder=${active && live.clarification ? t("Answer your agent’s question…")
+          : active && live.approval ? t("Answer the approval request to continue…")
+            : t("Message Hermes")}
         value=${draft}
         rows="1"
         onInput=${(e) => {

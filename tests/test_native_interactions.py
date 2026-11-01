@@ -110,7 +110,6 @@ def test_question_choices_survive_reload_and_submit_once(
     card = page.get_by_role("region", name="Question from your agent")
     expect(card).to_be_visible()
     expect(page.locator(".reasoning")).to_have_count(1)
-    page.locator(".reasoning summary").click()
     expect(page.locator(".reasoning")).to_contain_text("First reasoning continues.")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     directory = Path("test-results")

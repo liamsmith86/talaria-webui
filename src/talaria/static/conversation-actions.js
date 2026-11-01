@@ -162,7 +162,7 @@ export function TranscriptDownload({ session, onClose }) {
   }
   return html`<${Dialog} title=${t("Download transcript")} onClose=${onClose}>
     <div class="download-formats">
-      <button disabled=${!!busy} onClick=${() => download("markdown")}><${Icon} name="file"/><span><strong>Markdown</strong><small>${t("Text transcript; image placeholders.")}</small></span><${Icon} name="download" size=${18}/></button>
+      <button disabled=${!!busy} onClick=${() => download("markdown")}><${Icon} name="file"/><span><strong>Markdown</strong><small>${t("Text transcript")}</small></span><${Icon} name="download" size=${18}/></button>
       <button disabled=${!!busy} onClick=${() => download("json")}><${Icon} name="terminal"/><span><strong>JSON</strong><small>${t("Messages, tools, and image data.")}</small></span><${Icon} name="download" size=${18}/></button>
     </div>
     ${busy && html`<p class="download-progress" role="status"><span class="spinner" />${t("Preparing the complete transcript…")}</p>`}

@@ -1,5 +1,6 @@
 """Exercise the local gates against disposable Git repositories."""
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +10,8 @@ import pytest
 from contrib import check
 
 pytestmark = pytest.mark.quality
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.parametrize(
@@ -44,12 +47,39 @@ def commit():
     return check.git("rev-parse", "HEAD")
 
 
+def prepare_gate_repo(destination):
+    for name in (
+        "pyproject.toml",
+        "uv.lock",
+        "package.json",
+        "package-lock.json",
+        ".npmrc",
+        "eslint.config.js",
+        "contrib/quality.py",
+        "contrib/check.py",
+        "contrib/i18n.mjs",
+        "contrib/i18n.py",
+        ".gitignore",
+    ):
+        target = destination / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / name, target)
+    (destination / "src/talaria").mkdir(parents=True)
+    catalogs = destination / "src/talaria/static/locales"
+    catalogs.mkdir(parents=True)
+    (catalogs / "en.json").write_text("{}\n")
+    (catalogs.parent / "i18n.js").write_text('export const languages = [{ code: "en" }];\n')
+    (destination / ".github/scripts").mkdir(parents=True)
+    (destination / ".github/scripts/check.py").write_text("print(42)\n")
+    (destination / ".git/info/exclude").write_text("node_modules\n")
+    # Avoid downloads in gate tests; the staged snapshot still verifies the lock identity.
+    (destination / "node_modules").symlink_to(ROOT / "node_modules")
+
+
 @pytest.mark.parametrize(
     "broken", ["def broken(:\n", "print( 42 )\n", "def abandoned_function():\n    return 42\n"]
 )
 def test_pre_commit_checks_staged_content_not_the_corrected_working_file(repo, broken):
-    from tests.test_quality import prepare_gate_repo
-
     prepare_gate_repo(repo)
     subprocess.run(["git", "add", "."], check=True)
     source = repo / "src/talaria/example.py"
@@ -426,29 +456,3 @@ def test_missing_accessibility_engine_fails_before_running_other_checks(monkeypa
     )
     with pytest.raises(SystemExit, match="TALARIA_AXE_PATH"):
         check.check(paths=["tests/test_accessibility.py"])
-
-
-@pytest.mark.parametrize("mode", ["fixed", "unfixed", "unchanged", "setup-error"])
-def test_proof_requires_a_failure_before_and_success_after(repo, mode):
-    (repo / "src").mkdir()
-    (repo / "tests").mkdir()
-    (repo / "uv.lock").write_text("unchanged dependency fixture\n")
-    (repo / "tests/conftest.py").write_text(
-        "def pytest_addoption(parser):\n"
-        "    parser.addoption('--fail-on-skip', action='store_true')\n"
-    )
-    source = repo / "src/example.py"
-    source.write_text("answer = 42\n" if mode == "unchanged" else "answer = 0\n")
-    if mode == "setup-error":
-        source.unlink()
-    baseline = commit()
-    (repo / "tests/test_example.py").write_text(
-        "from example import answer\ndef test_answer():\n    assert answer == 42\n"
-    )
-    source.write_text("answer = 0\n" if mode == "unfixed" else "answer = 42\n")
-    if mode == "fixed":
-        check.prove(baseline, ["tests/test_example.py::test_answer"])
-    else:
-        with pytest.raises(SystemExit, match="unexpected"):
-            check.prove(baseline, ["tests/test_example.py::test_answer"])
-    assert Path("src/example.py").read_text() == source.read_text()

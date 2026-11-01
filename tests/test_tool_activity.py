@@ -167,7 +167,7 @@ def test_live_group_follows_the_current_step_then_summarizes(page, live_app):
     expect(group.locator("> summary .tool-label")).to_have_text("Ran 1 command and read 1 file")
     expect(group.locator("> summary .tool-meta")).to_have_text("2s")
     group.locator("> summary").click()
-    expect(group.locator(".reasoning summary")).to_have_text("Thought Checking the output")
+    expect(group.locator(".reasoning .tool-label")).to_have_text("Thought Checking the output")
 
 
 def test_activity_labels_and_summaries_follow_the_language(page, live_app):
@@ -182,7 +182,7 @@ def test_activity_labels_and_summaries_follow_the_language(page, live_app):
         "Ausgeführt: git status"
     )
     group.locator("> summary").click()
-    expect(group.locator(".reasoning summary")).to_have_text("Überlegung Planning the fix")
+    expect(group.locator(".reasoning .tool-label")).to_have_text("Überlegung Planning the fix")
     expect(group.locator(".tool-meta").first).to_have_text("Exit-Code 1")
 
 

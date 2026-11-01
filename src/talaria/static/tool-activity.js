@@ -1,6 +1,6 @@
 // Hermes activity between the agent's prose: one-line tool and reasoning
 // steps, folded into a single group when several tools run in a row.
-import { html, useMemo, useState, Icon, humanTime } from "./lib.js";
+import { html, useEffect, useMemo, useRef, useState, Icon, humanTime } from "./lib.js";
 import { Markdown } from "./markdown.js";
 import { ToolCode } from "./tool-code.js";
 import { ToolResult, readResult } from "./tool-result.js";
@@ -255,16 +255,46 @@ function thoughtPreview(text) {
   return "";
 }
 
+// Whether the row's own line can say everything: a link's address would stay hidden.
+const fitsItsPreview = (text) => !/\n|\]\(/.test(text.trim());
+
 export function ThoughtRow({ text, streaming = false, deferHighlight = false, initiallyOpen = false, onToggle }) {
   const preview = useMemo(() => thoughtPreview(text), [text]);
+  const [open, setOpen] = useState(initiallyOpen);
+  // Unmeasured rows stay expandable. Whether the line is cut short depends on the width.
+  const [unclipped, setUnclipped] = useState(false);
+  const candidate = !streaming && fitsItsPreview(text);
+  const plain = candidate && unclipped && !open;
+  const label = useRef(null);
+  useEffect(() => {
+    if (!candidate) return undefined;
+    const element = label.current;
+    let frame = 0;
+    // A row swapped during the observer's own delivery would report a resize loop.
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const subject = element.querySelector(".tool-subject");
+        if (subject?.clientWidth) setUnclipped(subject.scrollWidth <= subject.clientWidth);
+      });
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [candidate, plain]);
+  const row = html`<span class="tool-icon"><${Icon} name="thought" size=${14} /></span
+    ><span ref=${label} class=${`tool-label${plain ? " findable" : ""}`}
+      >${segment(`${streaming ? t("Thinking") : t("Thought")}${preview ? " " : ""}`)}${preview &&
+        html`<span class="tool-subject">${preview}</span>`}</span>`;
+  if (plain) return html`<div class="reasoning"><div class="tool-row">${row}</div></div>`;
   return html`<details class=${`reasoning${streaming ? " working" : ""}`} open=${initiallyOpen}
-    onToggle=${(event) => onToggle?.(event.currentTarget.open)}>
-    <summary>
-      <span class="tool-icon"><${Icon} name="thought" size=${14} /></span
-      ><span class="tool-label">${segment(`${streaming ? t("Thinking") : t("Thought")}${preview ? " " : ""}`)}${preview &&
-        html`<span class="tool-subject">${preview}</span>`}</span
-      ><${Icon} name="chevron" size=${14} />
-    </summary>
+    onToggle=${(event) => {
+      setOpen(event.currentTarget.open);
+      onToggle?.(event.currentTarget.open);
+    }}>
+    <summary>${row}<${Icon} name="chevron" size=${14} /></summary>
     <${Markdown} text=${text} streaming=${streaming} deferHighlight=${deferHighlight} />
   </details>`;
 }

@@ -98,6 +98,14 @@ def readable(message, answered):
     return True
 
 
+def saved_reasoning(message):
+    """Hermes saves a blank value on a turn with no reasoning when the model's API requires one."""
+    for value in (message.get("reasoning"), message.get("reasoning_content")):
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+
 def markdown_message(message):
     role = message.get("role", "message")
     role = role if isinstance(role, str) else "message"
@@ -111,8 +119,7 @@ def markdown_message(message):
         label = "Your guidance"
         text = match.group(1) if (match := GUIDANCE.match(text)) else text
     sections = [f"## {label}", text]
-    reasoning = message.get("reasoning") or message.get("reasoning_content")
-    if isinstance(reasoning, str) and reasoning:
+    if reasoning := saved_reasoning(message):
         sections.append("### Reasoning\n\n" + reasoning)
     tools = message.get("tool_calls")
     for tool in tools if isinstance(tools, list) else []:

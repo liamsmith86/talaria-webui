@@ -1,5 +1,7 @@
 """Regression coverage for UI focus, search visibility, and draft interactions."""
 
+from datetime import datetime
+
 import pytest
 from playwright.sync_api import expect
 
@@ -187,12 +189,48 @@ def test_reasoning_only_history_remains_available(page, live_app):
     open_notes(
         page,
         live_app,
-        [{"id": 1, "role": "assistant", "content": "", "reasoning": "A retained thought"}],
+        [{"id": 1, "role": "assistant", "content": "", "reasoning": "A retained\n\nthought"}],
     )
-    expect(page.locator(".reasoning summary")).to_be_visible()
-    expect(page.locator(".reasoning summary")).to_have_text("Thought A retained thought")
+    expect(page.locator(".reasoning summary")).to_have_text("Thought A retained")
     page.locator(".reasoning summary").click()
-    expect(page.locator(".reasoning .markdown")).to_have_text("A retained thought")
+    expect(page.locator(".reasoning .markdown")).to_contain_text("thought")
+
+
+def test_thought_expands_only_when_its_row_cuts_it_short(page, live_app):
+    text = "A one line thought that fits a wide window but not a narrow one"
+    open_notes(page, live_app, [{"id": 1, "role": "assistant", "content": "", "reasoning": text}])
+    expect(page.locator(".reasoning .tool-row .tool-subject")).to_have_text(text)
+    expect(page.locator(".reasoning summary")).to_have_count(0)
+    page.get_by_role("button", name="Find in session", exact=True).click()
+    page.get_by_label("Find text in session").fill("one line thought")
+    expect(page.locator(".find-count")).to_have_text("1 of 1")
+    page.get_by_label("Find text in session").press("Escape")
+    page.set_viewport_size({"width": 320, "height": 700})
+    page.locator(".reasoning summary").click()
+    expect(page.locator(".reasoning .markdown")).to_have_text(text)
+
+
+def test_blank_reasoning_is_not_shown_as_a_thought(page, live_app):
+    call = {"id": "call", "function": {"name": "terminal", "arguments": '{"command":"pwd"}'}}
+    open_notes(
+        page,
+        live_app,
+        [
+            {"id": 1, "role": "user", "content": "Where are we?"},
+            # Hermes saves a space on tool turns for models whose API needs the field.
+            {
+                "id": 2,
+                "role": "assistant",
+                "content": "",
+                "reasoning_content": " ",
+                "tool_calls": [call],
+            },
+            {"id": 3, "role": "tool", "tool_call_id": "call", "content": "/tmp"},
+            {"id": 4, "role": "assistant", "content": "In tmp."},
+        ],
+    )
+    expect(page.locator(".tool-stack .tool-label")).to_have_text("Ran pwd")
+    expect(page.locator(".reasoning")).to_have_count(0)
 
 
 def test_jump_to_latest_stays_above_a_tall_composer(page, live_app):
@@ -301,32 +339,85 @@ def test_message_edit_does_not_submit_into_a_different_conversation(page, live_a
     assert peer.messages[other] == [{"id": 1, "role": "user", "content": "Message 000"}]
 
 
-def test_sidebar_uses_calendar_days_at_midnight(page, live_app):
-    midnight, yesterday = page.evaluate("""() => {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const yesterday = new Date(today);
-        yesterday.setDate(today.getDate() - 1);
-        return [today.getTime() / 1000, yesterday.getTime() / 1000];
-    }""")
+# Each date in the browser's calendar, grouped as it should be on that "today".
+SESSION_PERIODS = {
+    # A Wednesday mid-month uses every period. A clock running behind still reads as today.
+    "2026-10-14": {
+        "Today": ["2026-10-15", "2026-10-14"],
+        "Yesterday": ["2026-10-13"],
+        "This week": ["2026-10-12"],
+        "Last week": ["2026-10-11", "2026-10-05"],
+        "This month": ["2026-10-04", "2026-10-01"],
+        "Last month": ["2026-09-30", "2026-09-01"],
+        "Earlier": ["2026-08-31"],
+    },
+    # On a Monday and a Tuesday, today and yesterday leave nothing for this week. Yesterday
+    # also takes its day from last week.
+    "2026-10-12": {
+        "Today": ["2026-10-12"],
+        "Yesterday": ["2026-10-11"],
+        "Last week": ["2026-10-10", "2026-10-05"],
+        "This month": ["2026-10-04"],
+    },
+    "2026-10-13": {
+        "Today": ["2026-10-13"],
+        "Yesterday": ["2026-10-12"],
+        "Last week": ["2026-10-11", "2026-10-05"],
+        "This month": ["2026-10-04"],
+    },
+    # Sunday ends the week that began on the Monday before it.
+    "2026-10-18": {
+        "Today": ["2026-10-18"],
+        "Yesterday": ["2026-10-17"],
+        "This week": ["2026-10-16", "2026-10-12"],
+        "Last week": ["2026-10-11", "2026-10-05"],
+        "This month": ["2026-10-04"],
+    },
+    # Both weeks can begin last month, and on the 1st nothing is left for this month.
+    "2026-10-01": {
+        "Today": ["2026-10-01"],
+        "Yesterday": ["2026-09-30"],
+        "This week": ["2026-09-28"],
+        "Last week": ["2026-09-27", "2026-09-21"],
+        "Last month": ["2026-09-20", "2026-09-01"],
+        "Earlier": ["2026-08-31"],
+    },
+    # Last week and last month can fall in last year.
+    "2027-01-06": {
+        "Today": ["2027-01-06"],
+        "Yesterday": ["2027-01-05"],
+        "This week": ["2027-01-04"],
+        "Last week": ["2027-01-03", "2026-12-28"],
+        "Last month": ["2026-12-27", "2026-12-01"],
+        "Earlier": ["2026-11-30"],
+    },
+}
+
+
+@pytest.mark.clock
+def test_sidebar_groups_sessions_by_calendar_period(page, live_app):
     peer = live_app[1]
-    for sid, title, stamp in (
-        ("midnight", "Midnight today", midnight),
-        ("yesterday", "Midnight yesterday", yesterday),
-    ):
-        seed(peer, sid)
-        peer.sessions[sid].update(title=title, last_active=stamp)
-    page.reload()
-    expect(
-        page.get_by_role("link", name="Midnight today", exact=True)
-        .locator("../..")
-        .locator(".session-group")
-    ).to_have_text("Today")
-    expect(
-        page.get_by_role("link", name="Midnight yesterday", exact=True)
-        .locator("../..")
-        .locator(".session-group")
-    ).to_have_text("Yesterday")
+    for today, periods in SESSION_PERIODS.items():
+        page.clock.set_fixed_time(datetime.fromisoformat(f"{today}T12:00:00"))
+        # A date's first and last seconds group together, which pins each boundary to midnight.
+        shown = [
+            [period, *(f"{date}T{time}" for date in dates for time in ("23:59:59", "00:00:00"))]
+            for period, dates in periods.items()
+        ]
+        titles = [title for _, *rows in shown for title in rows]
+        # The fake lists the newest session first, as Hermes does.
+        peer.sessions = {
+            title: {
+                "id": title,
+                "title": title,
+                "last_active": datetime.fromisoformat(title).timestamp(),
+            }
+            for title in reversed(titles)
+        }
+        page.evaluate("async () => (await import('/static/store.js')).refreshSessions()")
+        expect(page.locator(".session-group, .session-caption")).to_have_text(
+            [item for rows in shown for item in rows]
+        )
 
 
 def test_pending_pin_cannot_close_a_newly_opened_session_dialog(page, live_app):

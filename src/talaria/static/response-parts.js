@@ -13,6 +13,12 @@ export function responseParts(live) {
   ];
 }
 
+// Hermes saves a single space on a tool-call turn with no reasoning when the
+// model's API requires the field. That is not a thought, so blank counts as none.
+export function savedReasoning(message) {
+  return [message.reasoning, message.reasoning_content].find((value) => value?.trim()) || "";
+}
+
 export function appendText(parts, delta) {
   const last = parts.at(-1);
   return last?.kind === "text" && !last.interim

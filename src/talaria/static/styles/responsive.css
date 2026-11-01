@@ -85,9 +85,6 @@
     padding-left: 25px;
     padding-right: 52px;
   }
-  .composer-hint {
-    display: none;
-  }
 }
 @media (max-width: 700px) {
   body {

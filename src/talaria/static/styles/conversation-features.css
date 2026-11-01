@@ -179,23 +179,6 @@
 .model-price {
   line-height: 1.5;
 }
-.catalog-warnings {
-  font-size: 11px;
-  color: var(--muted);
-  margin: 12px 0 0;
-}
-.catalog-warnings summary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  padding: 6px 0;
-}
-.catalog-warnings p {
-  line-height: 1.6;
-  margin-top: 8px;
-  overflow-wrap: anywhere;
-}
 .readiness-notice {
   display: flex;
   align-items: flex-start;

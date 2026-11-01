@@ -10,7 +10,7 @@ import {
   randomId,
 } from "./lib.js";
 import { api } from "./api.js";
-import { t, n, rich, formatNumber, msg } from "./i18n.js";
+import { t, n, rich, msg } from "./i18n.js";
 import { pendingStorage, forgetImages } from "./attachments.js";
 import {
   state,
@@ -192,7 +192,7 @@ export function Connection({
           placeholder="default"
       /></label>
       <p class="field-help">
-        ${rich("Use {profile} for the main agent, or the name of an existing Hermes profile. Named profiles need their own API key.", { profile: html`<code>default</code>` })}
+        ${rich("Use {profile} for the main agent, or the name of an existing Hermes profile. Each profile needs their own Hermes API key.", { profile: html`<code>default</code>` })}
       </p>
       <label class="field"
         >${t("API key")}<input
@@ -209,11 +209,9 @@ export function Connection({
             : t("Your Hermes API server key")}
           autocomplete="new-password"
       /></label>
-      <p class="field-help">
-        ${keyFromEnv ? t("Using {variable} from the server environment.", { variable: "TALARIA_HERMES_API_KEY" })
-          : t("Your key is saved to {path}.", { path: creating || state.profile?.id !== "default"
-            ? "~/.config/talaria/profiles.json" : "~/.config/talaria/config.json" })}
-      </p>
+      ${keyFromEnv && html`<p class="field-help">
+        ${t("Using {variable} from the server environment.", { variable: "TALARIA_HERMES_API_KEY" })}
+      </p>`}
       ${!loaded && !error && html`<p class="field-help" role="status">${t("Loading…")}</p>`}
       ${error && html`<div class="form-error" role="alert">${t(error)}</div>`}
       ${tested?.url === url && tested?.profile === profile && tested?.key === key &&
@@ -349,19 +347,6 @@ export function ModelPicker({
     onSelect(model);
     onClose();
   }
-  const warnings = useMemo(
-    () => [
-      ...new Map(
-        models
-          .filter((m) => m.warning)
-          .map((m) => [
-            m.provider,
-            { name: m.providerLabel, warning: m.warning },
-          ]),
-      ).values(),
-    ],
-    [models],
-  );
   return html`<${Dialog} title=${t("Choose a model")} className="model-dialog" onClose=${onClose}>
     <div class="model-search"><div class="search-field"><${Icon} name="search" size=${18}/><input aria-label=${t("Search models")} placeholder=${t("Find a model…")} value=${query} onInput=${(
       e,
@@ -383,17 +368,6 @@ export function ModelPicker({
     </div>
     ${busy && html`<p class="field-help" role="status">${t("Refreshing models from Hermes…")}</p>`}
     ${error && html`<div class="form-error" role="alert">${t(error)}</div>`}
-    ${
-      warnings.length > 0 &&
-      html`<details class="catalog-warnings">
-        <summary>
-          <${Icon} name="alert" size=${14} />${t("Provider information · {count}", { count: formatNumber(warnings.length) })}
-        </summary>
-        ${warnings.map(
-          (p) => html`<p><strong>${p.name}</strong> · ${p.warning}</p>`,
-        )}
-      </details>`
-    }
     <div class="model-list"><button class="model-option model-default" disabled=${defaultModel?.available === false} onClick=${() => select(null)} aria-pressed=${!selected}><span>${defaultModel?.id || t("Configured model")}<small>${defaultModel?.providerLabel || "Hermes"}</small></span><span class="model-option-end"><span class="default-badge">${t("Default")}</span>${defaultModel?.available === false ? html`<span class="quiet-badge">${t("Unavailable")}</span>` : !selected && html`<${Icon} name="check" size=${18} />`}</span></button>
     ${filtered
       .slice(0, limit)
