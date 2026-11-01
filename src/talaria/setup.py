@@ -175,6 +175,13 @@ def find_hermes_python(home, command=None):
     return next((path for path in candidates if path.is_file()), None)
 
 
+def helper_cause(stdout):
+    for line in reversed(stdout.splitlines()):
+        if line.startswith("TALARIA_SETUP_ERROR="):
+            return f" ({json.loads(line.split('=', 1)[1])})"
+    return ""
+
+
 def hermes_request(python, home, *, owner=None, **request):
     # Keep the native runtime isolated from Talaria's environment and never expose
     # native stdout/stderr: Hermes can include credentials in diagnostics.
@@ -201,8 +208,8 @@ def hermes_request(python, home, *, owner=None, **request):
         )
         if result.returncode:
             raise ValueError(
-                "Native Hermes configuration helper failed; configuration may be "
-                "managed or this Hermes version may be incompatible. "
+                f"Native Hermes configuration helper failed{helper_cause(result.stdout)}; "
+                "configuration may be managed or this Hermes version may be incompatible. "
                 "Use --skip-hermes and configure connectivity in the WebUI."
             )
         line = next(

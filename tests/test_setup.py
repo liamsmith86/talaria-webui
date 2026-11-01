@@ -445,6 +445,41 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
 @pytest.mark.skipif(
     not os.getenv("HERMES_SOURCE"), reason="Set HERMES_SOURCE for native setup checks"
 )
+def test_native_helper_survives_an_install_older_than_a_hermes_module(tmp_path):
+    # An editable install lists root modules when installed, and updating can add new ones.
+    script = """
+import runpy, sys
+for name, module in list(sys.modules.items()):
+    if name.startswith('__editable__') and hasattr(module, 'MAPPING'):
+        module.MAPPING.pop('hermes_yaml', None)
+runpy.run_path(sys.argv[1], run_name='__main__')
+"""
+    env = {
+        "PATH": os.environ["PATH"],
+        "HOME": str(tmp_path),
+        "HERMES_HOME": str(tmp_path),
+        "HERMES_ENABLE_PROJECT_PLUGINS": "false",
+    }
+    result = subprocess.run(
+        [
+            str(Path(os.environ["HERMES_SOURCE"]) / "venv/bin/python"),
+            "-c",
+            script,
+            str(Path(wizard.__file__).with_name("setup_hermes.py")),
+        ],
+        input="{}",
+        text=True,
+        capture_output=True,
+        cwd=tmp_path,
+        env=env,
+    )
+    assert "TALARIA_SETUP_RESULT=" in result.stdout, result.stderr[-500:]
+
+
+@pytest.mark.hermes
+@pytest.mark.skipif(
+    not os.getenv("HERMES_SOURCE"), reason="Set HERMES_SOURCE for native setup checks"
+)
 @pytest.mark.parametrize("setup_request", [{}, {"enable": True}])
 def test_native_hermes_external_api_key_is_detected_and_reused(tmp_path, setup_request):
     source = Path(os.environ["HERMES_SOURCE"])

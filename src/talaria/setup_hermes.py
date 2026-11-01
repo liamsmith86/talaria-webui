@@ -22,7 +22,18 @@ def backup_hermes(home):
                     os.fsync(file.fileno())
 
 
+def add_hermes_root():
+    # An editable install lists root modules from when it was installed, so an updated
+    # Hermes can have newer ones. Its own CLI puts its root on the path the same way.
+    import hermes_cli
+
+    root = os.path.realpath(os.path.join(os.path.dirname(hermes_cli.__file__), os.pardir))
+    if root not in sys.path:
+        sys.path.insert(0, root)
+
+
 def configure(home, request):
+    add_hermes_root()
     from hermes_cli import __version__
     from hermes_cli.config import load_env, read_raw_config, save_env_value
     from hermes_cli.env_loader import load_hermes_dotenv
@@ -91,7 +102,13 @@ def main():
             (home / "plugins/.talaria-maintenance" / name).unlink(missing_ok=True)
         result = {}
     else:
-        result = configure(home, request)
+        try:
+            result = configure(home, request)
+        except Exception as exc:
+            # A type and module name say what broke; Hermes's own text can contain credentials.
+            cause = ": ".join(filter(None, (type(exc).__name__, getattr(exc, "name", None))))
+            print("TALARIA_SETUP_ERROR=" + json.dumps(cause))
+            raise SystemExit(1) from None
     # Delimit native CLI chatter; the caller captures this pipe and never logs secrets.
     print("TALARIA_SETUP_RESULT=" + json.dumps(result))
 
