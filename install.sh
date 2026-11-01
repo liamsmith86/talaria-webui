@@ -113,9 +113,9 @@ download() {
     else wget --https-only --timeout=30 --tries=3 -q "$1" -O "$2"; fi
 }
 if ! command -v uv >/dev/null 2>&1; then
-    confirm 'Install pinned uv 0.12.9 from Astral?'
-    download https://astral.sh/uv/0.12.9/install.sh "$work/uv.sh"
-    expected=222e006c0fe4a0d793031833e469b21df72311f4e3526ffecca0e19e6dfabc32
+    confirm 'Install pinned uv 0.13.5 from Astral?'
+    download https://astral.sh/uv/0.13.5/install.sh "$work/uv.sh"
+    expected=1c6e7f025499664633ac2dce43a210800510e9ef0625c52e034a8afdf8bf177a
     if command -v sha256sum >/dev/null 2>&1; then actual=$(sha256sum "$work/uv.sh")
     elif command -v shasum >/dev/null 2>&1; then actual=$(shasum -a 256 "$work/uv.sh")
     else fail 'Install sha256sum or shasum to verify uv.'; fi

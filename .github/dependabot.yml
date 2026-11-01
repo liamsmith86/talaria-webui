@@ -1,0 +1,46 @@
+version: 2
+
+# The cooldown matches `exclude-newer` in pyproject.toml and `min-release-age` in .npmrc.
+# Major versions stay out of the groups, so one breaking release can't hold up the rest.
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      python:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      npm:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/*
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    # uv's version is shared with CI and install.sh, so it moves with them by hand.
+    ignore:
+      - dependency-name: ghcr.io/astral-sh/uv
