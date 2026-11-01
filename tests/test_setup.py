@@ -441,6 +441,47 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
     assert not root.exists() and not config.parent.exists()
 
 
+def test_published_launcher_wins_over_a_leftover_venv(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    home = tmp_path / ".hermes"
+    launcher = home / "hermes-agent/.hermes/bin/hermes"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\n")
+    leftover = home / "hermes-agent/venv/bin/python"
+    leftover.parent.mkdir(parents=True)
+    leftover.touch()
+    assert wizard.find_hermes_python(home) == launcher
+    # A custom install directory is only reachable through the command's PATH wrapper.
+    custom = tmp_path / "custom/.hermes/bin/hermes"
+    custom.parent.mkdir(parents=True)
+    custom.write_text("#!/bin/sh\n")
+    wrapper = tmp_path / "wrapper"
+    wrapper.write_text(f'#!/bin/sh\nexec {custom} "$@"\n')
+    assert wizard.find_hermes_python(tmp_path / "other", command=wrapper) == custom
+
+
+@pytest.mark.hermes
+@pytest.mark.skipif(
+    not os.getenv("HERMES_SOURCE"), reason="Set HERMES_SOURCE for native setup checks"
+)
+def test_native_helper_starts_through_a_published_launcher(tmp_path):
+    source = Path(os.environ["HERMES_SOURCE"]).resolve()
+    install = tmp_path / "install"
+    install.mkdir()
+    for entry in source.iterdir():
+        if entry.name not in {".hermes", "venv"}:
+            (install / entry.name).symlink_to(entry)
+    launcher = install / ".hermes/bin/hermes"
+    launcher.parent.mkdir(parents=True)
+    runtime = json.dumps([str(source / "venv/bin/python"), "-I", "-c", ""])
+    launcher.write_text(f"#!/bin/sh\necho '{runtime}'\n")
+    launcher.chmod(0o755)
+    home = tmp_path / "home"
+    home.mkdir()
+    info = wizard.hermes_request(launcher, home)
+    assert info["port"] == 8642
+
+
 @pytest.mark.hermes
 @pytest.mark.skipif(
     not os.getenv("HERMES_SOURCE"), reason="Set HERMES_SOURCE for native setup checks"
