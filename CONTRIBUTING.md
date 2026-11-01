@@ -44,6 +44,17 @@ plausibly break again and that nothing else covers, and delete tests that don't
 meet that bar. Keep real sessions and credentials out of tests. Don't bypass the lockfiles or
 the 7-day dependency cooldown.
 
+## Install walkthrough
+
+`contrib/install_walkthrough.py` installs real Hermes with its own installer and real
+Talaria with `install.sh` in a throwaway home, then signs in, runs a chat with a tool,
+updates and uninstalls. It takes about a minute and needs no provider key. CI runs it for
+changes to the install files, for releases, and against Hermes `main` each week.
+
+```sh
+uv run --locked python contrib/install_walkthrough.py [--hermes-ref main]
+```
+
 ## End-to-end tests
 
 `e2e/` runs Talaria against a real Hermes gateway. It isn't in CI. Tools run real

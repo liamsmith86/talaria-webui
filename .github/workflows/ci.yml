@@ -105,6 +105,15 @@ jobs:
       - name: Run selected backend and Chromium regressions
         if: steps.scope.outputs.runtime == 'true'
         run: uv run --locked python contrib/check.py ci
+      - name: Walk a new user's install through real Hermes
+        if: steps.scope.outputs.install == 'true'
+        run: uv run --locked python contrib/install_walkthrough.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: failure() && steps.scope.outputs.install == 'true'
+        with:
+          name: install-walkthrough-pr
+          path: test-results/install-walkthrough/
+          retention-days: 7
 
   platforms:
     needs: lint
@@ -276,6 +285,37 @@ jobs:
           path: test-results/
           retention-days: 7
 
+  install:
+    needs: lint
+    if: inputs.full || inputs.hermes_latest || github.event.schedule == '43 8 * * 1'
+    name: Install walkthrough (${{ matrix.hermes }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        hermes: ${{ fromJSON((inputs.hermes_latest || github.event.schedule == '43 8 * * 1') && '["main"]' || '["stable"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.12.9'
+          checksum: *uv-checksum
+          python-version: '3.14'
+      - run: uv sync --locked
+      - name: Walk a new user's install through real Hermes
+        env:
+          HERMES_REF: ${{ matrix.hermes }}
+        run: uv run --locked python contrib/install_walkthrough.py --hermes-ref "$HERMES_REF"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: failure()
+        with:
+          name: install-walkthrough-${{ matrix.hermes }}
+          path: test-results/install-walkthrough/
+          retention-days: 7
+
   wsl:
     needs: lint
     if: inputs.full
@@ -305,7 +345,7 @@ jobs:
   required:
     name: ${{ inputs.full && 'Release validation' || 'Required checks' }}
     if: always()
-    needs: [lint, behavior, platforms, browsers, catalog, hermes, wsl]
+    needs: [lint, behavior, platforms, browsers, catalog, hermes, install, wsl]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -321,11 +361,11 @@ jobs:
           results = json.loads(os.environ['RESULTS'])
           required = {'lint', 'catalog'}
           if os.environ['FULL'] == 'true':
-              required.update({'platforms', 'browsers', 'hermes', 'wsl'})
+              required.update({'platforms', 'browsers', 'hermes', 'install', 'wsl'})
           if os.environ['PULL_REQUEST'] == 'true':
               required.add('behavior')
           if os.environ['NATIVE'] == 'true':
-              required.add('hermes')
+              required.update({'hermes', 'install'})
           assert all(results[name]['result'] == 'success' for name in required), results
           assert all(job['result'] in {'success', 'skipped'} for job in results.values()), results
           PY
