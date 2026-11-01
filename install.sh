@@ -129,23 +129,22 @@ can_admin=false
 if [ "$(id -u)" -eq 0 ] || { command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; }; then
     can_admin=true
 fi
+python_search=$PATH
 if $can_admin && [ "$(uname -s)" = Linux ]; then
     export UV_PYTHON_INSTALL_DIR=/opt/talaria-python
+    python_search=/usr/local/bin:/usr/bin:/bin
 fi
-python_path=$(uv python find --system --no-project --no-python-downloads "${UV_PYTHON:->=3.12}" 2>/dev/null) || python_path=
-if $can_admin && [ "$(uname -s)" = Linux ]; then
-    case "$python_path" in /root/*|/home/*)
-        python_path=$(uv python find --system --no-project --no-managed-python --no-python-downloads '>=3.12' 2>/dev/null) || python_path=
-    ;; esac
-fi
+uv_path=$(command -v uv)
+find_python() { PATH=$python_search "$uv_path" python find --system --no-project --no-python-downloads "$1"; }
+python_path=$(find_python "${UV_PYTHON:->=3.12}" 2>/dev/null) || python_path=
 if [ -z "$python_path" ]; then
     confirm 'Install Python 3.14 with uv (leaves system Python unchanged)?'
     if $can_admin && [ "$(uname -s)" = Linux ]; then
-        elevated sh -c 'umask 022; exec "$@"' sh env UV_PYTHON_INSTALL_DIR=/opt/talaria-python "$(command -v uv)" python install 3.14
+        elevated sh -c 'umask 022; exec "$@"' sh env UV_PYTHON_INSTALL_DIR=/opt/talaria-python "$uv_path" python install 3.14
     else
         (umask 022; uv python install 3.14)
     fi
-    python_path=$(uv python find --system --no-project --no-python-downloads 3.14)
+    python_path=$(find_python 3.14)
 fi
 "$python_path" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)' || fail 'Python 3.12 or newer is required.'
 export UV_PYTHON_DOWNLOADS=never
@@ -155,7 +154,8 @@ GIT_TERMINAL_PROMPT=0 git clone --quiet --depth 1 --single-branch --branch "$bra
 commit=$(git -C "$work/source" rev-parse HEAD)
 # Downloaded dependencies use the repository lock and its seven-day cooldown.
 # Do not install development dependencies or leave a temporary Python interpreter behind.
-PYTHONUNBUFFERED=1 uv run --project "$work/source" --python "$python_path" --locked --no-dev talaria setup \
+# The temporary directory is often a separate filesystem from uv's cache, so copy.
+PYTHONUNBUFFERED=1 uv run --project "$work/source" --python "$python_path" --locked --no-dev --link-mode copy talaria setup \
     --repository "$repository" --branch "$branch" --expect "$commit" ${forward[@]+"${forward[@]}"}
 }
 
