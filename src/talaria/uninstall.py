@@ -17,6 +17,7 @@ from .auth_sessions import revocation_path
 from .deployment import Deployment, DeploymentError, default_directory, locked, run
 from .session_state import state_path
 from .setup import terminal
+from .setup_command import links_to
 from .setup_services import service_plan
 
 
@@ -108,8 +109,15 @@ def uninstall(root, *, yes=False, prompts=None):
         with stopped_launcher(root):
             remove_runtime(root, config, files, account)
     print("Talaria uninstalled.")
-    if root.exists():
-        print(f"Unrelated files preserved in {root}")
+    report_preserved(root, config, account)
+
+
+def report_preserved(root, config, account):
+    for directory in (root, config.parent):
+        if directory.exists():
+            print(f"Unrelated files preserved in {directory}")
+    if account and config.parent.exists():
+        print(f"Service account {account.pw_name} kept until {config.parent} is removed.")
 
 
 @contextmanager
@@ -167,7 +175,7 @@ def check_stopped(metadata):
 
 
 def remove_runtime(root, config, files, account):
-    for path in files:
+    for path in [*files, *links_to(root)]:
         path.unlink(missing_ok=True)
     with suppress(OSError):
         config.parent.rmdir()
@@ -207,6 +215,8 @@ def preview_removal(root, plan, files):
     print(f"Remove installation: {root}")
     if plan:
         print(f"Remove service: {plan['path']}")
+    for link in links_to(root):
+        print(f"Remove command: {link}")
     for path in files:
         if path.exists() or path.is_symlink():
             if path.is_dir() and not path.is_symlink():

@@ -9,7 +9,6 @@ import ipaddress
 import json
 import os
 import pwd
-import shlex
 import shutil
 import socket
 import subprocess
@@ -36,6 +35,7 @@ from .deployment import (
 )
 from .hermes_owner import execution_identity, select_owner, validate_execution
 from .installation import read_json
+from .setup_command import install_command, print_linger_hint, sudo_prefix
 from .setup_services import (
     describe,
     install_service,
@@ -488,10 +488,10 @@ def setup_lock(root, stack):
         raise ValueError("Another setup is running for this installation.") from exc
 
 
-def print_management_commands(root):
-    prefix = "sudo -n " if os.geteuid() == 0 and os.environ.get("SUDO_UID", "0") != "0" else ""
-    print(f"Update manually: {prefix}{shlex.quote(str(root / 'bin/talaria'))} update")
-    print(f"Uninstall: {prefix}{shlex.quote(str(root / 'bin/talaria'))} uninstall")
+def print_management_commands(root, command):
+    print(f"Update manually: {sudo_prefix()}{command} update")
+    print(f"Uninstall: {sudo_prefix()}{command} uninstall")
+    print_linger_hint(read_json(root / "deployment.json").get("setup", {}))
 
 
 def update_existing(root, args, stack):
@@ -516,7 +516,7 @@ def update_existing(root, args, stack):
     if not manage(command, root):
         deployment.update(expect=args.expect)
     print(f"Config: {config['config']}")
-    print_management_commands(root)
+    print_management_commands(root, install_command(root))
     if args.plugin and not args.skip_hermes and not config.get("hermes_plugin"):
         refresh_existing_plugin(root, args)
 
@@ -923,6 +923,7 @@ def report_setup(
     args, settings, root, config, password_path, pending, plan, existing_service, metadata
 ):
     url = settings.public_url or local_url(settings.host, settings.port)
+    command = install_command(root)
     if settings.host in {"0.0.0.0", "::"} and not settings.public_url:
         print(
             "Listening on all interfaces; replace the loopback address below "
@@ -941,8 +942,8 @@ def report_setup(
     elif existing_service:
         print(f"Service: {existing_service} ({metadata.get('scope', 'user')})")
     else:
-        print(f"Start: {shlex.quote(str(root / 'bin/talaria'))}")
-    print_management_commands(root)
+        print(f"Start: {command}")
+    print_management_commands(root, command)
     if args.restart_hermes and (
         not connection.startswith("connected")
         or (args.plugin and "extended access available" not in connection)
