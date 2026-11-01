@@ -384,6 +384,7 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
         assert not (root / ".setup-pending.json").exists()
         if attempt == 0:
             assert "Hermes: not configured" in result.stdout
+            assert "--set-password" in result.stdout
         else:
             assert "saved setup is retained" in result.stdout
         if attempt == 0:

@@ -18,7 +18,7 @@ from pathlib import Path
 
 from .auth import hash_password, verify_password
 from .config import default_path, load, validate_public_url, validate_url
-from .credentials import initialize_password
+from .credentials import initial_password_path, initialize_password
 from .deployment import (
     COMMIT,
     DEFAULT_BRANCH,
@@ -930,8 +930,9 @@ def report_setup(
             "with this server's IP for remote access."
         )
     print(f"\nURL: {url + '/'}\nConfig: {config}")
-    if password_path or (config.parent / "initial-password.txt").is_file():
-        print(f"Sign-in password file: {config.parent / 'initial-password.txt'}")
+    if password_path or initial_password_path(config).is_file():
+        print(f"Sign-in password file: {initial_password_path(config)}")
+        print(f"Change it: {sudo_prefix()}{command} --set-password")
     elif args.password_file:
         print(f"Sign-in password file: {args.password_file.expanduser().resolve()}")
     connection = "restart required" if pending else verify_hermes(settings)
