@@ -280,7 +280,9 @@ export function applyEvent(live, event) {
         status: event.error ? "failed" : "completed",
         duration: event.duration,
         endedAt: event.timestamp,
-        ...(typeof event.preview === "string" ? { output: event.preview } : {}),
+        // Hermes sends an empty preview when it reports no result, which is not
+        // a result without output. The saved transcript has the real one.
+        ...(event.preview && typeof event.preview === "string" ? { output: event.preview } : {}),
       };
   }
   if (type === "subagent.start" || type === "subagent.complete") {

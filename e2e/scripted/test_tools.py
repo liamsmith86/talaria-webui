@@ -29,7 +29,13 @@ def test_file_steps_write_and_read_the_workspace(chat, hermes):
     )
     assert "alpha beta" in reply
     assert (hermes.workspace / "notes.txt").read_text().strip() == "alpha beta"
-    expect(chat.page.locator(".tool-card").filter(has_text="notes.txt")).to_have_count(2)
+    steps = chat.page.locator(".tool-card").filter(has_text="notes.txt")
+    expect(steps).to_have_count(2)
+    # The saved call holds what was written, whatever the live event reported.
+    chat.page.locator(".conversation-content .activity > summary").click()
+    written = steps.filter(has_text="Wrote")
+    written.locator("summary").click()
+    expect(written.locator(".tool-content")).to_contain_text("alpha beta")
 
 
 def test_a_failing_command_is_marked_failed(chat):

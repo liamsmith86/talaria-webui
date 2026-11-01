@@ -451,6 +451,7 @@
   color: var(--text);
 }
 .tool-card > summary,
+.tool-card > .tool-row,
 .reasoning > summary,
 .activity > summary,
 .notice > details > summary {
@@ -464,6 +465,12 @@
   border-radius: 8px;
   cursor: pointer;
   list-style: none;
+}
+/* A step with nothing to open has no hover or pointer, and keeps its status in
+   line with the rows whose chevron (14px and an 8px gap) follows it. */
+.tool-card > .tool-row {
+  padding-right: 30px;
+  cursor: default;
 }
 .tool-card > summary::-webkit-details-marker,
 .reasoning > summary::-webkit-details-marker,
