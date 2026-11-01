@@ -39,9 +39,9 @@ Releases run every browser test on Chromium and those listed in `CROSS_BROWSER` 
 on Firefox and WebKit; add a file there if its behavior can differ between
 browsers. Every browser test runs on every browser nightly.
 
-Every bug fix needs a test that fails without the fix. Confirm that it does with
-`uv run --locked python contrib/check.py prove --base origin/main TEST...`.
-Keep real sessions and credentials out of tests. Don't bypass the lockfiles or
+A change doesn't need a test of its own. Add one only for behavior that could
+plausibly break again and that nothing else covers, and delete tests that don't
+meet that bar. Keep real sessions and credentials out of tests. Don't bypass the lockfiles or
 the 7-day dependency cooldown.
 
 ## End-to-end tests

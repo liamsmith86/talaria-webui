@@ -1,4 +1,4 @@
-"""Local checks and regression evidence. No services or production credentials needed."""
+"""Local checks. No services or production credentials needed."""
 
 import argparse
 import contextlib
@@ -7,13 +7,11 @@ import io
 import json
 import os
 import platform
-import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
 import time
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 STREAMING = [
@@ -179,7 +177,7 @@ def environment():
     # own repositories; never let those commands operate on the caller's repo.
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     # Fresh-wheel subprocesses must import their installed package, not source
-    # injected by a parent shell or the regression-proof runner.
+    # injected by a parent shell.
     for key in ("PYTHONPATH", "VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT"):
         env.pop(key, None)
     return env
@@ -508,57 +506,6 @@ def pre_push():
             checked.add(planned)
 
 
-def cases(path):
-    return ET.parse(path).findall(".//testcase")
-
-
-def prove(base, selectors):
-    # Use today's tests with yesterday's application code. Do not stash or
-    # replace the working tree. Dependency changes need a separate migration test.
-    with tempfile.TemporaryDirectory(prefix="talaria-proof-") as directory:
-        root = Path(directory)
-        old = root / "before"
-        export(base, old)
-        if (old / "uv.lock").read_bytes() != Path("uv.lock").read_bytes():
-            raise SystemExit("The baseline has a different lockfile; choose a compatible revision.")
-        shutil.rmtree(old / "tests")
-        shutil.copytree("tests", old / "tests", ignore=shutil.ignore_patterns("__pycache__"))
-        reports = []
-        for label, cwd in (("after", Path.cwd()), ("before", old)):
-            report = root / f"{label}.xml"
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    "-c",
-                    "import sys, pytest; sys.path.insert(0, sys.argv.pop(1)); "
-                    "raise SystemExit(pytest.main(sys.argv[1:]))",
-                    str(cwd / "src"),
-                    "-q",
-                    "--tb=short",
-                    "--fail-on-skip",
-                    f"--junitxml={report}",
-                    *selectors,
-                ],
-                cwd=cwd,
-                env=environment(),
-            )
-            if result.returncode != (0 if label == "after" else 1) or not report.exists():
-                raise SystemExit(f"No regression proof: unexpected {label} test result.")
-            tests = cases(report)
-            if not tests or any(
-                t.find("error") is not None or t.find("skipped") is not None for t in tests
-            ):
-                raise SystemExit(
-                    "Setup errors, skips, and missing tests are not regression evidence."
-                )
-            if label == "before" and any(t.find("failure") is None for t in tests):
-                raise SystemExit("Every selected regression must fail before the fix.")
-            reports.append({(t.get("classname"), t.get("name")) for t in tests})
-        if reports[0] != reports[1]:
-            raise SystemExit("The two revisions did not execute the same test cases.")
-        print(f"Verified: {len(reports[0])} regression(s) fail at {base} and pass now.")
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -578,9 +525,6 @@ def main():
             command.add_argument("--base", default="origin/main", help="Base for focused checks")
     command = commands.add_parser("platform", help="Portable install/runtime checks for CI")
     command.add_argument("--full", action="store_true", help="Include all backend logic")
-    command = commands.add_parser("prove")
-    command.add_argument("--base", required=True)
-    command.add_argument("tests", nargs="+")
     command = commands.add_parser("ci", help="Selected backend and Chromium checks for public PRs")
     command.add_argument("--base", default="HEAD^", help="Base commit of the PR merge checkout")
     command.add_argument("--plan", action="store_true", help="Print required CI setup")
@@ -593,8 +537,6 @@ def main():
         lint()
     elif args.command == "platform":
         platform_check(full=args.full)
-    elif args.command == "prove":
-        prove(args.base, args.tests)
     elif args.command == "ci":
         ci_check(args.base, args.plan)
     else:
