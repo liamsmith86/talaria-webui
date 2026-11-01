@@ -494,15 +494,20 @@ def print_management_commands(root, command):
     print_linger_hint(read_json(root / "deployment.json").get("setup", {}))
 
 
+def check_source(metadata, args):
+    if metadata["repository"] != args.repository or metadata["branch"] != args.branch:
+        raise ValueError(
+            f"This installation follows {metadata['repository']}, branch {metadata['branch']}. "
+            f"Re-run with --repository {metadata['repository']} --branch {metadata['branch']}."
+        )
+
+
 def update_existing(root, args, stack):
     deployment = Deployment(root)
     config = deployment.config
     if args.config and str(args.config.expanduser().resolve()) != config["config"]:
         raise ValueError("This installation already uses another config; use its existing path.")
-    if config["repository"] != args.repository or config["branch"] != args.branch:
-        raise ValueError(
-            "This installation has another source; pass its existing repository/branch."
-        )
+    check_source(config, args)
     if os.geteuid() != 0 and (config.get("scope") == "system" or not os.access(root, os.W_OK)):
         if not passwordless_sudo():
             raise ValueError("This installation requires sudo to update.")
@@ -789,12 +794,8 @@ def setup_config_path(args, metadata, system):
     )
     if metadata and str(config) != metadata["config"]:
         raise ValueError("This installation already uses another config; use its existing path.")
-    if metadata and (
-        metadata["repository"] != args.repository or metadata["branch"] != args.branch
-    ):
-        raise ValueError(
-            "This installation has another source; pass its existing repository/branch."
-        )
+    if metadata:
+        check_source(metadata, args)
     return config
 
 

@@ -27,7 +27,7 @@ Existing installations update Talaria without repeating setup or Hermes changes.
 
   --non-interactive             Use defaults without prompts
   --install-deps                Allow installing missing Git, uv, and Python
-  --repository URL --branch REF Trusted source (default: validated stable release)
+  --repository URL --branch REF Trusted source (default: stable release; --branch main for nightly)
   --directory PATH --config PATH
   --bind local|lan|all          Default: local; use --host IP instead for an explicit bind
   --port PORT --public-url URL  Public URL may include /talaria
@@ -80,11 +80,10 @@ if [ "$(uname -s)" = Darwin ] && [ -d /opt/homebrew/bin ]; then
 fi
 if ! command -v git >/dev/null 2>&1 ||
    { ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; }; then
-    packages=()
+    # Git needs certificates to clone over HTTPS, and installs here skip recommended packages.
+    packages=(ca-certificates)
     command -v git >/dev/null 2>&1 || packages+=(git)
-    if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
-        packages+=(curl ca-certificates)
-    fi
+    command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || packages+=(curl)
     confirm "Install missing prerequisites (${packages[*]}) using the system package manager?"
     if [ "$(uname -s)" = Darwin ]; then
         [ "$(id -u)" -ne 0 ] || fail 'Install Git/curl using your normal macOS account first.'
@@ -105,6 +104,9 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/talaria-setup.XXXXXXXX")
 trap 'rm -rf -- "$work"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+printf '#!/bin/sh\n' >"$work/probe"
+chmod +x "$work/probe"
+"$work/probe" 2>/dev/null || fail "Can't run programs from ${TMPDIR:-/tmp}; set TMPDIR to a directory that allows it, then re-run."
 download() {
     if command -v curl >/dev/null 2>&1; then
         curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --retry 3 --connect-timeout 20 --max-time 300 "$1" -o "$2"
@@ -120,7 +122,7 @@ if ! command -v uv >/dev/null 2>&1; then
     [ "${actual%% *}" = "$expected" ] || fail 'uv installer checksum mismatch; nothing executed.'
     uv_bin="${HOME}/.local/bin"
     [ "$(id -u)" -ne 0 ] || uv_bin=/usr/local/bin
-    UV_UNMANAGED_INSTALL="$uv_bin" sh "$work/uv.sh"
+    (umask 022; UV_UNMANAGED_INSTALL="$uv_bin" sh "$work/uv.sh")
 fi
 # An existing system Python avoids a private-home interpreter in a system service.
 can_admin=false
