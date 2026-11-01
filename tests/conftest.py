@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -17,7 +18,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from talaria.app import create_app
-from talaria.auth import hash_password
+from talaria.auth import hash_password, issue_cookie
 from talaria.config import Settings
 
 from .fake_hermes import KEY, FakeHermes
@@ -84,6 +85,15 @@ def pytest_sessionfinish(session, exitstatus):
             session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
+class QuickServer(uvicorn.Server):
+    """Uvicorn checks for its exit signal every 100 ms, and tests stop hundreds of servers."""
+
+    async def main_loop(self):
+        # Another thread sets this flag, so there is no event to wait on.
+        while not self.should_exit:  # noqa: ASYNC110
+            await asyncio.sleep(0.005)
+
+
 def serve(app, port=0):
     # Some hosts allocate low ephemeral ports, including browser-blocked ports.
     # Keep the socket bound while selecting a port outside that range.
@@ -96,7 +106,7 @@ def serve(app, port=0):
         if bound_port >= 16384:
             break
         sock.close()
-    server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False))
+    server = QuickServer(uvicorn.Config(app, log_level="error", access_log=False))
     thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
     # A ceiling only: a healthy start returns at once, and a CI runner can stall for seconds.
@@ -108,6 +118,10 @@ def serve(app, port=0):
     return server, thread, f"http://127.0.0.1:{bound_port}"
 
 
+# Scrypt takes tens of milliseconds, and nearly every test starts a server with this.
+PASSWORD_HASH = hash_password("test-password")
+
+
 @pytest.fixture
 def live_app(tmp_path):
     peer = FakeHermes()
@@ -115,15 +129,14 @@ def live_app(tmp_path):
     settings = Settings(
         hermes_url=url,
         api_key=KEY,
-        password_hash=hash_password("test-password"),
+        password_hash=PASSWORD_HASH,
         signing_key="test-signing-key",
     )
     app = create_app(settings, tmp_path / "config.json")
     server, thread, address = serve(app)
     yield address, peer, app
-    server.should_exit = True
+    server.should_exit = upstream.should_exit = True
     thread.join(6)
-    upstream.should_exit = True
     ut.join(6)
     assert not thread.is_alive(), "Talaria did not shut down cleanly"
 
@@ -182,9 +195,20 @@ def page(browser, live_app, request):
             page.clock.install()
         else:
             hold_timers(page, *BACKGROUND_TIMERS)
-        page.goto(live_app[0])
-        page.get_by_label("Password", exact=True).fill("test-password")
-        page.get_by_role("button", name="Sign in").click()
+        # Signing in through the form has tests of its own, such as in test_i18n.py.
+        address, _, app = live_app
+        context.add_cookies(
+            [
+                {
+                    "name": app.state.cookie_name,
+                    "value": issue_cookie(app.state.settings),
+                    "url": address,
+                    "httpOnly": True,
+                    "sameSite": "Strict",
+                }
+            ]
+        )
+        page.goto(address)
         page.locator(".topbar-title").wait_for()
         # Discovery and listing finish before tests install artificial session state.
         wait_for_store(page, "state => !!state.defaultModel && state.readiness.status === 'ok'")
@@ -273,6 +297,20 @@ def hold_timers(page, *delays):
     """Keep timers of these lengths from firing until fire_timers, across reloads too."""
     page.add_init_script(f"({HOLD_TIMERS})({json.dumps(delays)})")
     page.evaluate(HOLD_TIMERS, list(delays))
+
+
+def shorten_timers(page, *delays):
+    """Run timers of these lengths almost at once, across reloads too.
+
+    For polling gaps and paced output a test would otherwise wait through on real time.
+    """
+    script = f"""(() => {{
+      const start = window.setTimeout, short = new Set({json.dumps(delays)});
+      window.setTimeout = (run, delay, ...args) =>
+        start(run, short.has(delay) ? 5 : delay, ...args);
+    }})()"""
+    page.add_init_script(script)
+    page.evaluate(script)
 
 
 def fire_timers(page, delay=None):

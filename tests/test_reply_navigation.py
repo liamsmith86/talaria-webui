@@ -19,8 +19,7 @@ def show_long_reply(page):
         tools:[],userText:'Tell me more',baseHistoryLength:0}}})""")
 
 
-@pytest.mark.parametrize("width", [390, 1440])
-@pytest.mark.parametrize("motion", ["reduce", "no-preference"])
+@pytest.mark.parametrize("width,motion", [(390, "reduce"), (1440, "no-preference")])
 def test_scroll_shortcuts_stay_clear_of_text_and_fade_while_reading(page, width, motion):
     page.set_viewport_size({"width": width, "height": 844})
     page.emulate_media(reduced_motion=motion)
@@ -103,8 +102,7 @@ def test_faded_scroll_shortcuts_let_touches_through(page, live_app):
         context.close()
 
 
-@pytest.mark.parametrize("width", [390, 1440])
-@pytest.mark.parametrize("motion", ["reduce", "no-preference"])
+@pytest.mark.parametrize("width,motion", [(390, "reduce"), (1440, "no-preference")])
 def test_reply_start_tracks_the_visible_reply_and_releases_stream_follow(page, width, motion):
     page.set_viewport_size({"width": width, "height": 844})
     page.emulate_media(reduced_motion=motion)

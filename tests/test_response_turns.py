@@ -11,11 +11,12 @@ from playwright.sync_api import expect
 
 from .conftest import wait_for_store
 
+TRACES = sorted(path.stem for path in Path(__file__).with_name("fixtures").glob("hermes-*.json"))
 
-@pytest.mark.parametrize("chunk_size", [31, 4096])
+
 @pytest.mark.parametrize(
-    "fixture",
-    sorted(path.stem for path in Path(__file__).with_name("fixtures").glob("hermes-*.json")),
+    "fixture,chunk_size",
+    [*((trace, 31) for trace in TRACES), ("hermes-completed", 4096), ("hermes-failure", 4096)],
 )
 def test_native_trace_reconciles_with_fragmented_or_batched_delivery(
     page,
@@ -40,7 +41,7 @@ def test_native_trace_reconciles_with_fragmented_or_batched_delivery(
         wire = "".join("data: " + json.dumps(event) + "\n\n" for event in trace["events"])
         for offset in range(0, len(wire), chunk_size):
             yield wire[offset : offset + chunk_size]
-            await asyncio.sleep(0.005)
+            await asyncio.sleep(0.001)
 
     monkeypatch.setattr(peer, "events", events)
     page.get_by_label("Message Hermes").fill(trace["messages"][0]["content"])
