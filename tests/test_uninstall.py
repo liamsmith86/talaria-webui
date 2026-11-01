@@ -79,6 +79,17 @@ def test_purge_removes_empty_directories_and_is_repeatable(installed):
     remove.uninstall(root, yes=True)
 
 
+@pytest.mark.parametrize("ours", [True, False])
+def test_uninstall_removes_only_its_own_command_link(installed, tmp_path, monkeypatch, ours):
+    root = installed[0]
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    link = tmp_path / "home/.local/bin/talaria"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(root / "bin/talaria" if ours else tmp_path / "another/bin/talaria")
+    remove.uninstall(root, yes=True)
+    assert link.is_symlink() is not ours
+
+
 def test_confirmation_and_update_lock_prevent_removal(installed):
     root, config, _ = installed
     with pytest.raises(DeploymentError, match="--yes"):

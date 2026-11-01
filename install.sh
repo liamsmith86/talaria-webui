@@ -71,6 +71,8 @@ elevated() {
     elif command -v sudo >/dev/null 2>&1; then sudo "$@"
     else fail 'Install the missing system packages as administrator, then re-run.'; fi
 }
+# Setup needs to know what the user's own shell can find.
+export TALARIA_SHELL_PATH="${TALARIA_SHELL_PATH:-$PATH}"
 # Find standard user tools even in a minimal SSH environment.
 export PATH="${HOME}/.local/bin:/usr/local/bin:$PATH"
 if [ "$(uname -s)" = Darwin ] && [ -d /opt/homebrew/bin ]; then
