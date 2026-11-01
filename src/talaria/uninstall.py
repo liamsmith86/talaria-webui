@@ -109,8 +109,15 @@ def uninstall(root, *, yes=False, prompts=None):
         with stopped_launcher(root):
             remove_runtime(root, config, files, account)
     print("Talaria uninstalled.")
-    if root.exists():
-        print(f"Unrelated files preserved in {root}")
+    report_preserved(root, config, account)
+
+
+def report_preserved(root, config, account):
+    for directory in (root, config.parent):
+        if directory.exists():
+            print(f"Unrelated files preserved in {directory}")
+    if account and config.parent.exists():
+        print(f"Service account {account.pw_name} kept until {config.parent} is removed.")
 
 
 @contextmanager
