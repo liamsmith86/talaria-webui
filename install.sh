@@ -155,7 +155,8 @@ commit=$(git -C "$work/source" rev-parse HEAD)
 # Downloaded dependencies use the repository lock and its seven-day cooldown.
 # Do not install development dependencies or leave a temporary Python interpreter behind.
 # The temporary directory is often a separate filesystem from uv's cache, so copy.
-PYTHONUNBUFFERED=1 uv run --project "$work/source" --python "$python_path" --locked --no-dev --link-mode copy talaria setup \
+printf 'Preparing Talaria setup…\n'
+PYTHONUNBUFFERED=1 uv run --quiet --project "$work/source" --python "$python_path" --locked --no-dev --link-mode copy talaria setup \
     --repository "$repository" --branch "$branch" --expect "$commit" ${forward[@]+"${forward[@]}"}
 }
 

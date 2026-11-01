@@ -9,6 +9,7 @@ Hermes lays itself out fails here first. Only the model is scripted, which needs
 import argparse
 import json
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -146,8 +147,12 @@ class Walkthrough:
             "--port",
             str(self.talaria_port),
         )
-        for line in ("Start: talaria", "Uninstall: talaria uninstall", "--set-password"):
-            assert line in output, f"Setup didn't print {line!r}"
+        for line in (
+            r"Start\s+talaria",
+            r"Uninstall\s+talaria uninstall",
+            r"talaria --set-password",
+        ):
+            assert re.search(line, output), f"Setup didn't print {line!r}"
         assert shutil.which("talaria", path=self.env["PATH"]), "talaria is not on PATH"
 
     def sign_in(self, client):

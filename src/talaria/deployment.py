@@ -685,7 +685,6 @@ def install_command(args, root):
         )
     deployment = Deployment(root)
     deployment.update(expect=args.expect)
-    print(f"Launcher: {root / 'bin/talaria'}")
 
 
 def print_status(deployment, as_json):

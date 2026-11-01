@@ -379,11 +379,11 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
         assert packages and all(package.stat().st_mode & 0o004 for package in packages)
         settings = load(config)
         assert settings.public_url == "https://example.com/telaria"
-        assert "Update manually:" in result.stdout
-        assert "Uninstall:" in result.stdout
+        assert re.search(r"Update\s+.+ update\n", result.stdout)
+        assert re.search(r"Uninstall\s+.+ uninstall\n", result.stdout)
         assert not (root / ".setup-pending.json").exists()
         if attempt == 0:
-            assert "Hermes: not configured" in result.stdout
+            assert re.search(r"Hermes\s+Not configured", result.stdout)
             assert "--set-password" in result.stdout
         else:
             assert "saved setup is retained" in result.stdout
@@ -850,7 +850,7 @@ def test_setup_reports_chosen_password_file_without_printing_or_copying_secret(
         options, settings, options.directory, options.config, password_path, False, None, None, {}
     )
     output = capsys.readouterr().out
-    assert f"Sign-in password file: {options.password_file}" in output
+    assert re.search(rf"Password file\s+{re.escape(str(options.password_file))}", output)
     assert "private-test-passphrase" not in output
     assert not (options.config.parent / "initial-password.txt").exists()
 
