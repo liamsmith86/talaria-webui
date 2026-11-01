@@ -8,18 +8,18 @@ from pathlib import Path
 
 
 def backup_hermes(home):
-    # Run only inside the owner helper. Never replace the first backup on retry;
-    # neither configuration path is safe for a privileged parent to open.
-    for name in ("config.yaml", ".env"):
-        source = home / name
-        target = home / (name + ".before-talaria")
-        if source.is_file() and not target.exists():
-            with source.open("rb") as original:
-                fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                with os.fdopen(fd, "wb") as file:
-                    file.write(original.read())
-                    file.flush()
-                    os.fsync(file.fileno())
+    # Run only inside the owner helper. Never replace the first backup on retry; the
+    # path is not safe for a privileged parent to open. .env stays out: setup only adds
+    # the API settings to it, which doesn't justify a second copy of every secret.
+    source = home / "config.yaml"
+    target = home / "config.yaml.before-talaria"
+    if source.is_file() and not target.exists():
+        with source.open("rb") as original:
+            fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as file:
+                file.write(original.read())
+                file.flush()
+                os.fsync(file.fileno())
 
 
 def add_hermes_root():

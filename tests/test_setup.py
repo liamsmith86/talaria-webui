@@ -379,11 +379,11 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
         assert packages and all(package.stat().st_mode & 0o004 for package in packages)
         settings = load(config)
         assert settings.public_url == "https://example.com/telaria"
-        assert "Update manually:" in result.stdout
-        assert "Uninstall:" in result.stdout
+        assert re.search(r"Update\s+.+ update\n", result.stdout)
+        assert re.search(r"Uninstall\s+.+ uninstall\n", result.stdout)
         assert not (root / ".setup-pending.json").exists()
         if attempt == 0:
-            assert "Hermes: not configured" in result.stdout
+            assert re.search(r"Hermes\s+Not configured", result.stdout)
             assert "--set-password" in result.stdout
         else:
             assert "saved setup is retained" in result.stdout
@@ -754,7 +754,9 @@ def test_current_enabled_plugin_does_not_prompt_or_restart(options, monkeypatch,
         wizard, "hermes_request", lambda *a, **kw: pytest.fail("Reconfigured Hermes")
     )
     monkeypatch.setattr(wizard, "restart_gateway", lambda *a, **kw: pytest.fail("Restarted Hermes"))
-    assert not wizard.configure_hermes(options, wizard.Prompts(None), Settings(), home, None, info)
+    prompts = wizard.Prompts(None)
+    info = wizard.configure_hermes(options, prompts, Settings(), home, None, info)
+    assert not wizard.apply_hermes_restart(options, prompts, home, None, info)
 
 
 @pytest.mark.parametrize("restart", [False, True])
@@ -762,7 +764,6 @@ def test_current_enabled_plugin_does_not_prompt_or_restart(options, monkeypatch,
 def test_pending_plugin_restart_still_requires_consent(
     options, monkeypatch, tmp_path, restart, marker
 ):
-    from talaria.config import Settings
     from talaria.plugin_install import install
 
     options.skip_hermes = False
@@ -779,9 +780,32 @@ def test_pending_plugin_restart_still_requires_consent(
     }
     calls = []
     monkeypatch.setattr(wizard, "restart_setup_hermes", lambda *a, **kw: calls.append(a))
-    pending = wizard.configure_hermes(options, wizard.Prompts(None), Settings(), home, None, info)
+    pending = wizard.apply_hermes_restart(options, wizard.Prompts(None), home, None, info)
     assert pending is (not restart)
     assert len(calls) == int(restart)
+
+
+def test_failed_hermes_restart_comes_after_the_install_and_does_not_undo_it(
+    options, monkeypatch, tmp_path
+):
+    options.skip_hermes = False
+    options.restart_hermes = True
+    home = options.hermes_home = tmp_path / "hermes"
+    home.mkdir()
+    calls = []
+
+    def fail_restart(*args, **kwargs):
+        calls.append("restart")
+        raise ValueError("Hermes could not restart")
+
+    monkeypatch.setattr(wizard, "inspect_hermes", lambda *a: (home, None, {}, None))
+    monkeypatch.setattr(wizard, "configure_hermes", lambda *a, **kw: {"changed": True})
+    monkeypatch.setattr(wizard, "install_runtime", lambda *a: calls.append("install"))
+    monkeypatch.setattr(wizard, "restart_setup_hermes", fail_restart)
+    # An explicit --restart-hermes still reports the failure, once Talaria is in place.
+    with pytest.raises(ValueError, match="Talaria is installed"):
+        wizard.setup(options, wizard.Prompts(None))
+    assert calls == ["install", "restart"]
 
 
 @pytest.mark.parametrize("fails", [False, True])
@@ -826,7 +850,7 @@ def test_setup_reports_chosen_password_file_without_printing_or_copying_secret(
         options, settings, options.directory, options.config, password_path, False, None, None, {}
     )
     output = capsys.readouterr().out
-    assert f"Sign-in password file: {options.password_file}" in output
+    assert re.search(rf"Password file\s+{re.escape(str(options.password_file))}", output)
     assert "private-test-passphrase" not in output
     assert not (options.config.parent / "initial-password.txt").exists()
 
@@ -1025,7 +1049,6 @@ def test_resumed_setup_restarts_only_when_saved_credentials_changed(options, mon
 
     def credentials(args, prompts, settings, *rest, **kw):
         settings.api_key = "new-key"
-        return False
 
     monkeypatch.setattr(wizard, "configure_hermes", credentials)
     wizard.setup(options, wizard.Prompts(None))

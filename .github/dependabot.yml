@@ -23,6 +23,19 @@ updates:
       npm:
         update-types: [minor, patch]
 
+  # Each of these needs contrib/vendor.py run on its pull request, so they stay separate.
+  - package-ecosystem: npm
+    directory: /contrib/vendor
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    # Preact 11.0.2 lost text typed just after a dialog closed, about 4% of the time on WebKit.
+    # Before moving to 11, check that under CPU pressure, which pull request checks don't do.
+    ignore:
+      - dependency-name: preact
+        update-types: [version-update:semver-major]
+
   - package-ecosystem: github-actions
     directories:
       - /

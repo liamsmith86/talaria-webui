@@ -129,7 +129,7 @@ def install(home, source, restart=None):
         return changed
 
 
-def main(argv, *, owner=None):
+def main(argv, *, owner=None, report=print):
     from .deployment import default_directory
     from .hermes_owner import select_owner
 
@@ -170,10 +170,10 @@ def main(argv, *, owner=None):
         else None
     )
     changed = install(home, args.source, restart)
-    print(f"Plugin {'installed' if changed else 'unchanged'}: {home / 'plugins/talaria-webui'}")
+    report(f"Plugin {'installed' if changed else 'unchanged'}: {home / 'plugins/talaria-webui'}")
     if not args.restart:
-        print("Enable with `hermes plugins enable talaria-webui`, then restart the gateway.")
-        print("For multiplexed gateways, also install and enable it in the primary profile.")
+        report("Enable with `hermes plugins enable talaria-webui`, then restart the gateway.")
+        report("If this profile shares a gateway, also enable it in the profile that starts it.")
 
 
 def owned_worker():

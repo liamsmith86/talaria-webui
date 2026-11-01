@@ -45,9 +45,11 @@ meet that bar. Keep real sessions and credentials out of tests. Don't bypass the
 the 7-day dependency cooldown.
 
 Dependabot updates the Python and npm lockfiles, GitHub Actions and the Docker base image weekly.
-It can't see `src/talaria/static/vendor/` (versions and checksums are in its `manifest.json`), or
-the uv and npm versions pinned across `ci.yml`, `install.sh`, `.github/scripts/wsl.sh` and the
-`Dockerfile`, so update those by hand.
+It also tracks the browser libraries in `src/talaria/static/vendor/` through
+`contrib/vendor/package-lock.json`. On one of those pull requests, run
+`uv run --locked python contrib/vendor.py` to bring in the files, or lint fails. Prism is a custom
+bundle, so a new version has to be rebuilt by hand. The uv and npm versions pinned across `ci.yml`,
+`install.sh`, `.github/scripts/wsl.sh` and the `Dockerfile` are also updated by hand.
 
 ## Install walkthrough
 

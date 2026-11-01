@@ -37,6 +37,17 @@ from .hermes_owner import execution_identity, select_owner, validate_execution
 from .hermes_runtime import LAUNCHER, hermes_runtime, launcher_behind
 from .installation import read_json
 from .setup_command import install_command, print_linger_hint, sudo_prefix
+from .setup_output import (
+    ACCENT,
+    COMMAND,
+    ERROR,
+    HEADING,
+    MUTED,
+    SUCCESS,
+    WARNING,
+    print_section,
+    styled,
+)
 from .setup_services import (
     describe,
     install_service,
@@ -54,22 +65,16 @@ class Prompts:
     def __init__(self, terminal):
         self.terminal = terminal
 
-    def highlight(self, text, code="1;36"):
-        if (
-            self.terminal is not None
-            and self.terminal.isatty()
-            and os.environ.get("TERM") != "dumb"
-            and "NO_COLOR" not in os.environ
-        ):
-            return f"\033[{code}m{text}\033[0m"
-        return text
+    def highlight(self, text, code=ACCENT):
+        return styled(text, code, self.terminal)
 
     def ask(self, label, default="", choices=()):
         if self.terminal is None:
             return default
         while True:
+            shown = f" {self.highlight(f'[{default}]', MUTED)}" if default else ""
             print(
-                f"{self.highlight(label)} {self.highlight(f'[{default}]', '1;33')}: ",
+                f"{self.highlight(label)}{shown}: ",
                 end="",
                 file=self.terminal,
                 flush=True,
@@ -80,7 +85,7 @@ class Prompts:
             answer = answer.strip() or default
             if not choices or answer in choices:
                 return answer
-            print(self.highlight("Choose " + ", ".join(choices), "1;31"), file=self.terminal)
+            print(self.highlight("Choose " + ", ".join(choices), ERROR), file=self.terminal)
 
     def yes(self, label, default=False):
         return self.ask(label + " (yes/no)", "yes" if default else "no", ("yes", "no")) == "yes"
@@ -91,13 +96,13 @@ class Prompts:
                 self.highlight("WebUI password (4+ characters): "), stream=self.terminal
             )
             if not 4 <= len(password) <= 1024:
-                print(self.highlight("Use 4 to 1024 characters.", "1;31"), file=self.terminal)
+                print(self.highlight("Use 4 to 1024 characters.", ERROR), file=self.terminal)
                 continue
             if password == getpass.getpass(
                 self.highlight("Confirm password: "), stream=self.terminal
             ):
                 return password
-            print(self.highlight("Passwords do not match. Try again.", "1;31"), file=self.terminal)
+            print(self.highlight("Passwords do not match. Try again.", ERROR), file=self.terminal)
 
 
 def secret_file(path, label):
@@ -245,10 +250,10 @@ def configure_hermes(args, prompts, settings, home, python, info, *, owner=None)
 
     apply_hermes_credentials(args, settings)
     if args.skip_hermes:
-        return False
+        return None
     if info is None:
         configure_remote_hermes(args, prompts, settings)
-        return False
+        return None
     owner = owner or select_owner(home)
     print(
         f"Found Hermes {info.get('version', '')} at {home} "
@@ -258,10 +263,10 @@ def configure_hermes(args, prompts, settings, home, python, info, *, owner=None)
         args.enable_hermes_api or prompts.yes("Enable this Hermes profile's API server?")
     )
     release = installed_status(home)
-    version = release["version"] or (
-        "not installed" if release["status"] == "missing" else "unknown version"
-    )
-    print(f"Talaria plugin: {version} ({release['status']}).")
+    if release["status"] == "missing":
+        print("Talaria plugin: not installed.")
+    else:
+        print(f"Talaria plugin: {release['version'] or 'unknown version'} ({release['status']}).")
     needs_plugin = release["status"] not in {"current", "newer"}
     label = (
         "Install and enable"
@@ -278,24 +283,36 @@ def configure_hermes(args, prompts, settings, home, python, info, *, owner=None)
     if prompts.terminal is None:
         plugin = args.plugin
     info = apply_local_hermes(args, settings, home, python, info, enable, plugin, owner=owner)
-    changed = info.get("changed", False)
-    if changed:
-        print(f"Hermes configuration backup: {home}/{{config.yaml,.env}}.before-talaria")
-        if info.get("multiplex"):
-            print(
-                "Multiplexed gateway: also enable the plugin in its primary profile. "
-                "Use --hermes-url for a routed /p/PROFILE endpoint."
+    if info.get("changed"):
+        print(f"Hermes configuration backup: {home}/config.yaml.before-talaria")
+        print_shared_gateway_note(home, info)
+    return info
+
+
+def print_shared_gateway_note(home, info):
+    # The default profile hosts a shared gateway, so only a named profile has more to do.
+    if info.get("multiplex") and home.parent.name == "profiles":
+        url = f"{local_url(str(info['host']), int(info['port']))}/p/{home.name}"
+        print(
+            "This profile shares a gateway with your other Hermes profiles. Also enable the "
+            f"plugin in the profile that starts it, and connect with --hermes-url {url}."
+        )
+
+
+def apply_hermes_restart(args, prompts, home, python, info, *, owner=None):
+    """Return whether Hermes still has to restart. A failure here can't undo the install."""
+    if not info or not (info.get("changed") or hermes_restart_pending(home)):
+        return False
+    if args.restart_hermes or prompts.yes("Restart Hermes now? Active work may be interrupted."):
+        print(f"\n{styled('Restarting Hermes…', HEADING)}", flush=True)
+        try:
+            restart_setup_hermes(
+                home, python, owner=owner, plugin_enabled=info.get("plugin_enabled")
             )
-    pending = changed or hermes_restart_pending(home)
-    restart = pending and (
-        args.restart_hermes or prompts.yes("Restart Hermes now? Active work may be interrupted.")
-    )
-    if restart:
-        print("Restarting Hermes…", flush=True)
-        restart_setup_hermes(home, python, owner=owner, plugin_enabled=info.get("plugin_enabled"))
-    elif pending:
-        print("Restart the Hermes gateway to apply its configuration changes.")
-    return pending and not restart
+            return False
+        except (ValueError, OSError, DeploymentError) as exc:
+            print(styled(f"Warning: {exc}", WARNING, sys.stderr), file=sys.stderr)
+    return True
 
 
 def hermes_restart_pending(home):
@@ -423,7 +440,7 @@ def discover_hermes_home(args, prompts):
             "Hermes found under another user; select one with --hermes-home: "
             + ", ".join(map(str, paths))
         )
-    print(Prompts(sys.stdout).highlight("Hermes installations:"))
+    print(styled("Hermes installations:", HEADING))
     for number, path in enumerate(paths, 1):
         print(f"  {number}. {candidates[path]} — {path}")
     print("  0. Connect manually later")
@@ -511,9 +528,15 @@ def setup_lock(root, stack):
         raise ValueError("Another setup is running for this installation.") from exc
 
 
-def print_management_commands(root, command):
-    print(f"Update manually: {sudo_prefix()}{command} update")
-    print(f"Uninstall: {sudo_prefix()}{command} uninstall")
+def print_management_commands(root, command, *, start=None):
+    run_as = sudo_prefix() + command
+    rows = [("Start", start, COMMAND)] if start else []
+    rows += [
+        ("Change password", f"{run_as} --set-password", COMMAND),
+        ("Update", f"{run_as} update", COMMAND),
+        ("Uninstall", f"{run_as} uninstall", COMMAND),
+    ]
+    print_section("Manage Talaria", rows)
     print_linger_hint(read_json(root / "deployment.json").get("setup", {}))
 
 
@@ -543,8 +566,9 @@ def update_existing(root, args, stack):
     command = argparse.Namespace(command="update", check=False, expect=args.expect)
     if not manage(command, root):
         deployment.update(expect=args.expect)
-    print(f"Config: {config['config']}")
-    print_management_commands(root, install_command(root))
+    command = install_command(root)
+    print_section("Installation", [("Config", config["config"])])
+    print_management_commands(root, command)
     if args.plugin and not args.skip_hermes and not config.get("hermes_plugin"):
         refresh_existing_plugin(root, args)
 
@@ -591,7 +615,7 @@ def _setup(args, prompts, stack):
     settings = load(config)
     original = (settings.host, settings.port, settings.public_url)
     home, python, info, owner = inspect_hermes(args, prompts)
-    configure_binding(args, prompts, settings, config, info)
+    configure_binding(args, prompts, settings, config)
     existing_service = metadata.get("service")
     if existing_service and original != (settings.host, settings.port, settings.public_url):
         raise ValueError(
@@ -604,7 +628,7 @@ def _setup(args, prompts, stack):
         preflight(plan, root, config, resuming=bool(metadata) or pending_setup.exists())
     configure_password(args, prompts, settings)
     write_json(pending_setup, {"service": kind, "config": str(config)})
-    pending = configure_hermes(args, prompts, settings, home, python, info, owner=owner)
+    info = configure_hermes(args, prompts, settings, home, python, info, owner=owner)
     settings_changed = settings != load(config)
     password_path = initialize_password(config, settings)
     # Shared runtime files must be readable by the optional dedicated service user.
@@ -617,6 +641,7 @@ def _setup(args, prompts, stack):
             activate_setup_service(plan, root, config, deployment, settings)
     finally:
         os.umask(old_mask)
+    pending = apply_hermes_restart(args, prompts, home, python, info, owner=owner)
     report_setup(
         args, settings, root, config, password_path, pending, plan, existing_service, metadata
     )
@@ -662,7 +687,8 @@ def restart_gateway(home, command=None, *, owner=None):
 def export_owned_plugin(home, *, owner=None):
     from .plugin_install import main as export_plugin
 
-    export_plugin(["--home", str(home)], owner=owner)
+    # Setup enables the plugin and handles the restart itself, so its hints don't apply.
+    export_plugin(["--home", str(home)], owner=owner, report=lambda _: None)
 
 
 def configure_remote_hermes(args, prompts, settings):
@@ -704,6 +730,8 @@ def apply_local_hermes(args, settings, home, python, info, enable, plugin, *, ow
         if needs_files:
             export_owned_plugin(home, owner=owner)
         info = hermes_request(python, home, owner=owner, enable=enable, plugin=needs_enable)
+        if needs_files or needs_enable:
+            print("Talaria plugin: installed and enabled.")
     info = {**info, "changed": changed}
     if info["enabled"] and info["key"]:
         if not args.hermes_url and not settings.api_key:
@@ -835,18 +863,21 @@ def inspect_hermes(args, prompts):
     return home, python, hermes_request(python, home, owner=owner), owner
 
 
-def configure_binding(args, prompts, settings, config, info):
+def configure_binding(args, prompts, settings, config):
     if args.host:
         settings.host = args.host
     elif args.bind:
         settings.host = {"local": "127.0.0.1", "all": "0.0.0.0"}.get(args.bind) or lan_address()
     elif not config.exists():
-        suggested = str(info["host"]) if info else "127.0.0.1"
-        default = "all" if suggested in {"0.0.0.0", "::"} and prompts.terminal else "local"
         if prompts.terminal is not None:
-            print("local = this machine; lan = local network; all = all network interfaces.")
+            print(
+                styled(
+                    "local = this machine; lan = local network; all = all network interfaces.",
+                    MUTED,
+                )
+            )
         binding = prompts.ask(
-            "Allow connections from (local/lan/all)", default, ("local", "lan", "all")
+            "Allow connections from (local/lan/all)", "local", ("local", "lan", "all")
         )
         settings.host = {"local": "127.0.0.1", "all": "0.0.0.0"}.get(binding) or lan_address()
     settings.port = args.port if args.port is not None else settings.port
@@ -909,7 +940,8 @@ def activate_setup_service(plan, root, config, deployment, settings):
 
 
 def install_runtime(args, root, config, settings, metadata, existing_service, settings_changed):
-    print("Updating Talaria…" if metadata else "Installing Talaria…", flush=True)
+    title = "Updating Talaria…" if metadata else "Installing Talaria…"
+    print(f"\n{styled(title, HEADING)}", flush=True)
     if metadata:
         deployment = Deployment(root)
         before = deployment.status()["current"]["commit"]
@@ -948,27 +980,34 @@ def report_setup(
 ):
     url = settings.public_url or local_url(settings.host, settings.port)
     command = install_command(root)
+    connection = "restart required" if pending else verify_hermes(settings)
+    rows = [
+        ("URL", url + "/", ACCENT),
+        ("Hermes", *hermes_row(connection)),
+        ("Config", str(config)),
+    ]
+    if password_path or initial_password_path(config).is_file():
+        rows.append(("Password file", str(initial_password_path(config))))
+    elif args.password_file:
+        rows.append(("Password file", str(args.password_file.expanduser().resolve())))
+    print_section("Talaria is installed", rows, SUCCESS)
     if settings.host in {"0.0.0.0", "::"} and not settings.public_url:
         print(
-            "Listening on all interfaces; replace the loopback address below "
-            "with this server's IP for remote access."
+            styled(
+                "\nListening on all interfaces; for remote access, replace the address above "
+                "with this server's IP.",
+                WARNING,
+            )
         )
-    print(f"\nURL: {url + '/'}\nConfig: {config}")
-    if password_path or initial_password_path(config).is_file():
-        print(f"Sign-in password file: {initial_password_path(config)}")
-        print(f"Change it: {sudo_prefix()}{command} --set-password")
-    elif args.password_file:
-        print(f"Sign-in password file: {args.password_file.expanduser().resolve()}")
-    connection = "restart required" if pending else verify_hermes(settings)
-    print("Hermes: " + connection)
+    print_management_commands(root, command, start=None if plan or existing_service else command)
     if plan:
-        for action, command in describe(plan).items():
-            print(f"{action.capitalize()}: {command}")
+        print_section(
+            "Service",
+            [(action.capitalize(), line, COMMAND) for action, line in describe(plan).items()],
+        )
     elif existing_service:
-        print(f"Service: {existing_service} ({metadata.get('scope', 'user')})")
-    else:
-        print(f"Start: {command}")
-    print_management_commands(root, command)
+        scope = metadata.get("scope", "user")
+        print_section("Service", [("Name", f"{existing_service} ({scope})")])
     if args.restart_hermes and (
         not connection.startswith("connected")
         or (args.plugin and "extended access available" not in connection)
@@ -977,6 +1016,15 @@ def report_setup(
             "Talaria is installed, but Hermes connectivity was not verified. "
             "Check the gateway status and configured endpoint."
         )
+
+
+def hermes_row(connection):
+    if connection == "restart required":
+        return "Restart the Hermes gateway to apply setup's changes", WARNING
+    working = connection.startswith("connected") and not any(
+        problem in connection for problem in ("unavailable", "incompatible")
+    )
+    return connection[0].upper() + connection[1:], SUCCESS if working else WARNING
 
 
 def resume_setup(args, stack):
@@ -1002,7 +1050,7 @@ def main(argv):
         with terminal(not args.non_interactive) as prompts:
             setup(args, prompts)
     except (ValueError, OSError, DeploymentError) as exc:
-        error = Prompts(sys.stderr).highlight(f"Talaria setup: {exc}", "1;31")
+        error = styled(f"Talaria setup: {exc}", ERROR, sys.stderr)
         command.exit(
             1,
             error + "\nRe-run with the same options to retry; saved credentials are preserved.\n",
