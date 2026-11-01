@@ -36,8 +36,10 @@ def test_set_password_uses_four_character_minimum(tmp_path, monkeypatch, passwor
             cli.main()
         assert stopped.value.code == 2 and not path.exists()
     else:
+        (tmp_path / "initial-password.txt").write_text("generated\n")
         cli.main()
         assert verify_password(password, load(path).password_hash)
+        assert not (tmp_path / "initial-password.txt").exists()
 
 
 def test_cli_help_is_available_without_setup():

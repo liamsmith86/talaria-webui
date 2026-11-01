@@ -35,7 +35,7 @@ def shell_path():
 
 
 def sudo_prefix():
-    return "sudo -n " if os.geteuid() == 0 and os.environ.get("SUDO_UID", "0") != "0" else ""
+    return "sudo " if os.geteuid() == 0 and os.environ.get("SUDO_UID", "0") != "0" else ""
 
 
 def link_launcher(root):

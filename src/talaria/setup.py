@@ -18,7 +18,7 @@ from pathlib import Path
 
 from .auth import hash_password, verify_password
 from .config import default_path, load, validate_public_url, validate_url
-from .credentials import initialize_password
+from .credentials import initial_password_path, initialize_password
 from .deployment import (
     COMMIT,
     DEFAULT_BRANCH,
@@ -175,6 +175,13 @@ def find_hermes_python(home, command=None):
     return next((path for path in candidates if path.is_file()), None)
 
 
+def helper_cause(stdout):
+    for line in reversed(stdout.splitlines()):
+        if line.startswith("TALARIA_SETUP_ERROR="):
+            return f" ({json.loads(line.split('=', 1)[1])})"
+    return ""
+
+
 def hermes_request(python, home, *, owner=None, **request):
     # Keep the native runtime isolated from Talaria's environment and never expose
     # native stdout/stderr: Hermes can include credentials in diagnostics.
@@ -201,8 +208,8 @@ def hermes_request(python, home, *, owner=None, **request):
         )
         if result.returncode:
             raise ValueError(
-                "Native Hermes configuration helper failed; configuration may be "
-                "managed or this Hermes version may be incompatible. "
+                f"Native Hermes configuration helper failed{helper_cause(result.stdout)}; "
+                "configuration may be managed or this Hermes version may be incompatible. "
                 "Use --skip-hermes and configure connectivity in the WebUI."
             )
         line = next(
@@ -494,15 +501,20 @@ def print_management_commands(root, command):
     print_linger_hint(read_json(root / "deployment.json").get("setup", {}))
 
 
+def check_source(metadata, args):
+    if metadata["repository"] != args.repository or metadata["branch"] != args.branch:
+        raise ValueError(
+            f"This installation follows {metadata['repository']}, branch {metadata['branch']}. "
+            f"Re-run with --repository {metadata['repository']} --branch {metadata['branch']}."
+        )
+
+
 def update_existing(root, args, stack):
     deployment = Deployment(root)
     config = deployment.config
     if args.config and str(args.config.expanduser().resolve()) != config["config"]:
         raise ValueError("This installation already uses another config; use its existing path.")
-    if config["repository"] != args.repository or config["branch"] != args.branch:
-        raise ValueError(
-            "This installation has another source; pass its existing repository/branch."
-        )
+    check_source(config, args)
     if os.geteuid() != 0 and (config.get("scope") == "system" or not os.access(root, os.W_OK)):
         if not passwordless_sudo():
             raise ValueError("This installation requires sudo to update.")
@@ -789,12 +801,8 @@ def setup_config_path(args, metadata, system):
     )
     if metadata and str(config) != metadata["config"]:
         raise ValueError("This installation already uses another config; use its existing path.")
-    if metadata and (
-        metadata["repository"] != args.repository or metadata["branch"] != args.branch
-    ):
-        raise ValueError(
-            "This installation has another source; pass its existing repository/branch."
-        )
+    if metadata:
+        check_source(metadata, args)
     return config
 
 
@@ -930,8 +938,9 @@ def report_setup(
             "with this server's IP for remote access."
         )
     print(f"\nURL: {url + '/'}\nConfig: {config}")
-    if password_path or (config.parent / "initial-password.txt").is_file():
-        print(f"Sign-in password file: {config.parent / 'initial-password.txt'}")
+    if password_path or initial_password_path(config).is_file():
+        print(f"Sign-in password file: {initial_password_path(config)}")
+        print(f"Change it: {sudo_prefix()}{command} --set-password")
     elif args.password_file:
         print(f"Sign-in password file: {args.password_file.expanduser().resolve()}")
     connection = "restart required" if pending else verify_hermes(settings)

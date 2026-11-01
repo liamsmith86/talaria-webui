@@ -89,6 +89,15 @@ docker exec talaria cat /data/talaria/initial-password.txt
 
 Connect to your Hermes API in Settings.
 
+### Change your password
+
+Run this on the server, then restart Talaria. Your sessions will be signed out.
+
+```sh
+talaria --set-password                         # sudo /opt/talaria/bin/talaria --set-password for a system install
+docker exec -it talaria talaria --set-password # then docker restart talaria
+```
+
 ## Hermes plugin
 
 Talaria WebUI can also use an optional, but highly recommended, plugin that you install on your Hermes Agent to extend API capabilities and improve the amount of information we can display in the web UI. As Hermes Agent developers continue to extend the capabilities of their native API we will update Talaria WebUI to use native routes.

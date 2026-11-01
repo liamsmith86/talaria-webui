@@ -87,6 +87,7 @@ def serve():
         path = default_path()
         args.config = path.parent.with_name("talaria-dev") / path.name if args.dev else path
     from .app import create_app
+    from .credentials import initial_password_path, initialize_password
     from .server import run
 
     settings = load(args.config)
@@ -101,11 +102,10 @@ def serve():
         settings.password_hash = hash_password(password)
         settings.signing_key = secrets.token_hex(32)
         save(args.config, settings)
+        initial_password_path(args.config).unlink(missing_ok=True)
         print("Password saved. Restart Talaria to use it.")
         return
     if not settings.password_hash:
-        from .credentials import initialize_password
-
         try:
             private_path = initialize_password(args.config, settings, save_settings=save)
         except ValueError as exc:

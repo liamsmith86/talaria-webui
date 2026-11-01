@@ -220,9 +220,7 @@ def install_service(plan):
 
 def describe(plan):
     prefix = (
-        ["sudo", "-n"]
-        if plan["scope"] == "system" and os.environ.get("SUDO_UID", "0") != "0"
-        else []
+        ["sudo"] if plan["scope"] == "system" and os.environ.get("SUDO_UID", "0") != "0" else []
     )
     return {action: shlex.join([*prefix, *plan[action]]) for action in ("start", "stop", "restart")}
 
