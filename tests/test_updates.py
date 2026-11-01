@@ -13,7 +13,7 @@ from talaria import control, installation
 from talaria.deployment import read_json
 from talaria.supervisor_worker import execute
 
-from .conftest import wait_in_browser
+from .conftest import shorten_timers, wait_in_browser
 from .test_app import signed_in
 from .test_deployment import A, B, C, release
 from .test_deployment import deployment as deployment_fixture
@@ -145,6 +145,7 @@ def update_ui(page, monkeypatch):
         route.fulfill(json=info["operation"])
 
     page.route("**/api/installation/check", check)
+    shorten_timers(page, 1000)
     page.get_by_role("button", name="Settings").click()
     page.get_by_role("tab", name="Talaria", exact=True).click()
     expect(page.get_by_role("button", name="Check for updates", exact=True)).to_be_enabled()

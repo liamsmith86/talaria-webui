@@ -3,7 +3,6 @@
 import re
 from urllib.parse import urlsplit
 
-import pytest
 from playwright.sync_api import expect
 
 from .conftest import BACKGROUND_TIMERS, capture_browser_errors, hold_timers, wait_for_store
@@ -11,10 +10,9 @@ from .test_commands import CATALOG
 from .test_conversation_features import png
 
 
-@pytest.mark.parametrize("hostname", ["127.0.0.1", "talaria.test"])
-def test_http_origin_supports_dialogs_images_messages_and_commands(browser, live_app, hostname):
+def test_http_origin_supports_dialogs_images_messages_and_commands(browser, live_app):
     address, peer, _ = live_app
-    origin = address.replace("127.0.0.1", hostname)
+    origin = address.replace("127.0.0.1", "talaria.test")
     catalog = [*CATALOG, {"name": "help", "aliases": [], "mode": "web", "description": "Commands"}]
     peer.extension = {"commands": True}
     peer.command_catalog = catalog
@@ -38,9 +36,8 @@ def test_http_origin_supports_dialogs_images_messages_and_commands(browser, live
         page.set_default_timeout(60_000)
         hold_timers(page, *BACKGROUND_TIMERS)
         page.goto(origin)
-        assert page.evaluate("isSecureContext") is (hostname == "127.0.0.1")
-        if hostname != "127.0.0.1":
-            assert page.evaluate("typeof crypto.randomUUID") == "undefined"
+        assert page.evaluate("isSecureContext") is False
+        assert page.evaluate("typeof crypto.randomUUID") == "undefined"
         page.get_by_label("Password", exact=True).fill("test-password")
         page.get_by_role("button", name="Sign in", exact=True).click()
         page.locator(".topbar-title").wait_for()

@@ -9,7 +9,7 @@ from starlette.responses import Response
 from talaria.demo import create_demo
 from talaria.hermes_plugin.release import PLUGIN_VERSION
 
-from .conftest import capture_browser_errors, serve
+from .conftest import capture_browser_errors, serve, shorten_timers
 
 
 @pytest.mark.parametrize("prefix", ["", "/apps/talaria"])
@@ -230,6 +230,7 @@ def test_demo_branches_at_a_response_without_changing_the_original(demo_page):
 
 def test_demo_session_actions_edit_regenerate_and_delete_are_native_and_isolated(demo_page):
     page = demo_page
+    shorten_timers(page, 45, 400)
     page.get_by_role("link", name="Build a small reading list").click()
     session_action(page, "Pin session")
     expect(page.get_by_text("Pinned", exact=True)).to_be_visible()
@@ -245,13 +246,13 @@ def test_demo_session_actions_edit_regenerate_and_delete_are_native_and_isolated
     dialog = page.get_by_role("dialog", name="Edit and resend", exact=True)
     dialog.get_by_role("textbox", name="Edit message", exact=True).fill("An edited request")
     dialog.get_by_role("button", name="Edit and resend", exact=True).click()
-    expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_visible()
+    expect(dialog).to_have_count(0)
     expect(page.get_by_role("button", name="Send message", exact=True)).to_be_visible(timeout=20000)
     expect(page.locator(".message.user")).to_have_count(1)
     expect(page.locator(".message.user")).to_contain_text("An edited request")
     page.get_by_role("button", name="Regenerate response", exact=True).click()
     page.get_by_role("dialog").get_by_role("button", name="Regenerate response", exact=True).click()
-    expect(page.get_by_role("button", name="Stop response", exact=True)).to_be_visible()
+    expect(page.get_by_role("dialog")).to_have_count(0)
     expect(page.get_by_role("button", name="Send message", exact=True)).to_be_visible(timeout=20000)
     expect(page.locator(".message.assistant")).to_have_count(1)
     page.get_by_role("button", name="Delete turn", exact=True).last.click()

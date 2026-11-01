@@ -9,10 +9,18 @@ from playwright.sync_api import expect
 from talaria.app import STATE_UNAVAILABLE
 from talaria.session_state import StateUnavailable
 
-from .conftest import browser_context, wait_for, wait_for_store, wait_in_browser
+from .conftest import browser_context, shorten_timers, wait_for, wait_for_store, wait_in_browser
 from .test_app import signed_in
 from .test_conversation_features import png
 from .test_reply_settlement import start_reply
+
+
+@pytest.fixture(autouse=True)
+def quick_command_polling(request):
+    """Command status polls on real time, which most tests here would wait through."""
+    if "page" in request.fixturenames:
+        shorten_timers(request.getfixturevalue("page"), 1000)
+
 
 CATALOG = [
     {

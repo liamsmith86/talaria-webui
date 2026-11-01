@@ -212,6 +212,7 @@ def test_regenerate_delete_and_mobile_toolbar(page, live_app):
     page.get_by_role("dialog").get_by_role("button", name="Delete turn", exact=True).click()
     expect(page.get_by_role("dialog")).to_have_count(0)
     expect(page.locator(".message")).to_have_count(0)
+    expect(page.get_by_text("This session has no chat history.", exact=True)).to_be_visible()
     assert not peer.messages[sid] and peer.rewinds == 2
 
 

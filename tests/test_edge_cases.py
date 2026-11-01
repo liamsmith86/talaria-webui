@@ -1,6 +1,5 @@
 import json
 
-import pytest
 from playwright.sync_api import expect
 
 
@@ -116,9 +115,8 @@ def test_tool_history_retains_command_and_readable_output(page, live_app):
     expect(card.locator(".tool-facts dd")).to_have_text("0")
 
 
-@pytest.mark.parametrize(
-    "name,result,failed",
-    [
+def test_a_saved_step_is_failed_when_hermes_reported_it_failed(page, live_app):
+    steps = [
         ("read_file", '{"error":"File not found"}', True),
         ("read_file", '{"error":null,"content":"notes"}', False),
         ("web_extract", '{"success":false,"message":"Blocked"}', True),
@@ -132,25 +130,30 @@ def test_tool_history_retains_command_and_readable_output(page, live_app):
         ("custom_tool", "Error: it broke", True),
         ("custom_tool", 'Output: {"failed": 2}', True),
         ("custom_tool", 'Output: {"failed": 0}', False),
-    ],
-)
-def test_a_saved_step_is_failed_when_hermes_reported_it_failed(
-    page, live_app, name, result, failed
-):
+    ]
     peer = live_app[1]
     peer.sessions["saved-step"] = {"id": "saved-step", "title": "A saved step"}
     peer.messages["saved-step"] = [
         {
             "id": 1,
             "role": "assistant",
-            "tool_calls": [{"id": "call-1", "function": {"name": name, "arguments": "{}"}}],
+            "tool_calls": [
+                {"id": f"call-{index}", "function": {"name": name, "arguments": "{}"}}
+                for index, (name, _, _) in enumerate(steps)
+            ],
         },
-        {"id": 2, "role": "tool", "tool_call_id": "call-1", "content": result},
+        *(
+            {"id": index + 2, "role": "tool", "tool_call_id": f"call-{index}", "content": output}
+            for index, (_, output, _) in enumerate(steps)
+        ),
     ]
     page.reload()
     page.get_by_role("link", name="A saved step", exact=True).click()
-    expect(page.locator(".tool-card")).to_have_count(1)
-    expect(page.locator(".tool-card .tool-status.failed")).to_have_count(int(failed))
+    cards = page.locator(".tool-card")
+    expect(cards).to_have_count(len(steps))
+    for index, (name, output, failed) in enumerate(steps):
+        marks = cards.nth(index).locator(".tool-status.failed")
+        assert marks.count() == int(failed), (name, output)
 
 
 def test_missing_required_capability_explains_unavailable_chat(page):
