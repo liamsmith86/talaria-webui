@@ -1,0 +1,30 @@
+name: Install a Playwright browser
+description: >-
+  Install a browser and its system packages. Those packages come from Ubuntu's mirror, which
+  can take ten minutes to serve them, so they are kept in the Actions cache.
+inputs:
+  browser:
+    description: The browser to install
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Keep system packages where the cache can reach them
+      shell: bash
+      run: |
+        mkdir -p "$HOME/.cache/apt-archives/partial"
+        echo "Dir::Cache::Archives \"$HOME/.cache/apt-archives\";" | sudo tee /etc/apt/apt.conf.d/90-cached-archives
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/apt-archives
+        key: apt-${{ runner.arch }}-${{ inputs.browser }}-${{ hashFiles('uv.lock') }}
+        # A package that changed since then is the only one downloaded.
+        restore-keys: apt-${{ runner.arch }}-${{ inputs.browser }}-
+    - name: Install ${{ inputs.browser }}
+      shell: bash
+      env:
+        BROWSER: ${{ inputs.browser }}
+      run: |
+        uv run --locked playwright install --with-deps "$BROWSER"
+        # apt leaves these owned by root, and the cache saves as this user.
+        sudo chown -R "$(id -u):$(id -g)" "$HOME/.cache/apt-archives"

@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      TALARIA_TEST_WORKERS: '2'
+      TALARIA_TEST_WORKERS: '3'
       TALARIA_AXE_PATH: ${{ github.workspace }}/.local/axe.min.js
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -94,8 +94,11 @@ jobs:
       - if: steps.scope.outputs.runtime == 'true'
         run: uv sync --locked
       - if: steps.scope.outputs.browser == 'true'
+        uses: ./.github/actions/playwright-browser
+        with:
+          browser: chromium
+      - if: steps.scope.outputs.browser == 'true'
         run: |
-          uv run --locked playwright install --with-deps chromium
           mkdir -p .local
           curl --fail --show-error --silent --location --retry 3 https://cdn.jsdelivr.net/npm/axe-core@4.13.0/axe.min.js -o "$TALARIA_AXE_PATH"
           echo 'c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1  .local/axe.min.js' | sha256sum --check
@@ -170,7 +173,9 @@ jobs:
           # The Linux backend job saves this same dependency cache.
           save-cache: false
       - run: uv sync --locked
-      - run: uv run --locked playwright install --with-deps "$TALARIA_TEST_BROWSER"
+      - uses: ./.github/actions/playwright-browser
+        with:
+          browser: ${{ matrix.browser }}
       - name: Fetch and verify pinned accessibility engine
         run: |
           mkdir -p .local
@@ -185,7 +190,7 @@ jobs:
           trap 'kill "$monitor" 2>/dev/null || true' EXIT
           # Leave time for artifact upload even if pytest or browser teardown stalls.
           timeout --kill-after=15s 10m bash -o pipefail <<'BROWSER'
-          uv run --locked pytest -v -n 2 --dist load --maxschedchunk=1 -m "$TALARIA_TEST_MARK" --browser-shard "$TALARIA_TEST_SHARD" --fail-on-skip --timeout=120 --timeout-method=thread --max-worker-restart=0 --maxfail=1 -o faulthandler_timeout=90 --durations=10 --junitxml=test-results/browser.xml 2>&1 | tee test-results/browser.log | awk '
+          uv run --locked pytest -v -n 3 --dist load --maxschedchunk=1 -m "$TALARIA_TEST_MARK" --browser-shard "$TALARIA_TEST_SHARD" --fail-on-skip --timeout=120 --timeout-method=thread --max-worker-restart=0 --maxfail=1 -o faulthandler_timeout=90 --durations=10 --junitxml=test-results/browser.xml 2>&1 | tee test-results/browser.log | awk '
             length($0) > 2000 { print substr($0, 1, 2000) "... [line shortened; see browser.log]"; fflush(); next }
             { print; fflush() }'
           BROWSER
