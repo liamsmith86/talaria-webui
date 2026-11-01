@@ -1,11 +1,11 @@
 {
   "preact": {
-    "version": "11.0.2",
-    "tarball": "https://registry.npmjs.org/preact/-/preact-11.0.2.tgz",
-    "integrity": "sha512-ofG+Lqznbt13JKDjdWPLTo5ONBqcNgidqnLRzJBG6PZjzGXOLRd5y9r448+HUofTyDbgKWVrPhHP0IgcxEZslQ==",
+    "version": "10.29.8",
+    "tarball": "https://registry.npmjs.org/preact/-/preact-10.29.8.tgz",
+    "integrity": "sha512-ej2aVZ+vZ8WO7tvlQWRM9N63A0KzF9q4mWJfDUHgYaIofWY9hu74QdnQrjoPMmZi2/nZ5gN0bJCQF49xQqx09Q==",
     "files": {
-      "preact.js": "4d2617f3f082550223d37f781114b5f723362fc4a337459715a7083664dc10c1",
-      "hooks.js": "3705b597fa21a69b981071555ee5d807545eb36c85afcf27c4d9d598622875d7"
+      "preact.js": "c30e721ebfdc6e2ad4c18c14d2dfb82667829c8aec27de1207774e3fc16858a8",
+      "hooks.js": "960d4e1123fae82515f94d23ec1b6b9adff539db9a83418e52264593d82cdcdf"
     }
   },
   "htm": {

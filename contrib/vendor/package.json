@@ -3,7 +3,7 @@
   "private": true,
   "description": "Tracks src/talaria/static/vendor for Dependabot. After changing a version, run contrib/vendor.py.",
   "dependencies": {
-    "preact": "11.0.2",
+    "preact": "10.29.8",
     "htm": "3.1.1",
     "marked": "18.1.1",
     "dompurify": "3.4.17",
