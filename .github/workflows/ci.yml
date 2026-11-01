@@ -43,16 +43,16 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 2
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: '0.12.9'
-          checksum: &uv-checksum ${{ runner.os == 'macOS' && '301f72afaf54060f92da7016cb0115bd077f43a9c8e39c1d8170a0bac80fd398' || runner.arch == 'ARM64' && 'c36fe17937ff6bd16dc42fc13854b5465999fcab2efe0af559381e945e3c6001' || 'ec7a99cd05e0cd7f80243f135ce1361c76835cb0ee60055d14d20eba8eba1460' }}
+          version: '0.13.5'
+          checksum: &uv-checksum ${{ runner.os == 'macOS' && '743f85035a1996ecb350659e01cd9faea9709829be09b1b4b03c73eaf3c9cd73' || runner.arch == 'ARM64' && '4bb69cf95ed13f23713bb7bc09f241896ea0c75b7c557e615a20604b82f9c403' || 'f68d291c75783122dad58ab77def0e13f3233f358731db5d6d7e8715603b928f' }}
           python-version: '3.14'
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           cache: npm
-      - run: npm install --global npm@12.0.1 --ignore-scripts
+      - run: npm install --global npm@12.2.1 --ignore-scripts
         working-directory: ${{ runner.temp }}
       - name: Install lint tools (retry transient binary downloads)
         run: |
@@ -85,10 +85,10 @@ jobs:
       - name: Select checks from the PR merge changes
         id: scope
         run: python3 contrib/check.py ci --plan >> "$GITHUB_OUTPUT"
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         if: steps.scope.outputs.runtime == 'true'
         with:
-          version: '0.12.9'
+          version: '0.13.5'
           checksum: *uv-checksum
           python-version: '3.14'
       - if: steps.scope.outputs.runtime == 'true'
@@ -108,7 +108,7 @@ jobs:
       - name: Walk a new user's install through real Hermes
         if: steps.scope.outputs.install == 'true'
         run: uv run --locked python contrib/install_walkthrough.py
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure() && steps.scope.outputs.install == 'true'
         with:
           name: install-walkthrough-pr
@@ -137,16 +137,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: '0.12.9'
+          version: '0.13.5'
           checksum: *uv-checksum
           python-version: ${{ matrix.python }}
       - run: uv sync --locked
       - name: Backend, fresh wheel, startup, plugin export, update and rollback
         # General backend logic runs once; every OS retains the portability suite.
         run: uv run --locked python contrib/check.py platform ${{ matrix.os == 'ubuntu-24.04' && '--full' || '' }}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: platform-${{ matrix.os }}-${{ matrix.python }}
@@ -174,9 +174,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: '0.12.9'
+          version: '0.13.5'
           checksum: *uv-checksum
           python-version: '3.12'
           # The Linux backend job saves this same dependency cache.
@@ -203,7 +203,7 @@ jobs:
             length($0) > 2000 { print substr($0, 1, 2000) "... [line shortened; see browser.log]"; fflush(); next }
             { print; fflush() }'
           BROWSER
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: browser-${{ matrix.browser }}-${{ matrix.shard }}
@@ -227,16 +227,16 @@ jobs:
           ref: bf0203a794a07aac3ff764972ab9087baa4e4f4e # v0.22.5
           path: .local/hermes-catalog
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: '0.12.9'
+          version: '0.13.5'
           checksum: *uv-checksum
           python-version: '3.14'
       - name: Prepare the locked Hermes validator
         run: uv sync --project .local/hermes-catalog --frozen --no-dev --extra sms --python "$UV_PYTHON"
       - name: Validate the exact commit and prepare its catalog entry
         run: .local/hermes-catalog/.venv/bin/python contrib/plugin_catalog.py --revision HEAD --output .local/plugin-catalog
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: plugin-catalog
           path: .local/plugin-catalog/
@@ -267,9 +267,9 @@ jobs:
           ref: ${{ matrix.hermes.ref }}
           path: .local/hermes
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: '0.12.9'
+          version: '0.13.5'
           checksum: *uv-checksum
           python-version: ${{ matrix.hermes.python }}
       - run: uv sync --locked
@@ -278,7 +278,7 @@ jobs:
           UV_PROJECT_ENVIRONMENT: ${{ env.HERMES_SOURCE }}/venv
         run: uv sync --project "$HERMES_SOURCE" --frozen --no-dev --extra sms --python "$UV_PYTHON"
       - run: uv run --locked pytest -q -m hermes --fail-on-skip --junitxml=test-results/hermes.xml
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: native-hermes-${{ matrix.hermes.name }}
@@ -299,9 +299,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: '0.12.9'
+          version: '0.13.5'
           checksum: *uv-checksum
           python-version: '3.14'
       - run: uv sync --locked
@@ -309,7 +309,7 @@ jobs:
         env:
           HERMES_REF: ${{ matrix.hermes }}
         run: uv run --locked python contrib/install_walkthrough.py --hermes-ref "$HERMES_REF"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: install-walkthrough-${{ matrix.hermes }}
