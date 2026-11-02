@@ -109,26 +109,29 @@ function Login({ development }) {
   </main>`;
 }
 
-function Welcome({ onSuggestion }) {
+function Welcome() {
+  return html`<div class="welcome">
+    <div class="welcome-mark"><${Mark} size=${49} /></div>
+    <h1>${t("New session")}</h1>
+  </div>`;
+}
+
+function Suggestions({ onSuggestion }) {
   const suggestions = [
     ["spark", t("Plan"), t("Help me think through ")],
     ["terminal", t("Code"), t("I’d like to build ")],
     ["file", t("Write"), t("Help me write ")],
   ];
-  return html`<div class="welcome">
-    <div class="welcome-mark"><${Mark} size=${49} /></div>
-    <h1>${t("New session")}</h1>
-    <div class="suggestions">
-      ${suggestions.map(
-        ([icon, label, text]) =>
-          html`<button
-            onClick=${() => onSuggestion({ text, time: Date.now() })}
-          >
-            <${Icon} name=${icon} size=${19} /><span>${label}</span
-            ><span class="suggestion-arrow">↗</span>
-          </button>`,
-      )}
-    </div>
+  return html`<div class="suggestions">
+    ${suggestions.map(
+      ([icon, label, text]) =>
+        html`<button
+          onClick=${() => onSuggestion({ text, time: Date.now() })}
+        >
+          <${Icon} name=${icon} size=${19} /><span>${label}</span
+          ><span class="suggestion-arrow">↗</span>
+        </button>`,
+    )}
   </div>`;
 }
 
@@ -296,7 +299,7 @@ function App() {
       </div>`}
       ${app.active || commands.length
         ? html`<${Conversation} key=${app.active} app=${app} commands=${app.searchWindow ? [] : commands} onDismissCommand=${commandActivity.dismiss} noChat=${noChat} external=${external} />`
-        : html`<${Welcome} onSuggestion=${setSuggestion} />`}
+        : html`<${Welcome} />`}
       ${app.searchWindow
         ? html`<div class="child-return"><span>${t("Search result · surrounding messages")}</span>
             <button class="text-button" onClick=${() => openSession(app.active)}>${t("View latest messages")}</button></div>`
@@ -333,6 +336,7 @@ function App() {
               draftSuggestion=${suggestion}
               commandActivity=${commandActivity}
             />
+            ${!app.active && !commands.length && html`<${Suggestions} onSuggestion=${setSuggestion} />`}
           </div>`}
     </main>
     ${app.toast &&

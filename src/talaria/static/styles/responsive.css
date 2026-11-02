@@ -45,12 +45,6 @@
   .welcome h1 {
     font-size: 49px;
   }
-  .welcome {
-    padding-bottom: 55px;
-  }
-  .is-new .composer-area {
-    padding-bottom: 50px;
-  }
 }
 @media (max-width: 1050px) {
   .sidebar {
@@ -149,11 +143,14 @@
     font-size: 12px;
   }
   .welcome {
+    margin-block: auto;
     padding: 12px 25px 18px;
-    min-height: 260px;
+  }
+  .is-new .composer-area {
+    margin-bottom: 0;
   }
   .welcome-mark {
-    margin-bottom: 20px;
+    margin-bottom: 16px;
   }
   .welcome-mark svg {
     width: 43px;
@@ -162,11 +159,10 @@
   .welcome h1 {
     font-size: 37px;
     letter-spacing: -1.6px;
-    margin: 16px 0;
+    margin: 12px 0 0;
   }
   .suggestions {
-    margin-top: 27px;
-    gap: 8px;
+    margin-top: 12px;
   }
   .suggestions button {
     padding: 10px 12px;
@@ -196,17 +192,15 @@
     padding: 6px 10px 10px;
   }
   .composer-left {
-    gap: 2px;
+    gap: 5px;
   }
   .model-button {
     font-size: 10px;
-    padding: 10px 5px;
+    height: 38px;
+    padding: 0 6px 0 9px;
   }
   .model-caption {
     max-width: 145px;
-  }
-  .toolbar-divider {
-    margin: 0 4px;
   }
   .send-button {
     width: 38px;
@@ -218,7 +212,7 @@
     height: 40px;
   }
   .composer .icon-button {
-    width: 36px;
+    width: 38px;
     height: 38px;
   }
   .working-label {
@@ -342,14 +336,13 @@
   }
   .welcome h1 {
     font-size: 33px;
-    margin: 12px 0;
+    margin: 8px 0 0;
   }
   .welcome {
     padding-top: 0;
-    min-height: 230px;
   }
   .suggestions {
-    margin-top: 20px;
+    margin-top: 12px;
   }
   .is-new .composer-area {
     padding-bottom: 20px;
@@ -369,7 +362,6 @@
 }
 @media (max-width: 700px) and (max-height: 600px) {
   .welcome {
-    min-height: 0;
     padding: 4px 20px;
   }
   .welcome-mark,
