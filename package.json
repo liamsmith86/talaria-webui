@@ -8,11 +8,11 @@
     "lint": "eslint . --max-warnings 0"
   },
   "engines": {
-    "node": ">=22.13",
+    "node": ">=22.18",
     "npm": ">=12"
   },
   "devDependencies": {
-    "@babel/core": "7.29.7",
+    "@babel/core": "8.0.9",
     "@eslint/js": "10.0.1",
     "babel-plugin-htm": "3.0.0",
     "esbuild": "0.28.2",

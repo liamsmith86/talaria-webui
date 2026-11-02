@@ -9,5 +9,5 @@ cd /tmp/talaria-ci
 curl -fsSL https://astral.sh/uv/0.13.5/install.sh -o /tmp/install-uv.sh
 sh /tmp/install-uv.sh
 export PATH="/root/.local/bin:$PATH"
-uv sync --locked --python 3.12
+uv sync --locked --python 3.12.16
 TALARIA_TEST_WORKERS=2 uv run --locked python contrib/check.py platform

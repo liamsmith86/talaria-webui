@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.32,<2", "brotli>=1.2,<2"]
+requires = ["hatchling==1.32.4", "brotli==1.2.1"]
 build-backend = "hatchling.build"
 
 [project]
@@ -11,9 +11,9 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
-  "starlette>=1.6,<2",
-  "httpx>=0.28,<1",
-  "uvicorn>=0.52.4,<1",
+  "starlette==1.10.0",
+  "httpx==0.28.1",
+  "uvicorn==0.54.0",
 ]
 
 [project.scripts]
@@ -21,19 +21,19 @@ talaria = "talaria.cli:main"
 
 [dependency-groups]
 lint = [
-    "actionlint-py>=1.7,<2",
-    "pre-commit-hooks>=6,<7",
-    "ruff>=0.16.6,<1",
-    "shellcheck-py>=0.11,<1",
-    "vulture>=2.14,<3",
+    "actionlint-py==1.7.12.25",
+    "pre-commit-hooks==6.0.0",
+    "ruff==0.17.2",
+    "shellcheck-py==0.11.0.1",
+    "vulture==2.16",
 ]
 dev = [
-    "pytest>=9.1,<10",
-    "pytest-asyncio>=1.4,<2",
-    "playwright>=1.62,<2",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.1",
+    "playwright==1.64.1",
     {include-group = "lint"},
-    "pytest-xdist>=3.8,<4",
-    "pytest-timeout>=2.4,<3",
+    "pytest-xdist==3.8.0",
+    "pytest-timeout==2.4.0",
 ]
 
 [tool.hatch.build.targets.wheel]

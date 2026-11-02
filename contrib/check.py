@@ -85,6 +85,16 @@ MARKDOWN_STREAM_FILES = {
     "src/talaria/static/vendor/marked.js",
 }
 BROWSERS = ("chromium", "firefox", "webkit")
+# Committing any of these checks that nothing is pinned behind its newest release.
+DEPENDENCY_FILES = {
+    "Dockerfile",
+    "package.json",
+    "package-lock.json",
+    "pyproject.toml",
+    "uv.lock",
+    "contrib/vendor/package.json",
+    "contrib/vendor/package-lock.json",
+}
 # Where CONTRIBUTING.md puts the verified axe-core script.
 AXE = ".local/axe.min.js"
 # Passing checks of the same code count this long, for environment drift that
@@ -263,7 +273,7 @@ def check(full=False, native=False, paths=None, skip_native=False):
         raise SystemExit("Native checks need HERMES_SOURCE (see CONTRIBUTING.md).")
     if full or "tests/test_accessibility.py" in scope["extra_browser"]:
         axe = Path(env.get("TALARIA_AXE_PATH", ""))
-        digest = "c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1"
+        digest = "20c09fe157a8a34a30e241aaa1fcdade657734f08ab379ecfbeb7d45cc46e878"
         if not axe.is_file() or hashlib.sha256(axe.read_bytes()).hexdigest() != digest:
             raise SystemExit(f"Save the verified axe-core script as {AXE} or set TALARIA_AXE_PATH.")
     lint(paths=None if full else paths)
@@ -302,6 +312,12 @@ def reuse_javascript(root):
     reuse_javascript(root)
 
 
+def outdated(root):
+    script = subprocess.run([sys.executable, "contrib/outdated.py"], cwd=root, env=environment())
+    if script.returncode == 1:
+        raise SystemExit("Update the dependencies above, or hold them in contrib/outdated.py.")
+
+
 def pre_commit():
     # Export the index, not HEAD or the working tree: partial staging must not
     # hide violations, and deleting the last reference must reach Vulture.
@@ -321,6 +337,8 @@ def pre_commit():
             cwd=root,
             env=environment(),
         )
+        if DEPENDENCY_FILES.intersection(git("diff", "--cached", "--name-only").splitlines()):
+            outdated(root)
     run("git", "diff", "--cached", "--check")
 
 

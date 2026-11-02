@@ -511,6 +511,7 @@ def test_source_promotion_fails_closed_on_github_errors(monkeypatch, error):
         (False, False, None, 0),
         (False, False, "catalog", 1),
         (False, True, "behavior", 1),
+        (False, True, "dependency_review", 1),
         (False, True, None, 0),
         (True, False, "hermes", 1),
         (True, False, None, 0),
@@ -528,7 +529,7 @@ def test_required_barrier_cannot_hide_missing_behavior_or_release_jobs(
     if full:
         required.update({"platforms", "browsers", "hermes", "install", "wsl"})
     if pull_request:
-        required.add("behavior")
+        required.update({"behavior", "dependency_review"})
     for name in required - {failed}:
         jobs[name]["result"] = "success"
     script = ci["jobs"]["required"]["steps"][0]["run"].split("\n", 1)[1].rsplit("\nPY", 1)[0]
