@@ -3,6 +3,7 @@
 !README.md
 !LICENSE
 !uv.lock
+!hatch_build.py
 !src/
 !src/**
 **/__pycache__/

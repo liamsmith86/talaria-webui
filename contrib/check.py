@@ -20,6 +20,7 @@ STREAMING = [
     "tests/test_reply_settlement.py",
 ]
 FOCUSED = [
+    "tests/test_production.py",
     *STREAMING,
     "tests/test_frontend_state_qa.py",
     "tests/test_message_submission.py",
@@ -121,8 +122,17 @@ def plan(paths=None):
         scope["browsers"] = True
         scope["extra_browser"].append(I18N_BROWSER)
         return scope
-    local = all(path in CHECK_FILES or path.startswith(".githooks/") for path in paths)
-    installer = all(path in INSTALL_FILES or path in CHECK_FILES for path in paths)
+    production = any(
+        path in {"contrib/build.mjs", "hatch_build.py", "package.json", "package-lock.json"}
+        or path.startswith("src/talaria/static/built/")
+        for path in paths
+    )
+    local = not production and all(
+        path in CHECK_FILES or path.startswith(".githooks/") for path in paths
+    )
+    installer = not production and all(
+        path in INSTALL_FILES or path in CHECK_FILES for path in paths
+    )
     frontend = all(path.startswith("src/talaria/static/") for path in paths)
     native = any(
         "hermes" in path

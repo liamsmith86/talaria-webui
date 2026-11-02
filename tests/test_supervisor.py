@@ -3,7 +3,6 @@
 import os
 import pwd
 import secrets
-import shutil
 import socket
 import subprocess
 import tempfile
@@ -19,6 +18,7 @@ from talaria.deployment import Deployment, DeploymentError, check_health, run, s
 from talaria.installation import read_json
 from talaria.uninstall import stopped_launcher
 
+from .conftest import copy_release_project
 from .test_app import signed_in
 
 
@@ -43,11 +43,7 @@ def installed_launcher():
         remote.mkdir()
         root.mkdir()
         project = Path(__file__).resolve().parents[1]
-        for name in ("pyproject.toml", "uv.lock", ".gitignore", "README.md", "LICENSE"):
-            shutil.copyfile(project / name, remote / name)
-        shutil.copytree(
-            project / "src", remote / "src", ignore=shutil.ignore_patterns("__pycache__")
-        )
+        copy_release_project(project, remote)
         run(["git", "init", "-b", "main", remote])
         run(["git", "-C", remote, "config", "user.email", "test@example.invalid"])
         run(["git", "-C", remote, "config", "user.name", "Launcher test"])

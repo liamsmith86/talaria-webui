@@ -55,6 +55,8 @@ import { LanguageSelector } from "./language.js";
 import { t, useLanguage } from "./i18n.js";
 import { sourceLabel } from "./content.js";
 
+export { state, update, openSession, refreshSessions } from "./store.js";
+
 function Login({ development }) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);

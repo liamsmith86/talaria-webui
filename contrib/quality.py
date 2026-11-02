@@ -115,6 +115,7 @@ def main():
     run("node", "node_modules/eslint/bin/eslint.js", ".", "--max-warnings", "0")
     run("node", "contrib/i18n.mjs", env={**os.environ, "TALARIA_I18N_PYTHON": sys.executable})
     run(sys.executable, "contrib/vendor.py", "--check")
+    run("node", "contrib/build.mjs", "--check")
     shell = [str(p) for p in paths if p.suffix == ".sh" or p.parent == Path(".githooks")]
     if shell:
         run("shellcheck", *shell)

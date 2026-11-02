@@ -60,6 +60,7 @@ def prepare_gate_repo(destination):
         "contrib/i18n.mjs",
         "contrib/i18n.py",
         "contrib/vendor.py",
+        "contrib/build.mjs",
         "contrib/vendor/package-lock.json",
         ".gitignore",
     ):
@@ -71,12 +72,20 @@ def prepare_gate_repo(destination):
     catalogs.mkdir(parents=True)
     (catalogs / "en.json").write_text("{}\n")
     (catalogs.parent / "i18n.js").write_text('export const languages = [{ code: "en" }];\n')
+    (catalogs.parent / "app.js").write_text("export const example = 42;\n")
+    (catalogs.parent / "boot.js").write_text("import('./app.js');\n")
+    (catalogs.parent / "appearance.js").write_text("window.Prism = { manual: true };\n")
+    (catalogs.parent / "index.html").write_text(
+        '<html><head><script src="__TALARIA_BASE__static/appearance.js"></script>'
+        '<script type="module" src="__TALARIA_BASE__static/boot.js"></script></head></html>'
+    )
     shutil.copytree(ROOT / "src/talaria/static/vendor", catalogs.parent / "vendor")
     (destination / ".github/scripts").mkdir(parents=True)
     (destination / ".github/scripts/check.py").write_text("print(42)\n")
     (destination / ".git/info/exclude").write_text("node_modules\n")
     # Avoid downloads in gate tests; the staged snapshot still verifies the lock identity.
     (destination / "node_modules").symlink_to(ROOT / "node_modules")
+    subprocess.run(["node", "contrib/build.mjs"], cwd=destination, check=True, capture_output=True)
 
 
 @pytest.mark.parametrize(

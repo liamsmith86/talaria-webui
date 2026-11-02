@@ -7,11 +7,14 @@ export { useEffect, useState };
 export { useRef, useMemo, useCallback, useLayoutEffect } from "./vendor/hooks.js";
 // htm would otherwise keep the VNode of a fully static element in its template for
 // the life of the page, and through it the first tree that element rendered in.
-export const html = htm.bind(function (type, props, ...children) {
+function createNode(type, props, ...children) {
   this[0] = 3;
   return h(type, props, ...children);
-});
-export { render };
+}
+export function html() {
+  return htm.apply(createNode, arguments);
+}
+export { h, render };
 
 // getRandomValues also works on HTTP LAN origins; randomUUID requires HTTPS.
 export function randomId() {

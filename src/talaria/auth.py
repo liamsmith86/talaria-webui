@@ -14,6 +14,13 @@ COOKIE = "talaria_session"
 TTL = 60 * 60 * 24 * 14
 
 
+def cookie_name(base_path: str, *, development: bool = False) -> str:
+    name = "talaria_dev_session" if development else COOKIE
+    if base_path:
+        name += "_" + hashlib.sha256(base_path.encode()).hexdigest()[:10]
+    return name
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)
     digest = hashlib.scrypt(password.encode(), salt=salt.encode(), n=16384, r=8, p=1)

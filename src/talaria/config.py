@@ -9,8 +9,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
-import httpx
-
 
 @dataclass
 class Settings:
@@ -38,6 +36,8 @@ class Settings:
 
 
 def validate_url(value: str, *, api: bool = True) -> str:
+    import httpx
+
     url = urlsplit(value.strip())
     if (
         url.scheme not in {"http", "https"}
