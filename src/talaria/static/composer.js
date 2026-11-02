@@ -421,7 +421,7 @@ export function Composer({
             attach([...e.target.files]);
             e.target.value = "";
           }}
-        /><span class="toolbar-divider" /><button
+        /><button
           class="model-button"
           type="button"
           aria-label=${t("Choose model")}

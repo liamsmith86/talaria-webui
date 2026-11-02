@@ -283,18 +283,16 @@ kbd {
   white-space: nowrap;
 }
 .welcome {
-  flex: 1;
-  min-height: 280px;
+  margin-top: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   text-align: center;
-  padding: 30px 30px 35px;
+  padding: 24px 30px 10px;
   animation: arrive 0.2s ease;
 }
 .welcome-mark {
-  margin-bottom: 25px;
+  margin-bottom: 18px;
   transform: rotate(-5deg);
 }
 .welcome h1 {
@@ -302,12 +300,12 @@ kbd {
   font-weight: 450;
   line-height: 1.18;
   letter-spacing: -1.8px;
-  margin: 17px 0 17px;
+  margin: 12px 0 0;
 }
 .suggestions {
   display: flex;
-  gap: 10px;
-  margin-top: 33px;
+  gap: 8px;
+  margin-top: 16px;
   flex-wrap: wrap;
   justify-content: center;
 }
@@ -319,7 +317,7 @@ kbd {
   border: 1px solid var(--line);
   background: var(--surface);
   border-radius: 10px;
-  padding: 13px 14px;
+  padding: 9px 13px;
   color: var(--muted);
   font-size: 11px;
   transition:
