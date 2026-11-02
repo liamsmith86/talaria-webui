@@ -17,7 +17,7 @@ Native Hermes tests and the full suite also need Hermes and axe-core:
 git clone --depth 1 --branch v0.22.5 https://github.com/NousResearch/hermes-agent.git .local/hermes
 UV_PROJECT_ENVIRONMENT=$PWD/.local/hermes/venv uv sync --project .local/hermes --frozen --no-dev --extra sms
 git config --local talaria.hermesSource "$PWD/.local/hermes"  # or export HERMES_SOURCE
-curl -fsSL https://cdn.jsdelivr.net/npm/axe-core@4.13.0/axe.min.js -o .local/axe.min.js
+curl -fsSL https://cdn.jsdelivr.net/npm/axe-core@4.14.0/axe.min.js -o .local/axe.min.js
 ```
 
 `uv run --locked talaria demo` serves sample chats at http://127.0.0.1:8768.
@@ -56,8 +56,17 @@ Dependabot updates the Python and npm lockfiles, GitHub Actions and the Docker b
 It also tracks the browser libraries in `src/talaria/static/vendor/` through
 `contrib/vendor/package-lock.json`. On one of those pull requests, run
 `uv run --locked python contrib/vendor.py` to bring in the files, or lint fails. Prism is a custom
-bundle, so a new version has to be rebuilt by hand. The uv and npm versions pinned across `ci.yml`,
-`install.sh`, `.github/scripts/wsl.sh` and the `Dockerfile` are also updated by hand.
+bundle, so a new version has to be rebuilt by hand.
+
+Every dependency and tool is pinned to an exact version. The build requirements, and the uv, npm,
+Node, Python and axe-core versions in `ci.yml`, `install.sh`, `.github/scripts/wsl.sh` and the
+`Dockerfile`, are updated by hand because Dependabot can't see them.
+
+`contrib/outdated.py` reports anything behind its newest release that has cleared the cooldown. It
+runs before a commit that changes `pyproject.toml`, `uv.lock`, the `Dockerfile` or an npm manifest,
+and blocks the commit if it finds something. Without a network it warns and lets the commit through.
+A weekly CI job runs it too, and pull requests fail if they add a dependency with a known moderate
+or worse vulnerability. To stay on an older major version on purpose, add it to `HELD` in that script.
 
 ## Frontend build
 
