@@ -39,6 +39,10 @@ def requirement(text):
     return name, version
 
 
+def pinned_uv():
+    return re.search(r"astral-sh/uv:([\d.]+)@", (ROOT / "Dockerfile").read_text())[1]
+
+
 def python_packages():
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())
     groups = config["dependency-groups"].values()
@@ -50,7 +54,7 @@ def python_packages():
             *(entry for group in groups for entry in group if isinstance(entry, str)),
         ]
     )
-    pins["uv"] = re.search(r"astral-sh/uv:([\d.]+)@", (ROOT / "Dockerfile").read_text())[1]
+    pins["uv"] = pinned_uv()
     # Resolving bare names shows what the pins hide, and honours the cooldown.
     resolved = subprocess.run(
         [
@@ -115,9 +119,11 @@ def python_runtimes():
     text += (ROOT / "Dockerfile").read_text()
     pins = set(re.findall(r"""python(?:-version)?"?:\s*['"](\d+\.\d+\.\d+)['"]""", text))
     pins |= set(re.findall(r"python:(\d+\.\d+\.\d+)-", text))
+    # CI installs Python with the pinned uv, which only knows the releases it embeds.
     available = json.loads(
         command(
-            "uv", "python", "list", "--all-versions", "--only-downloads", "--output-format", "json"
+            *("uv", "tool", "run", f"uv@{pinned_uv()}", "python", "list"),
+            *("--all-versions", "--only-downloads", "--output-format", "json"),
         ).stdout
     )
     versions = {
@@ -129,7 +135,7 @@ def python_runtimes():
     for pin in sorted(pins, key=key):
         minor = pin.rsplit(".", 1)[0] + "."
         newest = max((v for v in versions if v.startswith(minor)), key=key)
-        if newest != pin:
+        if key(newest) > key(pin):
             found.append(("python", pin, newest))
     return found
 
