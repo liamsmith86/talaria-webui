@@ -23,6 +23,8 @@ from talaria.deployment import (
 )
 from talaria.installation import read_json
 
+from .conftest import copy_release_project
+
 A, B, C = "a" * 40, "b" * 40, "c" * 40
 
 
@@ -333,9 +335,7 @@ def test_real_git_wheel_install_update_failure_and_rollback(
     project = Path(__file__).resolve().parents[1]
     remote = Path(deployment.config["repository"])
     remote.mkdir()
-    for name in ("pyproject.toml", "uv.lock", ".gitignore", "README.md", "LICENSE"):
-        shutil.copyfile(project / name, remote / name)
-    shutil.copytree(project / "src", remote / "src", ignore=shutil.ignore_patterns("__pycache__"))
+    copy_release_project(project, remote)
     run(["git", "init", "-b", "main", remote])
     run(["git", "-C", remote, "config", "user.email", "test@example.invalid"])
     run(["git", "-C", remote, "config", "user.name", "Deployment test"])

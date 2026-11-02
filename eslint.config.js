@@ -3,7 +3,7 @@ import globals from "globals";
 import hooks from "eslint-plugin-react-hooks";
 
 export default [
-  { ignores: ["src/talaria/static/vendor/**", ".venv/**", ".local/**", "build/**", "dist/**"] },
+  { ignores: ["src/talaria/static/vendor/**", "src/talaria/static/built/**", ".venv/**", ".local/**", "build/**", "dist/**"] },
   js.configs.recommended,
   {
     files: ["src/talaria/static/**/*.js"],

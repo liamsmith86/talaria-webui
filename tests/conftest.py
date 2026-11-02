@@ -2,9 +2,12 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import socket
+import subprocess
 import threading
 import time
+import zipfile
 from contextlib import ExitStack, contextmanager
 from functools import wraps
 from pathlib import Path
@@ -27,6 +30,8 @@ from .fake_hermes import KEY, FakeHermes
 # input and gestures, scrolling and layout, images and storage, and locale formats.
 # Releases run these on Firefox and WebKit too; the rest run there nightly.
 CROSS_BROWSER = {
+    "test_assets.py",
+    "test_production.py",
     "test_browser.py",
     "test_conversation_features.py",
     "test_frontend_recovery.py",
@@ -122,8 +127,41 @@ def serve(app, port=0):
 PASSWORD_HASH = hash_password("test-password")
 
 
+def copy_release_project(project, destination):
+    for name in (
+        "pyproject.toml",
+        "uv.lock",
+        "hatch_build.py",
+        ".gitignore",
+        "install.sh",
+        "README.md",
+        "LICENSE",
+    ):
+        shutil.copyfile(project / name, destination / name)
+    shutil.copytree(
+        project / "src", destination / "src", ignore=shutil.ignore_patterns("__pycache__")
+    )
+
+
+@pytest.fixture(scope="session")
+def packaged_assets(tmp_path_factory):
+    root = tmp_path_factory.mktemp("packaged-assets")
+    subprocess.run(
+        [shutil.which("uv"), "build", "--wheel", "--out-dir", str(root)],
+        cwd=Path(__file__).resolve().parents[1],
+        check=True,
+        capture_output=True,
+    )
+    with zipfile.ZipFile(next(root.glob("*.whl"))) as wheel:
+        wheel.extractall(root / "wheel")
+    return root / "wheel/talaria/static"
+
+
 @pytest.fixture
-def live_app(tmp_path):
+def live_app(tmp_path, request, monkeypatch):
+    production = request.node.get_closest_marker("production") is not None
+    if production:
+        monkeypatch.setattr("talaria.app.STATIC", request.getfixturevalue("packaged_assets"))
     peer = FakeHermes()
     upstream, ut, url = serve(peer.app)
     settings = Settings(
@@ -132,7 +170,7 @@ def live_app(tmp_path):
         password_hash=PASSWORD_HASH,
         signing_key="test-signing-key",
     )
-    app = create_app(settings, tmp_path / "config.json")
+    app = create_app(settings, tmp_path / "config.json", immutable_assets=production)
     server, thread, address = serve(app)
     yield address, peer, app
     server.should_exit = upstream.should_exit = True
@@ -212,7 +250,7 @@ def page(browser, live_app, request):
         page.locator(".topbar-title").wait_for()
         # Discovery and listing finish before tests install artificial session state.
         wait_for_store(page, "state => !!state.defaultModel && state.readiness.status === 'ok'")
-        page.evaluate("async () => (await import('/static/store.js')).refreshSessions()")
+        page.evaluate(f"async () => (await import({STORE_URL})).refreshSessions()")
         yield page
 
 
@@ -323,7 +361,8 @@ def wait_for_timer(page, delay):
 
 # The store instance the page runs, wherever its document loaded the modules from.
 STORE_URL = (
-    "new URL('store.js', document.querySelector('script[type=module]')?.src"
+    "new URL(document.querySelector('script[type=module]')?.dataset.storeEntry || 'store.js', "
+    "document.querySelector('script[type=module]')?.src"
     " ?? new URL('/static/', location))"
 )
 

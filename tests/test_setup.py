@@ -21,6 +21,8 @@ from talaria.config import load
 from talaria.deployment import DeploymentError, run
 from talaria.setup_services import preflight, service_plan, unit_quote
 
+from .conftest import copy_release_project
+
 
 @pytest.mark.parametrize("piped_stdin", [False, True])
 @pytest.mark.parametrize("color", [False, True])
@@ -302,9 +304,7 @@ def test_real_bootstrap_fresh_wheel_and_repeat_install(tmp_path):
     project = Path(__file__).resolve().parents[1]
     remote = tmp_path / "remote"
     remote.mkdir()
-    for name in ("pyproject.toml", "uv.lock", ".gitignore", "install.sh", "README.md", "LICENSE"):
-        shutil.copyfile(project / name, remote / name)
-    shutil.copytree(project / "src", remote / "src", ignore=shutil.ignore_patterns("__pycache__"))
+    copy_release_project(project, remote)
     run(["git", "init", "-b", "stable", remote])
     run(
         [

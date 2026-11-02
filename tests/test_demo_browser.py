@@ -80,8 +80,11 @@ def test_demo_new_deployment_bypasses_cached_legacy_modules(browser, prefix):
 
 
 @pytest.fixture
-def demo_page(browser):
-    server, thread, url = serve(create_demo())
+def demo_page(browser, request, monkeypatch):
+    production = request.node.get_closest_marker("production") is not None
+    if production:
+        monkeypatch.setattr("talaria.demo.STATIC", request.getfixturevalue("packaged_assets"))
+    server, thread, url = serve(create_demo(production=production))
     context = browser.new_context(viewport={"width": 1440, "height": 960})
     errors, writes = capture_browser_errors(context), []
     context.on("request", lambda req: writes.append(req.url) if req.method != "GET" else None)

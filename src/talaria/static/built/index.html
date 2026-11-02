@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#fbfbf9" />
+    <meta
+      name="description"
+      content="Talaria is a web client for Hermes Agent."
+    />
+    <title>Talaria</title>
+    <link rel="icon" type="image/svg+xml" href="__TALARIA_BASE__static/mark.svg" />
+    <link rel="manifest" href="__TALARIA_BASE__static/app.webmanifest" />
+    <link rel="apple-touch-icon" sizes="180x180" href="__TALARIA_BASE__static/icons/apple-touch-icon.png" />
+    <script src="__TALARIA_BASE__static/appearance.js"></script>
+<link rel="stylesheet" href="__TALARIA_BASE__static/styles.css" />
+    <link rel="modulepreload" href="__TALARIA_BASE__static/app.js" />
+    <script type="module" data-store-entry="app.js" src="__TALARIA_BASE__static/boot.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <div class="initial-loader">
+        <span role="status">Opening Talaria<span class="loading-dots">…</span></span>
+        <a class="button secondary startup-reload" href="">Reload Talaria</a>
+      </div>
+    </div>
+    <noscript>Talaria needs JavaScript to display sessions and live updates.</noscript>
+  </body>
+</html>

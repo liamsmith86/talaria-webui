@@ -19,7 +19,7 @@ import statistics
 import sys
 import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from itertools import pairwise
 from pathlib import Path
 
@@ -29,9 +29,9 @@ sys.path.insert(0, str(ROOT))
 from playwright.sync_api import Error as BrowserError  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
-from talaria.app import create_app  # noqa: E402
-from talaria.auth import hash_password  # noqa: E402
-from talaria.config import Settings  # noqa: E402
+from contrib.perf_process import ServerProcess, server_process  # noqa: E402
+from talaria.auth import cookie_name, hash_password, issue_cookie  # noqa: E402
+from talaria.config import Settings, load, save  # noqa: E402
 from tests.conftest import STORE_URL, serve, wait_for_store  # noqa: E402
 from tests.fake_hermes import KEY, FakeHermes  # noqa: E402
 
@@ -263,6 +263,7 @@ class Bench:
         self.profile = PROFILES[profile]
         self.runtime = runtime
         self.peer = peer
+        self.resources_dir = None
         self.browser = runtime.chromium.launch(channel="chromium")
         device = self.profile["device"]
         self.context = self.browser.new_context(
@@ -351,6 +352,7 @@ class Bench:
             self.cdp.send("HeapProfiler.collectGarbage")
         metrics = self.counters()
         return {
+            **self.server.memory(),
             "heap_mb": rounded(metrics["JSHeapUsedSize"] / 1048576, 2),
             "nodes": int(metrics["Nodes"]),
             "listeners": int(metrics["JSEventListeners"]),
@@ -364,6 +366,7 @@ class Bench:
         if frames:
             self.page.evaluate("() => __perf.startFrames()")
         before, cpu_before, start = self.counters(), self.cpu_seconds(), time.perf_counter()
+        server_cpu = self.server.cpu()
         requests, encoded = len(self.requests), sum(self.encoded.values())
         yield
         wall = time.perf_counter() - start
@@ -391,6 +394,7 @@ class Bench:
             inp_ms=round(max((e["duration"] for e in drained["events"]), default=0)),
             requests=len(self.requests) - requests,
             transfer_kb=round((sum(self.encoded.values()) - encoded) / 1024, 1),
+            **self.server.cpu_since(server_cpu),
         )
         if self.profile["cpu"] == 1:
             # The emulated phone's throttle burns the renderer's own CPU, so this means
@@ -459,11 +463,12 @@ class Bench:
         return self.page.evaluate("() => performance.now()") - start
 
 
-def navigation(bench):
-    return bench.page.evaluate("""() => {
+def navigation(bench, stage="visit"):
+    metrics = bench.page.evaluate("""() => {
       const nav = performance.getEntriesByType('navigation')[0];
       const paint = (name) => performance.getEntriesByName(name)[0]?.startTime || 0;
       const resources = performance.getEntriesByType('resource');
+      const entries = [nav, ...resources];
       return {
         ttfb_ms: Math.round(nav.responseStart),
         fcp_ms: Math.round(paint('first-contentful-paint')),
@@ -471,10 +476,131 @@ def navigation(bench):
         load_ms: Math.round(nav.loadEventEnd),
         cls: Math.round(__perf.shift * 1000) / 1000,
         resources: resources.length,
-        decoded_kb: Math.round(resources.reduce((a, r) => a + r.decodedBodySize, 0) / 1024),
-        transfer_kb: Math.round(resources.reduce((a, r) => a + r.transferSize, 0) / 1024),
+        decoded_kb: Math.round(entries.reduce((a, r) => a + r.decodedBodySize, 0) / 1024),
+        encoded_kb: Math.round(entries.reduce((a, r) => a + r.encodedBodySize, 0) / 1024),
+        transfer_kb: Math.round(entries.reduce((a, r) => a + r.transferSize, 0) / 1024),
+        network_requests: entries.filter((r) => r.transferSize > 0).length,
       };
     }""")
+    if bench.resources_dir:
+        entries = bench.page.evaluate(r"""() => [
+          ...performance.getEntriesByType('navigation'),
+          ...performance.getEntriesByType('resource')
+        ].map((entry) => ({
+          path: new URL(entry.name).pathname.replace(/\/static\/build-[a-f0-9]+\//, '/static/'),
+          initiator: entry.initiatorType,
+          encoded_bytes: entry.encodedBodySize,
+          decoded_bytes: entry.decodedBodySize,
+          transfer_bytes: entry.transferSize,
+          start_ms: entry.startTime,
+          end_ms: entry.responseEnd,
+          duration_ms: entry.duration,
+        }))""")
+        bench.resources_dir.mkdir(parents=True, exist_ok=True)
+        (bench.resources_dir / f"{stage}.json").write_text(json.dumps(entries, indent=2) + "\n")
+    return metrics
+
+
+def prefixed(prefix, metrics):
+    return {f"{prefix}_{key}": value for key, value in metrics.items()}
+
+
+def visit(bench, stage, load):
+    """Load the page, wait for it to settle, and report how that navigation went."""
+    start = time.perf_counter()
+    load()
+    bench.ready()
+    bench.settled()
+    ready = round((time.perf_counter() - start) * 1000)
+    bench.page.wait_for_timeout(1000)  # Fixed wait: the largest paint can follow readiness.
+    return {f"{stage}_ready_ms": ready, **prefixed(stage, navigation(bench, stage))}
+
+
+def demo_load(bench):
+    """Cold/warm demo visits, then five simultaneously open, independent demo tabs."""
+    result = prefixed("startup", bench.server.memory())
+    cpu = bench.server.cpu()
+    bench.throttle()
+    result.update(visit(bench, "cold", lambda: bench.page.goto(bench.url)))
+    result.update(bench.memory())
+    result.update(visit(bench, "warm", lambda: bench.page.reload()))
+    for _ in range(4):
+        bench.open_tab()
+        bench.page.goto(bench.url)
+        bench.ready()
+        bench.page.evaluate(
+            f"async () => {{\n"
+            f"const {{state, openSession}} = await import({STORE_URL});\n"
+            "await openSession(state.sessions[0].id); }"
+        )
+        bench.page.locator(".message.assistant").first.wait_for()
+    result.update(prefixed("five_tabs", bench.server.memory()))
+    result.update(bench.server.cpu_since(cpu))
+    for page in bench.context.pages:
+        page.close()
+    result.update(prefixed("closed_tabs", bench.server.memory()))
+    return result
+
+
+def server_sessions(bench):
+    """Five authenticated tabs with distinct transcripts and real proxied SSE replies."""
+    for index in range(5):
+        bench.peer.add_session(f"resource-{index}", f"Resource {index}", transcript(12, seed=index))
+    bench.peer.plan("resource probe", markdown(4000), chunk=80, delay=0.002, tools=2)
+    result = prefixed("startup", bench.server.memory())
+    bench.sign_in(bench.url)
+    cpu, start = bench.server.cpu(), time.perf_counter()
+    for index in range(5):
+        if index:
+            bench.open_tab()
+            bench.page.goto(bench.url)
+            bench.ready()
+        bench.open_session(f"resource-{index}")
+    result.update(prefixed("five_tabs", bench.memory()))
+    for page in bench.context.pages:
+        bench.page = page
+        bench.cdp = bench.context.new_cdp_session(page)
+        for domain in ("Performance", "HeapProfiler"):
+            bench.cdp.send(f"{domain}.enable")
+        bench.send("resource probe")
+        bench.wait_idle()
+        bench.settled()
+    result.update(prefixed("after_replies", bench.memory()))
+    result.update(bench.server.cpu_since(cpu))
+    result["wall_s"] = rounded(time.perf_counter() - start, 2)
+    for page in bench.context.pages:
+        page.close()
+    result.update(prefixed("closed_tabs", bench.server.memory()))
+    return result
+
+
+def live_load(bench):
+    """Read-only browsing of an existing server, including up to five saved conversations."""
+    result = prefixed("before", bench.server.memory())
+    bench.throttle()
+    cpu = bench.server.cpu()
+    result.update(visit(bench, "cold", lambda: bench.page.goto(bench.url)))
+    result.update(prefixed("cold", bench.server.cpu_since(cpu)))
+    result.update(bench.memory())
+    cpu = bench.server.cpu()
+    result.update(visit(bench, "warm", lambda: bench.page.reload()))
+    result.update(prefixed("warm", bench.server.cpu_since(cpu)))
+    sessions = bench.page.evaluate(
+        f"async () => (await import({STORE_URL})).state.sessions"
+        ".slice(0, 5).map((session) => session.id)"
+    )
+    for index, sid in enumerate(sessions):
+        if index:
+            bench.open_tab()
+            bench.page.goto(bench.url)
+            bench.ready()
+        bench.open_session(sid)
+    result["open_tabs"] = len(bench.context.pages)
+    result.update(prefixed("open_tabs", bench.memory()))
+    for page in bench.context.pages:
+        page.close()
+    result.update(prefixed("closed_tabs", bench.server.memory()))
+    return result
 
 
 def cold_load(bench):
@@ -485,22 +611,10 @@ def cold_load(bench):
     bench.throttle()
     result = {}
     bench.cdp.send("Network.clearBrowserCache")
-    start = time.perf_counter()
-    bench.page.reload()
-    bench.ready()
-    bench.settled()
-    result["cold_ready_ms"] = round((time.perf_counter() - start) * 1000)
-    bench.page.wait_for_timeout(1000)  # Fixed wait: the largest paint can follow readiness.
-    result.update({f"cold_{key}": value for key, value in navigation(bench).items()})
+    result.update(visit(bench, "cold", lambda: bench.page.reload()))
     result["cold_long_tasks"] = len(bench.page.evaluate("() => __perf.drain().long"))
     result.update(bench.memory())
-    start = time.perf_counter()
-    bench.page.reload()
-    bench.ready()
-    bench.settled()
-    result["warm_ready_ms"] = round((time.perf_counter() - start) * 1000)
-    bench.page.wait_for_timeout(1000)  # Fixed wait: the largest paint can follow readiness.
-    result.update({f"warm_{key}": value for key, value in navigation(bench).items()})
+    result.update(visit(bench, "warm", lambda: bench.page.reload()))
     return result
 
 
@@ -620,7 +734,7 @@ def streaming(bench, name, *, rows=(), **plan):
         bench.wait_idle()
         bench.settled()
     end = bench.memory()
-    result.update({f"after_{key}": value for key, value in end.items()})
+    result.update(prefixed("after", end))
     result["heap_growth_mb"] = rounded(end["heap_mb"] - start["heap_mb"], 2)
     return result
 
@@ -665,15 +779,15 @@ def long_session(bench):
             "state => state.active === 'long' && !state.loading && state.historyLoaded",
         )
     )
-    result.update({f"open_{key}": value for key, value in bench.memory().items()})
+    result.update(prefixed("open", bench.memory()))
     scroll = {}
     position = "() => document.querySelector('.conversation-viewport').scrollTop"
     top = bench.page.evaluate(position)
     with bench.span(scroll):
         bench.swipe(30_000)
     scroll["px"] = round(top - bench.page.evaluate(position))
-    result.update({f"scroll_{key}": value for key, value in scroll.items()})
-    result.update({f"scrolled_{key}": value for key, value in bench.memory().items()})
+    result.update(prefixed("scroll", scroll))
+    result.update(prefixed("scrolled", bench.memory()))
     return result
 
 
@@ -744,8 +858,8 @@ def sidebar(bench):
     with bench.span(typed):
         search.press_sequentially("session 19", delay=60)
         search.fill("")
-    result.update({f"filter_{key}": value for key, value in typed.items()})
-    result.update({f"after_{key}": value for key, value in bench.memory().items()})
+    result.update(prefixed("filter", typed))
+    result.update(prefixed("after", bench.memory()))
     return result
 
 
@@ -761,7 +875,7 @@ def revisit(bench):
     bench.store("state => Object.keys(state.lives).length > 0")
     bench.wait_idle()
     bench.settled()
-    result = {f"after_{key}": value for key, value in bench.memory().items()}
+    result = prefixed("after", bench.memory())
     for label, sid in (("left", "other"), ("back", "stream"), ("left_again", "other")):
         bench.open_session(sid)
         result.update({f"{label}_{key}": value for key, value in bench.memory().items()})
@@ -816,20 +930,20 @@ def paged_session(bench, turns=1000):
             bench.settled()
         pages.append(record["task_ms"])
     result = {"pages": len(pages), "page_task_first_ms": pages[0], "page_task_last_ms": pages[-1]}
-    result.update({f"full_{key}": value for key, value in bench.memory().items()})
+    result.update(prefixed("full", bench.memory()))
     viewport = "document.querySelector('.conversation-viewport')"
     bench.page.evaluate(f"() => {{ {viewport}.scrollTop = 0; }}")
     bench.settled()
     scroll = {}
     with bench.span(scroll):
         bench.swipe(-40_000, speed=4000)
-    result.update({f"scroll_{key}": value for key, value in scroll.items()})
+    result.update(prefixed("scroll", scroll))
     box = bench.page.get_by_label("Message Hermes")
     box.focus()
     typed = {}
     with bench.span(typed):
         box.press_sequentially(sentence(random.Random(4)) * 2, delay=30)
-    result.update({f"type_{key}": value for key, value in typed.items()})
+    result.update(prefixed("type", typed))
     return result
 
 
@@ -869,6 +983,9 @@ SCENARIOS = {
         paged_session_2000,
         enormous_loose_list,
         cold_load,
+        demo_load,
+        server_sessions,
+        live_load,
         return_visit,
         idle,
         idle_sidebar,
@@ -888,7 +1005,7 @@ SCENARIOS = {
 }
 
 
-def run_scenario(runtime, name, profile):
+def run_scenario(runtime, name, profile, python, resources_dir=None):
     peer = Peer()
     upstream, upstream_thread, url = serve(peer.app)
     with tempfile.TemporaryDirectory() as home:
@@ -898,19 +1015,58 @@ def run_scenario(runtime, name, profile):
             password_hash=hash_password(PASSWORD),
             signing_key="perf-signing-key",
         )
-        server, thread, address = serve(
-            create_app(settings, Path(home) / "config.json", immutable_assets=True)
-        )
-        bench = Bench(runtime, profile, peer)
-        bench.url = address
         try:
-            return SCENARIOS[name](bench)
+            config = Path(home) / "config.json"
+            save(config, settings)
+            arguments = ["demo"] if name == "demo_load" else ["--config", str(config)]
+            with server_process(python, arguments) as server:
+                bench = Bench(runtime, profile, peer)
+                bench.resources_dir = resources_dir
+                bench.server = server
+                bench.url = server.url
+                try:
+                    return SCENARIOS[name](bench)
+                finally:
+                    bench.close()
         finally:
-            bench.close()
-            server.should_exit = True
-            thread.join(6)
             upstream.should_exit = True
             upstream_thread.join(6)
+
+
+def run_live(runtime, profile, args, resources_dir=None):
+    settings = load(args.config)
+    with ExitStack() as stack:
+        if args.url:
+            server = ServerProcess(args.server_pid or -1, args.url)
+        else:
+            # A private config snapshot lets two installed versions browse the same
+            # real Hermes without changing the running server or its saved settings.
+            home = stack.enter_context(tempfile.TemporaryDirectory())
+            config = Path(home) / "config.json"
+            save(config, settings)
+            server = stack.enter_context(
+                server_process(args.server_python, ["--config", str(config), "--host", "127.0.0.1"])
+            )
+        bench = Bench(runtime, profile, None)
+        bench.resources_dir = resources_dir
+        bench.url, bench.server = server.url, server
+        bench.context.add_cookies(
+            [
+                {
+                    "name": cookie_name(
+                        settings.base_path, development=bool(args.url and args.dev)
+                    ),
+                    "value": issue_cookie(settings),
+                    "url": server.url,
+                    "httpOnly": True,
+                    "sameSite": "Strict",
+                }
+            ]
+        )
+        try:
+            return live_load(bench)
+        finally:
+            bench.close()
 
 
 def compare_line(key, value, base):
@@ -927,17 +1083,54 @@ def main():
     parser.add_argument("--repeat", type=int, default=1, help="keep each metric's median")
     parser.add_argument("--save", type=Path)
     parser.add_argument("--compare", type=Path)
+    parser.add_argument(
+        "--resources",
+        type=Path,
+        help="Directory for each navigation's per-resource byte counts and timings",
+    )
+    parser.add_argument("--url", help="Read-only live_load against an existing server")
+    parser.add_argument("--config", type=Path, help="Local config used to authenticate live_load")
+    parser.add_argument("--dev", action="store_true", help="Use the development server's cookie")
+    parser.add_argument("--server-pid", type=int, help="Live server worker PID for Linux metrics")
+    parser.add_argument(
+        "--server-python",
+        type=Path,
+        default=Path(sys.executable),
+        help="Server interpreter; use an installed wheel to measure packaged assets",
+    )
     args = parser.parse_args()
+    if args.url and (not args.config or args.scenarios != ["live_load"]):
+        parser.error("--url requires --config and the live_load scenario")
+    if "live_load" in args.scenarios and not args.config:
+        parser.error("live_load requires --config")
+    if args.repeat < 1:
+        parser.error("--repeat must be positive")
+    if args.save:
+        args.save.parent.mkdir(parents=True, exist_ok=True)
     baseline = json.loads(args.compare.read_text()) if args.compare else {}
     profiles = list(PROFILES) if args.profile == "all" else [args.profile]
     results = {}
     failed = False
     with sync_playwright() as runtime:
-        for name in args.scenarios or SCENARIOS:
+        for name in args.scenarios or [key for key in SCENARIOS if key != "live_load"]:
             for profile in profiles:
                 print(f"\n{name} / {profile}", flush=True)
                 try:
-                    runs = [run_scenario(runtime, name, profile) for _ in range(args.repeat)]
+                    runs = []
+                    for repeat in range(args.repeat):
+                        destination = (
+                            args.resources / name / profile / f"run-{repeat + 1}"
+                            if args.resources
+                            else None
+                        )
+                        run = (
+                            run_live(runtime, profile, args, destination)
+                            if name == "live_load"
+                            else run_scenario(
+                                runtime, name, profile, args.server_python, destination
+                            )
+                        )
+                        runs.append(run)
                 except BrowserError as error:
                     failed = True
                     print(f"    FAILED: {str(error).splitlines()[0]}", flush=True)

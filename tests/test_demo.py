@@ -37,7 +37,7 @@ async def test_demo_is_readonly_and_never_opens_private_configuration(
         for path in ("boot.js", "store.js", "demo.js", "paths.js", "styles/demo.css"):
             asset = await client.get("https://demo.example" + assets + path)
             assert asset.status_code == 200
-            assert asset.headers["cache-control"] == "no-cache"
+            assert asset.headers["cache-control"] == "public, max-age=31536000, immutable"
         assert f'href="{prefix}/static/app.webmanifest"' in page.text
         assert "frame-ancestors 'none'" in page.headers["content-security-policy"]
         assert (await client.get("robots.txt")).text == "User-agent: *\nDisallow: /\n"

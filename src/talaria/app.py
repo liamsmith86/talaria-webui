@@ -1,8 +1,6 @@
 """ASGI application assembly and request boundaries."""
 
 import asyncio
-import hashlib
-import html
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -10,11 +8,9 @@ from pathlib import Path
 
 from starlette._utils import get_route_path
 from starlette.applications import Starlette
-from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
-from starlette.routing import Mount, Route
-from starlette.staticfiles import StaticFiles
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from . import (
     auth,
@@ -38,46 +34,11 @@ from .proxy import PublicPath
 from .relay import Relay
 from .session_commands import CommandFollowers
 from .session_state import SessionState, StateUnavailable
+from .web import STATIC, Compression, SecurityHeaders, asset_routes, health, index, robots
 
-STATIC = Path(__file__).parent / "static"
 STATE_UNAVAILABLE = "Talaria could not use its saved session data. Its server log has the reason."
-IMMUTABLE = "public, max-age=31536000, immutable"
+
 log = logging.getLogger(__name__)
-
-
-class SecurityHeaders:
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            return await self.app(scope, receive, send)
-        path = get_route_path(scope)
-
-        async def secure_send(message):
-            if message["type"] == "http.response.start":
-                headers = list(message.get("headers", []))
-                headers += [
-                    (b"x-content-type-options", b"nosniff"),
-                    (b"x-robots-tag", b"noindex, nofollow"),
-                    (b"referrer-policy", b"no-referrer"),
-                    (b"x-frame-options", b"DENY"),
-                    (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
-                    (
-                        b"content-security-policy",
-                        b"default-src 'self'; script-src 'self'; "
-                        b"style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; "
-                        b"font-src 'self'; object-src 'none'; base-uri 'none'; "
-                        b"frame-ancestors 'none'; "
-                        b"form-action 'self'",
-                    ),
-                ]
-                if not path.startswith("/static/"):
-                    headers.append((b"cache-control", b"no-store"))
-                message["headers"] = headers
-            await send(message)
-
-        return await self.app(scope, receive, secure_send)
 
 
 class BrowserBoundary:
@@ -108,63 +69,6 @@ class BrowserBoundary:
                 scope, receive, send
             )
         return await self.app(scope, receive, send)
-
-
-class Assets(StaticFiles):
-    def __init__(self, *, cache_control="no-cache", **kwargs):
-        super().__init__(**kwargs)
-        self.cache_control = cache_control
-
-    async def get_response(self, path, scope):
-        response = await super().get_response(path, scope)
-        # Stable filenames revalidate with ETag instead of risking a mixture of
-        # cached modules from different app versions. A build's own directory never
-        # changes, so browsers keep its files without asking.
-        response.headers["Cache-Control"] = self.cache_control
-        return response
-
-
-def build_path(directory, seed=b""):
-    """A static path naming this exact build, so its relative imports stay within it."""
-    digest = hashlib.sha256(seed)
-    for path in sorted(directory.rglob("*")):
-        if path.is_file():
-            digest.update(path.relative_to(directory).as_posix().encode() + b"\0")
-            digest.update(path.read_bytes())
-    return f"static/build-{digest.hexdigest()[:16]}/"
-
-
-def in_build(document, build):
-    return (
-        document.replace("__TALARIA_BASE__static/", "__TALARIA_BASE__" + build)
-        # The manifest keeps its stable installation identity and launch scope.
-        .replace(build + "app.webmanifest", "static/app.webmanifest")
-    )
-
-
-def asset_routes(immutable):
-    """The static mounts, and the document that loads its assets from them."""
-    document = (STATIC / "index.html").read_text()
-    stable = Mount("/static", Assets(directory=STATIC))
-    if not immutable:
-        return [stable], document
-    build = build_path(STATIC)
-    named = Mount("/" + build.rstrip("/"), Assets(directory=STATIC, cache_control=IMMUTABLE))
-    return [named, stable], in_build(document, build)
-
-
-async def index(request):
-    # The document is tiny; cache the template per application, not per request.
-    base = html.escape(request.app.state.settings.base_path + "/", quote=True)
-    return HTMLResponse(request.app.state.index_html.replace("__TALARIA_BASE__", base))
-
-
-async def robots(request):
-    return PlainTextResponse("User-agent: *\nDisallow: /\n")
-
-
-async def health(request):
-    return JSONResponse({"status": "ok", **installation.build_info()})
 
 
 async def unexpected_error(request, exc):
@@ -207,7 +111,7 @@ def create_app(
             await app.state.command_followers.close()
             await app.state.profiles.close()
 
-    assets, index_html = asset_routes(immutable_assets)
+    assets, index_html = asset_routes(immutable_assets, STATIC)
     app = Starlette(
         lifespan=lifespan,
         exception_handlers={
@@ -268,9 +172,7 @@ def create_app(
     app.state.settings, app.state.config_path = settings, config_path
     app.state.revocations = profiles.app.state.revocations if profiles else Revocations(config_path)
     app.state.development = development
-    app.state.cookie_name = "talaria_dev_session" if development else auth.COOKIE
-    if settings.base_path:
-        app.state.cookie_name += "_" + hashlib.sha256(settings.base_path.encode()).hexdigest()[:10]
+    app.state.cookie_name = auth.cookie_name(settings.base_path, development=development)
     app.state.index_html = index_html
     # Resolve runtime secrets separately from settings so saves never persist them.
     key = os.environ.get("TALARIA_HERMES_API_KEY") if profile_id == "default" else None
@@ -300,7 +202,7 @@ def create_app(
     if profiles is None:
         app.add_middleware(ProfileRouter, profiles=app.state.profiles)
         # Outside every profile's app. Starlette leaves event streams uncompressed.
-        app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
+        app.add_middleware(Compression, minimum_size=1024, compresslevel=6)
         app.add_middleware(BrowserBoundary)
         app.add_middleware(SecurityHeaders)
         app.add_middleware(PublicPath, prefix=settings.base_path)

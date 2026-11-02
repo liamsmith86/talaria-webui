@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.32,<2"]
+requires = ["hatchling>=1.32,<2", "brotli>=1.2,<2"]
 build-backend = "hatchling.build"
 
 [project]
@@ -39,6 +39,8 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/talaria"]
 
+[tool.hatch.build.targets.wheel.hooks.custom]
+
 [tool.uv]
 exclude-newer = "7 days"
 
@@ -51,6 +53,7 @@ markers = [
     "hermes: requires a native Hermes checkout",
     "quality: requires the developer JavaScript and lint toolchain",
     "clock: install Playwright's clock before application startup",
+    "production: run the browser against the packaged production frontend",
 ]
 
 [tool.ruff]

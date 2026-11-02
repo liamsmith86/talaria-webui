@@ -1,2 +1,4 @@
 *.sh text eol=lf
 .githooks/* text eol=lf
+src/talaria/static/** text=auto eol=lf
+src/talaria/static/built/** linguist-generated=true

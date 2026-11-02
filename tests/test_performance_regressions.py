@@ -507,7 +507,7 @@ def test_a_return_visit_asks_the_server_for_no_assets(browser, tmp_path):
             page.goto(url)
             page.get_by_label("Password", exact=True).wait_for()
             first = list(assets)
-            assert len(first) > 40
+            assert any(path.endswith("/app.js") for path in first)
             # A manifest's URL identifies the app, so it isn't versioned. WebKit reads it each load.
             assert all("/static/build-" in path for path in first if "manifest" not in path)
             assets.clear()

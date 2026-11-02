@@ -5,23 +5,34 @@ import os
 from pathlib import Path
 
 from starlette.applications import Starlette
-from starlette.middleware.gzip import GZipMiddleware
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 
 from . import __version__
-from .app import STATIC, Assets, SecurityHeaders, build_path, health, in_build, index, robots
 from .config import Settings, validate_public_url
 from .hermes_plugin.release import PLUGIN_VERSION
 from .proxy import PublicPath
+from .web import (
+    IMMUTABLE,
+    STATIC,
+    Assets,
+    Compression,
+    SecurityHeaders,
+    build_path,
+    health,
+    in_build,
+    index,
+    index_document,
+    robots,
+)
 
 
-def create_demo(*, public_url=""):
+def create_demo(*, public_url="", production=False):
     sample_data = Path(__file__).with_name("demo_data.json").read_bytes()
     # A proxy can override revalidation headers. Give each demo build its own
     # asset directory so relative imports also bypass older browser/CDN caches.
     asset_path = build_path(STATIC, sample_data)
-    assets = GZipMiddleware(Assets(directory=STATIC), minimum_size=1024)
+    assets = Assets(directory=STATIC, cache_control=IMMUTABLE, production=production)
 
     async def bootstrap(request):
         return JSONResponse(
@@ -64,19 +75,18 @@ def create_demo(*, public_url=""):
             Route("/api/samples", samples),
             Route("/api/{path:path}", missing),
             Mount("/" + asset_path.rstrip("/"), assets),
-            Mount("/static", assets),
+            Mount("/static", Assets(directory=STATIC)),
         ],
     )
     app.state.settings = Settings(public_url=validate_public_url(public_url) if public_url else "")
     app.state.index_html = in_build(
-        (STATIC / "index.html")
-        .read_text()
-        .replace(
+        index_document(STATIC, production).replace(
             "</head>",
             '<link rel="stylesheet" href="__TALARIA_BASE__static/styles/demo.css" /></head>',
         ),
         asset_path,
     )
+    app.add_middleware(Compression, minimum_size=1024, compresslevel=6)
     app.add_middleware(SecurityHeaders)
     app.add_middleware(PublicPath, prefix=app.state.settings.base_path)
     return app
@@ -97,7 +107,7 @@ def main(argv):
 
         record(args.host, args.port)
     uvicorn.run(
-        create_demo(public_url=args.public_url),
+        create_demo(public_url=args.public_url, production=True),
         host=args.host,
         port=args.port,
         proxy_headers=False,

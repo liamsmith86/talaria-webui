@@ -47,8 +47,12 @@ def test_old_tab_keeps_draft_and_auth_across_service_cutover(
         # Different immutable asset bytes, same compatible public interfaces.
         assets = tmp_path / "release/static"
         shutil.copytree(application.STATIC, assets)
-        with (assets / "lib.js").open("a") as file:
-            file.write('\nwindow.releaseProbe = "replacement";\n')
+        entries = [assets / "lib.js"]
+        if immutable:
+            entries.append(assets / "built/app.js")
+        for entry in entries:
+            with entry.open("a") as file:
+                file.write('\nwindow.releaseProbe = "replacement";\n')
         monkeypatch.setattr(application, "STATIC", assets)
         replacement = application.create_app(
             settings, tmp_path / "config.json", immutable_assets=immutable
