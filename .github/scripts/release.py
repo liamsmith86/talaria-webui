@@ -7,10 +7,13 @@ import re
 import subprocess
 import sys
 import tomllib
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 VERSION = "org.opencontainers.image.version"
 REVISION = "org.opencontainers.image.revision"
+# A full CI pass of the same tree this recent stands in for the release's own run.
+REUSE_HOURS = 24
 
 
 def version(tag):
@@ -156,10 +159,44 @@ def github(path, data=None, *, missing=False):
     if result.returncode:
         if missing and "HTTP 404" in result.stderr:
             return None
-        raise RuntimeError(
-            "GitHub release promotion failed; no forced branch update was attempted."
-        )
+        raise RuntimeError("GitHub API request failed; no forced branch update was attempted.")
     return json.loads(result.stdout)
+
+
+def tested_run():
+    """A recent passing full CI run of exactly this tree, or None.
+
+    Everything the checks depend on is pinned, and the tree includes the workflows,
+    so such a run proves what the release's own run would. A run against Hermes main
+    skips the pinned Hermes releases and doesn't count.
+    """
+    repository = os.environ["GITHUB_REPOSITORY"]
+    tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
+    since = (datetime.now(UTC) - timedelta(hours=REUSE_HOURS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    runs = github(
+        f"repos/{repository}/actions/workflows/ci.yml/runs"
+        f"?event=workflow_dispatch&status=success&created=%3E%3D{since}&per_page=100"
+    )["workflow_runs"]
+    for run in runs:
+        commit = github(f"repos/{repository}/git/commits/{run['head_sha']}")
+        if commit["tree"]["sha"] != tree:
+            continue
+        jobs = github(f"repos/{repository}/actions/runs/{run['id']}/jobs?per_page=100")["jobs"]
+        results = {job["name"]: job["conclusion"] for job in jobs}
+        if results.get("Release validation") == "success" and "Native Hermes (main)" not in results:
+            return run["html_url"]
+    return None
+
+
+def reuse():
+    try:
+        url = tested_run()
+    except RuntimeError as error:
+        print(f"{error} Running the full checks instead.")
+        url = None
+    print(f"Reusing {url}" if url else "No recent full CI pass of this tree; running the checks.")
+    with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+        output.write(f"tested={str(bool(url)).lower()}\n")
 
 
 def promote():
@@ -202,4 +239,4 @@ def promote():
 
 
 if __name__ == "__main__":
-    {"validate": validate, "publish": publish, "promote": promote}[sys.argv[1]]()
+    {"validate": validate, "reuse": reuse, "publish": publish, "promote": promote}[sys.argv[1]]()

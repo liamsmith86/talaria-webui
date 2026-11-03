@@ -189,11 +189,14 @@ messages, commands, model names or paths. Register new languages in `i18n.js`.
 ## Releases
 
 1. Update the version in `pyproject.toml` and `src/talaria/__init__.py`.
-2. Run `uv lock` and merge to `main`.
-3. Publish a GitHub Release tagged `vX.Y.Z`. Mark prereleases, and never move a
-   tag.
+2. Run `uv lock`, then the full checks on the branch:
+   `gh workflow run ci.yml --ref dev -f full=true`. A failure here costs no
+   version number.
+3. Merge to `main` and publish a GitHub Release tagged `vX.Y.Z`. Mark
+   prereleases, and never move a tag.
 
-The release workflow runs the full checks and publishes the images. A stable
+The release workflow publishes the images. It reuses a passing full run of the
+same tree from the last 24 hours, and otherwise runs the full checks itself. A stable
 release also moves `stable` and `:latest`. Documentation changes don't need a
 release.
 

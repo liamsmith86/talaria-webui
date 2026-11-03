@@ -343,7 +343,9 @@ def test_workflow_gates_publication_and_keeps_prs_lightweight():
     workflow = yaml.load((ROOT / ".github/workflows/release.yml").read_text())
     assert workflow["on"] == {"release": {"types": ["published"]}}
     assert workflow["jobs"]["checks"]["with"]["full"] is True
-    assert workflow["jobs"]["publish"]["needs"] == "checks"
+    assert workflow["jobs"]["publish"]["needs"] == ["version", "checks"]
+    assert workflow["jobs"]["checks"]["if"] == "needs.version.outputs.tested != 'true'"
+    assert "needs.version.outputs.tested == 'true'" in workflow["jobs"]["publish"]["if"]
     assert workflow["jobs"]["manifest"]["needs"] == "publish"
     assert workflow["jobs"]["manifest"]["permissions"]["statuses"] == "write"
     assert all(
@@ -501,8 +503,45 @@ def test_source_promotion_fails_closed_on_github_errors(monkeypatch, error):
         "run",
         lambda *a, **k: subprocess.CompletedProcess(a, 1, stdout="", stderr=error),
     )
-    with pytest.raises(RuntimeError, match="promotion failed"):
+    with pytest.raises(RuntimeError, match="request failed"):
         release.github("repos/owner/app/git/ref/heads/stable", missing=True)
+
+
+@pytest.mark.parametrize(
+    "tree,jobs,reused",
+    [
+        ("release-tree", {"Release validation": "success"}, True),
+        ("other-tree", {"Release validation": "success"}, False),
+        ("release-tree", {"Required checks": "success"}, False),
+        (
+            "release-tree",
+            {"Release validation": "success", "Native Hermes (main)": "success"},
+            False,
+        ),
+    ],
+)
+def test_release_reuses_only_a_full_pass_of_the_same_tree(monkeypatch, tree, jobs, reused):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/app")
+    monkeypatch.setattr(release.subprocess, "check_output", lambda *a, **k: "release-tree\n")
+    responses = {
+        "/jobs": {"jobs": [{"name": n, "conclusion": c} for n, c in jobs.items()]},
+        "/commits/": {"tree": {"sha": tree}},
+        "/runs?": {"workflow_runs": [{"id": 7, "head_sha": "abc", "html_url": "run-7"}]},
+    }
+    monkeypatch.setattr(
+        release,
+        "github",
+        lambda path, **k: next(v for key, v in responses.items() if key in path),
+    )
+    assert release.tested_run() == ("run-7" if reused else None)
+
+
+def test_release_runs_the_checks_when_github_cannot_vouch(monkeypatch, tmp_path):
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setattr(release, "tested_run", lambda: (_ for _ in ()).throw(RuntimeError("x")))
+    release.reuse()
+    assert output.read_text() == "tested=false\n"
 
 
 @pytest.mark.parametrize(
