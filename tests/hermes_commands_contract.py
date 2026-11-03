@@ -3,6 +3,7 @@
 import asyncio
 import inspect
 import json
+import re
 import subprocess
 import sys
 import threading
@@ -44,14 +45,12 @@ def observe_compaction():
 
     from talaria.hermes_plugin.observations import Observations
 
-    if "post_compaction" not in VALID_HOOKS:
-        return False
-    hooks = get_plugin_manager()._hooks.setdefault("post_compaction", [])
-    hooks.append(Observations(get_hermes_home()).compacted)
-    return True
+    if "post_compaction" in VALID_HOOKS:
+        hooks = get_plugin_manager()._hooks.setdefault("post_compaction", [])
+        hooks.append(Observations(get_hermes_home()).compacted)
 
 
-async def verify_kept_turn(client, headers, db, canonical, reply, needle, sized):
+async def verify_kept_turn(client, headers, db, canonical, reply, needle, report):
     """A turn compaction keeps is renumbered, not new: details, search and windows still find it."""
     from hermes_constants import get_hermes_home
 
@@ -80,11 +79,13 @@ async def verify_kept_turn(client, headers, db, canonical, reply, needle, sized)
     shown = [row["id"] for row in db.get_messages(canonical, include_compacted=True)]
     start = shown.index(window[0])
     assert kept["id"] in window and shown[start : start + len(window)] == window
-    if sized:
-        response = await client.get(f"/talaria/v1/sessions/{canonical}/context", headers=headers)
-        context = (await response.json())["context"]
-        assert context["estimated"] is True and context["used"] > 0, context
-        assert context["maximum"] == 1000 and context["model"] == "observed-model", context
+    response = await client.get(f"/talaria/v1/sessions/{canonical}/context", headers=headers)
+    context = (await response.json())["context"]
+    # The indicator shows the request size the report printed, system prompt and tools included.
+    reported = re.search(r"→ ~([\d,]+) tokens", report)
+    assert reported and context["used"] == int(reported[1].replace(",", "")), (context, report)
+    assert context["estimated"] is True, context
+    assert context["maximum"] == 1000 and context["model"] == "observed-model", context
     stored = Observations(get_hermes_home()).read(reply["session_id"])
     assert stored, "Saved details vanished with the compaction"
 
@@ -102,7 +103,7 @@ async def verify_rotated_search(client, headers, db, canonical, needle):
 
 async def verify_commands(client, db, model):
     await asyncio.to_thread(verify_lease_recovery, db)
-    sized = observe_compaction()
+    observe_compaction()
     headers = {"Authorization": "Bearer fixture-key"}
     assert (await client.get("/talaria/v1/commands")).status == 401
     response = await client.get("/talaria/v1/commands", headers=headers)
@@ -195,7 +196,7 @@ async def verify_commands(client, db, model):
             ]
         assert not any(m["content"].startswith("/compress") for m in after)
         if partial and not rotate:
-            await verify_kept_turn(client, headers, db, canonical, reply, needle, sized)
+            await verify_kept_turn(client, headers, db, canonical, reply, needle, result["text"])
         if partial and rotate:
             await verify_rotated_search(client, headers, db, canonical, needle)
         if "include_ancestors" in inspect.signature(db.get_messages).parameters:
