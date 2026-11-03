@@ -583,6 +583,22 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
   }, []);
   const [away, setAway] = useState(false);
   const controls = useScrollControls(app.active, away || !!replyStart);
+  const { reveal } = controls;
+  const settleScroll = useCallback(() => {
+    const el = scroll.current;
+    if (!el) return;
+    const top = Math.max(0, el.scrollTop);
+    // follow() records its own position: automatic streaming scrolls must
+    // not keep the shortcuts visible after the reader stops interacting.
+    if (top !== scrollTop.current) reveal();
+    // Small upward movements must release follow even near the bottom.
+    // Delayed events after content growth alone must keep following.
+    const distance = el.scrollHeight - top - el.clientHeight;
+    if (top < scrollTop.current && distance >= 3) sticky.current = false;
+    else if (top > scrollTop.current && distance < 3) sticky.current = true;
+    scrollTop.current = top;
+    setAway(!sticky.current);
+  }, [reveal]);
   const [olderBusy, setOlderBusy] = useState(false);
   const live = app.searchWindow ? null : app.lives[app.active];
   const agentName = app.agent?.name?.trim() || "Hermes";
@@ -775,6 +791,7 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
       root=${scroll}
       onLoadEarlier=${loadEarlier}
       olderBusy=${olderBusy}
+      onReveal=${settleScroll}
     />`}
     <div class="conversation-shell"><div
       class="conversation-viewport"
@@ -791,20 +808,7 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
         if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key))
           controls.reveal();
       }}
-      onScroll=${(e) => {
-        const el = e.currentTarget;
-        const top = Math.max(0, el.scrollTop);
-        // follow() records its own position: automatic streaming scrolls must
-        // not keep the shortcuts visible after the reader stops interacting.
-        if (top !== scrollTop.current) controls.reveal();
-        // Small upward movements must release follow even near the bottom.
-        // Delayed events after content growth alone must keep following.
-        const distance = el.scrollHeight - top - el.clientHeight;
-        if (top < scrollTop.current && distance >= 3) sticky.current = false;
-        else if (top > scrollTop.current && distance < 3) sticky.current = true;
-        scrollTop.current = top;
-        setAway(!sticky.current);
-      }}
+      onScroll=${settleScroll}
     >
       <div class=${`conversation-content${empty ? " is-empty" : ""}${app.loading ? " is-loading" : ""}`}>
         ${!app.loading &&
