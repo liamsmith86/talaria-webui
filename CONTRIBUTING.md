@@ -92,6 +92,15 @@ rejects missing, modified or stale assets; lint rebuilds in memory and checks
 byte-for-byte reproducibility, so a dependency update fails only if it changes the output. `talaria --dev` continues to serve source modules.
 Normal application and demo launches use the production assets.
 
+## Public demo
+
+The public demo is the `talaria-demo` Cloudflare Pages project, connected to this
+repository. Pushing to `main` deploys it, and pushing to `dev` builds a preview.
+Pages runs `contrib/demo_export.py`, which writes the demo as static files: the API
+responses are files, and `static/demo.js` answers everything else in the browser.
+`_headers` carries the same security headers as `web.py`. The build command is set
+in the Cloudflare dashboard.
+
 ## Performance
 
 `contrib/perf.py` measures the real Talaria server and browser against deterministic

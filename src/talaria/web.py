@@ -17,6 +17,21 @@ from . import installation
 STATIC = Path(__file__).parent / "static"
 IMMUTABLE = "public, max-age=31536000, immutable"
 ENCODINGS = {"br": ".br", "gzip": ".gz"}
+ROBOTS = "User-agent: *\nDisallow: /\n"
+SECURITY_HEADERS = {
+    "x-content-type-options": "nosniff",
+    "x-robots-tag": "noindex, nofollow",
+    "referrer-policy": "no-referrer",
+    "x-frame-options": "DENY",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "content-security-policy": (
+        "default-src 'self'; script-src 'self'; "
+        "style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; "
+        "font-src 'self'; object-src 'none'; base-uri 'none'; "
+        "frame-ancestors 'none'; "
+        "form-action 'self'"
+    ),
+}
 
 
 def accepted_encodings(header):
@@ -67,21 +82,7 @@ class SecurityHeaders:
         async def secure_send(message):
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
-                headers += [
-                    (b"x-content-type-options", b"nosniff"),
-                    (b"x-robots-tag", b"noindex, nofollow"),
-                    (b"referrer-policy", b"no-referrer"),
-                    (b"x-frame-options", b"DENY"),
-                    (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
-                    (
-                        b"content-security-policy",
-                        b"default-src 'self'; script-src 'self'; "
-                        b"style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; "
-                        b"font-src 'self'; object-src 'none'; base-uri 'none'; "
-                        b"frame-ancestors 'none'; "
-                        b"form-action 'self'",
-                    ),
-                ]
+                headers += [(k.encode(), v.encode()) for k, v in SECURITY_HEADERS.items()]
                 if not path.startswith("/static/"):
                     headers.append((b"cache-control", b"no-store"))
                 message["headers"] = headers
@@ -182,7 +183,7 @@ async def index(request):
 
 
 async def robots(request):
-    return PlainTextResponse("User-agent: *\nDisallow: /\n")
+    return PlainTextResponse(ROBOTS)
 
 
 async def health(request):
