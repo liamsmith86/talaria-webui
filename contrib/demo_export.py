@@ -6,8 +6,9 @@ import shutil
 from pathlib import Path
 
 from talaria.demo import SAMPLES, bootstrap_data, create_demo
-from talaria.web import ENCODINGS, IMMUTABLE, ROBOTS, SECURITY_HEADERS, STATIC
+from talaria.web import ENCODINGS, IMMUTABLE, SECURITY_HEADERS, STATIC
 
+ORIGIN = "https://fly.withtalaria.com"
 CORS = "; crossorigin"
 API_FILES = ("bootstrap", "samples")
 # What the first paint needs, as (path in the build, destination, fetched with CORS).
@@ -40,7 +41,8 @@ def copy_build(target):
 
 def headers(build):
     site = {
-        **SECURITY_HEADERS,
+        # Unlike a private installation, the demo should appear in search results.
+        **{name: value for name, value in SECURITY_HEADERS.items() if name != "x-robots-tag"},
         "cross-origin-opener-policy": "same-origin",
         "cross-origin-resource-policy": "same-origin",
     }
@@ -55,9 +57,12 @@ def headers(build):
         + "".join(f"  {name}: {value}\n" for name, value in site.items())
         # The demo's files are for this site only, so drop the wildcard Pages adds.
         + "  ! Access-Control-Allow-Origin\n"
-        + f"/\n{assets}{data}"
+        + f"/\n  Link: <{ORIGIN}/>; rel=canonical\n{assets}{data}"
         + "/api/*\n  Content-Type: application/json\n"
         + f"/{build}*\n  Cache-Control: {IMMUTABLE}\n"
+        # Previews and the default address stay out of search results.
+        + "https://:project.pages.dev/*\n  X-Robots-Tag: noindex\n"
+        + "https://:version.:project.pages.dev/*\n  X-Robots-Tag: noindex\n"
     )
 
 
@@ -73,7 +78,7 @@ def export(site):
     (site / "api/bootstrap").write_text(json.dumps(bootstrap_data()))
     shutil.copy2(SAMPLES, site / "api/samples")
     (site / "index.html").write_text(app.state.index_html.replace("__TALARIA_BASE__", "/"))
-    (site / "robots.txt").write_text(ROBOTS)
+    (site / "robots.txt").write_text("User-agent: *\nAllow: /\n")
     (site / "_headers").write_text(headers(build))
     # Without this, Pages answers unknown paths with the application page.
     (site / "404.html").write_text(

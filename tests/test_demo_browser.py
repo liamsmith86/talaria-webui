@@ -333,8 +333,9 @@ def test_static_export_runs_the_demo_without_a_server(browser, tmp_path):
         # Each preload is a path the page really uses, and its response is reused.
         used = page.evaluate("performance.getEntriesByType('resource').map(entry => entry.name)")
         for _, value in rules["/"]:
-            target = url.rstrip("/") + value.decode().split(">")[0].removeprefix("<")
-            assert used.count(target) == 1, target
+            if b"rel=preload" in value:
+                target = url.rstrip("/") + value.decode().split(">")[0].removeprefix("<")
+                assert used.count(target) == 1, target
         page.goto(url + "?session=demo-weekend")
         expect(page.locator(".conversation-content")).to_contain_text("Backup plan")
         assert not errors

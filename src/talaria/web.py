@@ -17,7 +17,6 @@ from . import installation
 STATIC = Path(__file__).parent / "static"
 IMMUTABLE = "public, max-age=31536000, immutable"
 ENCODINGS = {"br": ".br", "gzip": ".gz"}
-ROBOTS = "User-agent: *\nDisallow: /\n"
 SECURITY_HEADERS = {
     "x-content-type-options": "nosniff",
     "x-robots-tag": "noindex, nofollow",
@@ -183,7 +182,7 @@ async def index(request):
 
 
 async def robots(request):
-    return PlainTextResponse(ROBOTS)
+    return PlainTextResponse("User-agent: *\nDisallow: /\n")
 
 
 async def health(request):

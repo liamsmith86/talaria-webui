@@ -4,7 +4,7 @@
 [![MIT license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Linux · macOS · WSL2](https://img.shields.io/badge/platform-Linux%20%C2%B7%20macOS%20%C2%B7%20WSL2-555)](#installation)
-[![Try the demo](https://img.shields.io/badge/demo-talaria.everla.st-2563EB)](https://talaria.everla.st)
+[![Try the demo](https://img.shields.io/badge/demo-fly.withtalaria.com-2563EB)](https://fly.withtalaria.com)
 [![Latest release](https://img.shields.io/github/v/release/liamsmith86/talaria-webui?sort=semver)](https://github.com/liamsmith86/talaria-webui/releases/latest)
 [![Hermes Agent 0.21.5+](https://img.shields.io/badge/Hermes%20Agent-0.21.5%2B-555)](https://github.com/NousResearch/hermes-agent)
 [![Docker image](https://img.shields.io/badge/Docker-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/liamsmith86/talaria-webui/pkgs/container/talaria-webui)
@@ -19,7 +19,7 @@ Talaria WebUI uses Hermes Agent's [API server](https://hermes-agent.nousresearch
 
 Optionally you can install the Talaria Hermes Agent plugin, a lightweight extension for your Hermes Agent which extends the information returned to Talaria WebUI by the Hermes Agent API. This allows Talaria WebUI to deliver a more polished experience and support features you would expect from a modern agent web interface. This allows us to continue offloading as much functionality to Hermes Agent's existing code without reinventing the wheel ourselves.
 
-**[Try the demo](https://talaria.everla.st)**
+**[Try the demo](https://fly.withtalaria.com)**
 
 ![Talaria on desktop: a streamed reply, code and tool details](.github/assets/demo-desktop.gif)
 
