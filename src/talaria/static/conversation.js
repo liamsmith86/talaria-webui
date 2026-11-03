@@ -573,13 +573,15 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
   const { locale, formatLocale } = useLanguage();
   const scroll = useRef();
   const replyStart = useReplyJump(scroll, app.active);
-  const bottom = useRef();
   const sticky = useRef(true);
   useHistoryAnchor(scroll, app.active, app.history, sticky);
   const scrollTop = useRef(0);
   const follow = useCallback(() => {
-    bottom.current?.scrollIntoView({ behavior: "instant" });
-    scrollTop.current = scroll.current?.scrollTop || 0;
+    // Scroll only the transcript: scrollIntoView also moves its ancestors, and
+    // on phones the page itself while the keyboard is open.
+    const el = scroll.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    scrollTop.current = el?.scrollTop || 0;
   }, []);
   const [away, setAway] = useState(false);
   const controls = useScrollControls(app.active, away || !!replyStart);
@@ -907,7 +909,7 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
         html`<div class="run-notice">
           ${t("Hermes did not receive this guidance before the response finished: {guidance}", { guidance: live.pendingSteer })}
         </div>`}
-        <div ref=${bottom} class="scroll-anchor" />
+        <div class="scroll-anchor" />
       </div>
     </div>
       ${(away || replyStart) && html`<div class=${`conversation-jumps${controls.visible ? "" : " is-idle"}`}>
@@ -935,7 +937,7 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
         title=${t("Jump to latest message")}
         onClick=${() => {
           sticky.current = true;
-          bottom.current?.scrollIntoView({ behavior: scrollBehavior() });
+          scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: scrollBehavior() });
         }}
       >
         <${Icon} name="down" size=${18} />
