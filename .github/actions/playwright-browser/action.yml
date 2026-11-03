@@ -25,6 +25,7 @@ runs:
       env:
         BROWSER: ${{ inputs.browser }}
       run: |
-        uv run --locked playwright install --with-deps "$BROWSER"
+        # Tests run headless, so Chromium needs only its much smaller headless shell.
+        uv run --locked playwright install --with-deps --only-shell "$BROWSER"
         # apt leaves these owned by root, and the cache saves as this user.
         sudo chown -R "$(id -u):$(id -g)" "$HOME/.cache/apt-archives"
