@@ -2,10 +2,11 @@ import { marked } from "./vendor/marked.js";
 
 // Only syntax-free prose can extend a text token without consulting Markdown.
 // In particular, punctuation that could complete a URL, entity, or delimiter
-// must go through the lexer again.
-const prose = /^[\p{L}\p{N} ,.!?;]+$/u;
+// must go through the lexer again. Quotes, brackets, colons and dashes are safe
+// within a line, which covers most replies; a leading dash could become a rule.
+const prose = /^[\p{L}\p{N} ,.!?;:'"()\-‘’“”–—…]+$/u;
 const plain = (text) =>
-  prose.test(text) && !/www\.|^ {0,3}\d{1,9}\.(?: |$)/i.test(text);
+  prose.test(text) && !/www\.|^ {0,3}(?:\d{1,9}[.)](?: |$)|-)/i.test(text);
 const flatItem = (item) =>
   !item.task &&
   !item.loose &&
@@ -85,7 +86,7 @@ export class MarkdownStream {
       last.streamPlain &&
       prose.test(delta) &&
       !/www\./i.test(last.raw.slice(-4) + delta) &&
-      !/^ {0,3}\d{1,9}\.(?: |$)/.test(raw.slice(0, 14))
+      !/^ {0,3}\d{1,9}[.)](?: |$)/.test(raw.slice(0, 14))
     ) {
       next = {
         ...last,
