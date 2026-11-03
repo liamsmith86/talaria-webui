@@ -39,6 +39,11 @@ tree. The Git hooks also run checks on each commit and push. A push reuses
 passing checks of the same code from the last hour, so after a full check it
 reruns at most the native Hermes tests.
 
+Commit subjects and pull request titles follow
+[Conventional Commits](https://www.conventionalcommits.org/), such as
+`fix(settings): refresh agent details quietly`. The `commit-msg` hook rejects
+any other subject.
+
 Releases run every browser test on Chromium and those listed in `CROSS_BROWSER` in `tests/conftest.py`
 on Firefox and WebKit; add a file there if its behavior can differ between
 browsers. Every browser test runs on every browser nightly.

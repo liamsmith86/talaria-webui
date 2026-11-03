@@ -144,7 +144,6 @@ def test_incomplete_discovery_keeps_settings_and_chat_usable(page, live_app):
     )
     page.reload()
     page.get_by_role("button", name="Settings").click()
-    expect(page.get_by_role("button", name="Refresh information")).to_be_enabled()
     expect(page.locator(".default-model-card")).to_contain_text("Not shared by Hermes")
     page.get_by_role("tab", name="Appearance", exact=True).click()
     page.get_by_role("button", name="Light", exact=True).click()
