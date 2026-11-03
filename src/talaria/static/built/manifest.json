@@ -55,9 +55,9 @@
     "src/talaria/static/session-navigation.js": "8c770b984e695b3e60a9dec40bc82e3bb006b79071a42f84ee4637df5e0981e9",
     "src/talaria/static/session-search.js": "5565d6ed05fcfd7db28e34709a70f6e793be438c4663fa0c4f7b9ad8be805589",
     "src/talaria/static/settings.js": "bc0eeeab8e4374dbad5f76f74dc8d43c3f9685046e4fa4a3e3ada2ab00f6c810",
-    "src/talaria/static/sidebar.js": "37590e64d62d7f89238c5c733ef2c142e8e73fb4be3c9752868033481656e9a7",
+    "src/talaria/static/sidebar.js": "26a1d693ebaff4db83f6aac10c9f2bee622db4dc9e0f5e2b162fbfd9b9e66481",
     "src/talaria/static/startup.js": "e37988093acc0c16f218d51285d3f3e74ccdab1c4de6d0b21451bcb4edb635bd",
-    "src/talaria/static/store.js": "3eb63b476116a8cf33f131c89b8b6a2d89c63d193a3979fabe009efad7207207",
+    "src/talaria/static/store.js": "bfcf4b3c0473b5919f08f544adc5635b96ea2bae0adcdb1f82b08445e55c740e",
     "src/talaria/static/stream-reveal.js": "572386761c635f6337de2b14507a8373e043072b81bd08489c535fb88d9d6e73",
     "src/talaria/static/styles/base.css": "1b2e3eb901194b1bfbf41b00a80948b9d80104ce26e4e927cf9dbfdb84816c87",
     "src/talaria/static/styles/chat.css": "5769b785a171fbc4ecb2833eb7fa44c12ca2aeb8303ce1ae8e17efff940b3a4c",
@@ -87,9 +87,9 @@
     "src/talaria/static/vendor/purify.js": "60c5d5ccbb466de3de3ba863461a92bf134f8c156cef7992da43e0f659bc5cbd"
   },
   "outputs": {
-    "app.js": "aab68f8dafb56f554dc52083529c740a5f10d001199c90140325b61e49e3fb3d",
+    "app.js": "d24b3de3efd7b84f05bd1f03520e6b953c242a7436171fe0a85664c00d4b074a",
     "app.js.LEGAL.txt": "73d9bce4f8578d04671d5f292f69481102cded90049faf903f683c65a825eed3",
-    "app.js.map": "5b441fb6e0765dced75e079052c05ad96bcab879e9bd0f9fd34ff00908465564",
+    "app.js.map": "63d628708f9a8352fe8576b2a49b43513838a70119a6efdeccd2e667b8492f70",
     "appearance.js": "ee72fb422aa49fff0fccb147d55442d115a5bcff3d244e8479d6c696448b213a",
     "boot.js": "1f525fc72f6442a7286e25a1379aa92432e95dc0bb66109240207f4c72c43f3c",
     "index.html": "80820e8146097f515130ebd4edb58ce8178ab9c2762f0b3732eb3b4901fd516c",
