@@ -560,6 +560,10 @@
 .reasoning .tool-subject {
   font: inherit;
 }
+/* An open thought shows its text right below, so the header drops the repeat. */
+.reasoning[open] > summary .tool-subject {
+  display: none;
+}
 .tool-card.working .tool-verb,
 .reasoning.working .tool-verb,
 .activity.working > summary .tool-verb {
