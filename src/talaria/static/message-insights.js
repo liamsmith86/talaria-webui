@@ -11,7 +11,9 @@ function useDetails(path, enabled, initial = null) {
   const [result, set] = useState({ data: initial, busy: enabled, error: "" });
   useEffect(() => {
     let current = true;
-    set({ data: initial, busy: enabled, error: "" });
+    // Keep showing the last answer while revalidating, so the gauge doesn't blink each turn.
+    // A different session or message mounts a new component and starts empty.
+    set((result) => ({ ...result, busy: enabled, error: "" }));
     if (enabled)
       api(path)
         .then((data) => {

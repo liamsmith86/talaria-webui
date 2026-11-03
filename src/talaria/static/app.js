@@ -368,6 +368,7 @@ function App() {
     />`}
     ${app.modal?.type === "response" &&
     html`<${ResponseDetails}
+      key=${app.modal.message.id}
       session=${app.modal.session}
       message=${app.modal.message}
       enabled=${!!app.caps.talaria_extensions?.response_details}
