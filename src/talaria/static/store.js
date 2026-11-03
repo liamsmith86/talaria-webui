@@ -535,6 +535,19 @@ async function reconcileHistoryRun(id, history, current) {
   return prepareRunReconciliation(id, history, current);
 }
 export async function openSession(id, parent = null, replace = false, messageId = null) {
+  // Selecting the open session again keeps it on screen and catches up quietly,
+  // as a returning tab does. Reloading would clear the transcript and pickers.
+  if (id === state.active && !messageId && !state.searchWindow && state.historyLoaded && !state.loading) {
+    update({ sidebar: false });
+    // A live reply owns its own transition to the saved transcript.
+    if (!state.lives[id])
+      refreshHistory(id, true, navigationSignal()).catch((error) => {
+        if (error.name !== "AbortError") fail(error);
+      });
+    // A deleted session reports itself there.
+    refreshSessionDetails(id, navigationSignal()).catch(() => {});
+    return;
+  }
   try {
     const saved = JSON.parse(readStorage("child-view", "null"));
     if (!parent && saved?.id === id) parent = saved.parent;
@@ -562,6 +575,8 @@ export async function openSession(id, parent = null, replace = false, messageId 
     findOpen: false,
   });
   rememberSession(id, replace, messageId);
+  // Alongside the transcript, so the pickers settle with it rather than after it.
+  refreshSessionDetails(id, controller.signal).catch(() => {});
   try {
     const path = messageId ? `around?message_id=${encodeURIComponent(messageId)}` : "messages";
     const result = await api(`/sessions/${encodeURIComponent(id)}/${path}`, {
@@ -587,7 +602,7 @@ export async function openSession(id, parent = null, replace = false, messageId 
         historyHasMore: !!result.has_more,
         historyOffset: result.next_offset ?? (result.data || []).length,
       });
-      refreshSessionDetails(canonical).catch(() => {});
+      if (canonical !== id) refreshSessionDetails(canonical).catch(() => {});
     }
   } catch (error) {
     if (generation === navigation && request >= historyCommitted) {

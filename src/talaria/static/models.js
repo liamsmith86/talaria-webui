@@ -175,8 +175,13 @@ export async function importBrowserChoices(api) {
 
 export function sessionModel(app) {
   let selected = app.active ? app.modelChoices[app.active] : app.draftModel;
-  if (app.active && !Object.hasOwn(app.modelChoices, app.active) && app.sessionDetails?.id === app.active) {
-    const id = text(app.sessionDetails.model);
+  if (app.active && !Object.hasOwn(app.modelChoices, app.active)) {
+    // The session list carries the model too, so the picker shows it at once
+    // instead of the default while the session's details load.
+    const session = app.sessionDetails?.id === app.active
+      ? app.sessionDetails
+      : app.sessions.find((s) => s.id === app.active);
+    const id = text(session?.model);
     if (id && id !== "hermes-agent") selected = { id, provider: "", inherited: true };
   }
   if (!selected) return null;

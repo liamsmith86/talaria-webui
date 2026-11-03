@@ -823,8 +823,11 @@
 .scroll-anchor {
   height: 2px;
 }
+/* Shown only if the transcript is slow to arrive. Flashed for a frame or two
+   before a quick one replaces it, the skeleton reads as the page jumping. */
 .history-loading {
   padding: 20px 0;
+  animation: fade-in 0.2s ease 0.3s backwards;
 }
 .conversation-content.is-empty {
   display: flex;

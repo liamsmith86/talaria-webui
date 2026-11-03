@@ -3,6 +3,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
+from .conftest import STORE_URL
 from .test_browser import screenshot
 
 
@@ -118,6 +119,39 @@ def test_models_are_scoped_to_each_session(page, live_app):
     expect(page.locator(".default-model-card")).to_contain_text("provider/new-default")
     page.get_by_role("button", name="Close dialog").click()
     expect(chooser).to_contain_text("provider/new-default")
+
+
+def test_opening_a_session_keeps_its_model_and_transcript_steady(page, live_app):
+    peer = live_app[1]
+    peer.sessions["steady"] = {
+        "id": "steady",
+        "source": "api_server",
+        "title": "Steady",
+        "model": "hermes-fast",
+    }
+    peer.messages["steady"] = [{"id": 1, "role": "user", "content": "Steady question"}]
+    page.evaluate(f"async () => (await import({STORE_URL})).refreshSessions()")
+    # Hold the session's details, so nothing but the session list can name its model.
+    held = []
+    page.route(re.compile(r"/api/sessions/steady(\?|$)"), lambda route: held.append(route))
+    try:
+        row = page.locator('.session-select[href*="session=steady"]')
+        row.click()
+        expect(page.get_by_text("Steady question", exact=True)).to_be_visible()
+        chooser = page.get_by_role("button", name="Choose model", exact=True)
+        expect(chooser).to_contain_text("hermes-fast")
+        # Selecting the open session again catches up without clearing what is shown.
+        row.click()
+        shown = page.evaluate(
+            f"async () => {{ const {{ state }} = await import({STORE_URL});"
+            " return [state.loading, state.history.length]; }"
+        )
+        assert shown == [False, 1]
+        expect(chooser).to_contain_text("hermes-fast")
+    finally:
+        for route in held:
+            route.continue_()
+        page.unroute_all()
 
 
 def test_incomplete_discovery_keeps_settings_and_chat_usable(page, live_app):
