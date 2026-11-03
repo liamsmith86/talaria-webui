@@ -343,7 +343,9 @@ def test_workflow_gates_publication_and_keeps_prs_lightweight():
     workflow = yaml.load((ROOT / ".github/workflows/release.yml").read_text())
     assert workflow["on"] == {"release": {"types": ["published"]}}
     assert workflow["jobs"]["checks"]["with"]["full"] is True
-    assert workflow["jobs"]["publish"]["needs"] == "checks"
+    assert workflow["jobs"]["publish"]["needs"] == ["version", "checks"]
+    assert workflow["jobs"]["checks"]["if"] == "needs.version.outputs.tested != 'true'"
+    assert "needs.version.outputs.tested == 'true'" in workflow["jobs"]["publish"]["if"]
     assert workflow["jobs"]["manifest"]["needs"] == "publish"
     assert workflow["jobs"]["manifest"]["permissions"]["statuses"] == "write"
     assert all(
@@ -378,8 +380,8 @@ def test_workflow_gates_publication_and_keeps_prs_lightweight():
     assert "matrix.os == 'ubuntu-24.04' && '--full'" in platform_command
     assert "contrib/check.py platform\n" in (ROOT / ".github/scripts/wsl.sh").read_text()
     browsers = ci["jobs"]["browsers"]
-    assert browsers["strategy"]["matrix"]["shard"] == [1, 2]
-    assert browsers["env"]["TALARIA_TEST_SHARD"] == "${{ matrix.shard }}/2"
+    assert browsers["strategy"]["matrix"]["shard"] == [1, 2, 3, 4]
+    assert browsers["env"]["TALARIA_TEST_SHARD"] == "${{ matrix.shard }}/4"
     assert "${{ matrix.shard }}" in browsers["steps"][-1]["with"]["name"]
     browser_command = next(
         s["run"] for s in browsers["steps"] if s.get("name") == "Browser regressions"
@@ -501,8 +503,45 @@ def test_source_promotion_fails_closed_on_github_errors(monkeypatch, error):
         "run",
         lambda *a, **k: subprocess.CompletedProcess(a, 1, stdout="", stderr=error),
     )
-    with pytest.raises(RuntimeError, match="promotion failed"):
+    with pytest.raises(RuntimeError, match="request failed"):
         release.github("repos/owner/app/git/ref/heads/stable", missing=True)
+
+
+@pytest.mark.parametrize(
+    "tree,jobs,reused",
+    [
+        ("release-tree", {"Release validation": "success"}, True),
+        ("other-tree", {"Release validation": "success"}, False),
+        ("release-tree", {"Required checks": "success"}, False),
+        (
+            "release-tree",
+            {"Release validation": "success", "Native Hermes (main)": "success"},
+            False,
+        ),
+    ],
+)
+def test_release_reuses_only_a_full_pass_of_the_same_tree(monkeypatch, tree, jobs, reused):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/app")
+    monkeypatch.setattr(release.subprocess, "check_output", lambda *a, **k: "release-tree\n")
+    responses = {
+        "/jobs": {"jobs": [{"name": n, "conclusion": c} for n, c in jobs.items()]},
+        "/commits/": {"tree": {"sha": tree}},
+        "/runs?": {"workflow_runs": [{"id": 7, "head_sha": "abc", "html_url": "run-7"}]},
+    }
+    monkeypatch.setattr(
+        release,
+        "github",
+        lambda path, **k: next(v for key, v in responses.items() if key in path),
+    )
+    assert release.tested_run() == ("run-7" if reused else None)
+
+
+def test_release_runs_the_checks_when_github_cannot_vouch(monkeypatch, tmp_path):
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setattr(release, "tested_run", lambda: (_ for _ in ()).throw(RuntimeError("x")))
+    release.reuse()
+    assert output.read_text() == "tested=false\n"
 
 
 @pytest.mark.parametrize(
@@ -511,6 +550,7 @@ def test_source_promotion_fails_closed_on_github_errors(monkeypatch, error):
         (False, False, None, 0),
         (False, False, "catalog", 1),
         (False, True, "behavior", 1),
+        (False, True, "behavior_browser", 1),
         (False, True, "dependency_review", 1),
         (False, True, None, 0),
         (True, False, "hermes", 1),
@@ -529,7 +569,7 @@ def test_required_barrier_cannot_hide_missing_behavior_or_release_jobs(
     if full:
         required.update({"platforms", "browsers", "hermes", "install", "wsl"})
     if pull_request:
-        required.update({"behavior", "dependency_review"})
+        required.update({"behavior", "behavior_browser", "dependency_review"})
     for name in required - {failed}:
         jobs[name]["result"] = "success"
     script = ci["jobs"]["required"]["steps"][0]["run"].split("\n", 1)[1].rsplit("\nPY", 1)[0]

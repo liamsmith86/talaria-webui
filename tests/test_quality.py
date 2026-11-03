@@ -49,6 +49,22 @@ def test_hygiene_accepts_workflow_on_key_and_unicode(tmp_path):
     quality.hygiene([path])
 
 
+def test_build_check_reruns_when_its_source_or_output_changes(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    for name in ("package.json", "package-lock.json", ".npmrc", "contrib/build.mjs"):
+        (tmp_path / name).parent.mkdir(exist_ok=True)
+        (tmp_path / name).write_text("{}")
+    source = tmp_path / "src/talaria/static/app.js"
+    output = tmp_path / "src/talaria/static/built/app.js"
+    output.parent.mkdir(parents=True)
+    source.write_text("source")
+    output.write_text("output")
+    before = quality.build_identity()
+    for path in (source, output):
+        path.write_text("changed")
+        assert quality.build_identity() != before
+
+
 def test_javascript_cache_tracks_lock_and_settings(tmp_path):
     for name in ("package.json", "package-lock.json", ".npmrc"):
         shutil.copyfile(ROOT / name, tmp_path / name)

@@ -178,7 +178,7 @@ def plan(paths=None):
 def workers():
     available = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
     try:
-        count = int(os.environ.get("TALARIA_TEST_WORKERS", min(4, available or 1)))
+        count = int(os.environ.get("TALARIA_TEST_WORKERS", min(8, available or 1)))
     except ValueError:
         raise SystemExit("TALARIA_TEST_WORKERS must be a number from 0 to 16.") from None
     if not 0 <= count <= 16:
@@ -363,21 +363,19 @@ def ci_scope(paths):
     return {**scope, "backend": backend}
 
 
-def ci_check(base, describe=False):
+def ci_check(base, describe=False, stage=None, shard=None):
     paths = changed_paths(base, "HEAD")
     scope = ci_scope(paths)
     if describe:
         install = any(path in INSTALL_FILES for path in paths)
-        print(
-            f"runtime={str(scope['backend'] is not None or scope['browsers'] or install).lower()}"
-        )
+        print(f"runtime={str(scope['backend'] is not None or install).lower()}")
         print(f"install={str(install).lower()}")
         print(f"browser={str(scope['browsers']).lower()}")
         return
     env = environment()
-    if scope["backend"] is not None:
+    if stage == "backend" and scope["backend"] is not None:
         pytest(*scope["backend"], "-m", "not browser and not hermes and not quality", env=env)
-    if scope["browsers"]:
+    if stage == "browser" and scope["browsers"]:
         files = [
             "tests/test_browser.py",
             "tests/test_http_lan.py",
@@ -388,6 +386,7 @@ def ci_check(base, describe=False):
             *(path for path in dict.fromkeys(files) if Path(path).is_file()),
             "-m",
             "browser",
+            *([f"--browser-shard={shard}"] if shard else []),
             "--timeout=120",
             "--timeout-method=thread",
             "--max-worker-restart=0",
@@ -569,9 +568,11 @@ def main():
             command.add_argument("--base", default="origin/main", help="Base for focused checks")
     command = commands.add_parser("platform", help="Portable install/runtime checks for CI")
     command.add_argument("--full", action="store_true", help="Include all backend logic")
-    command = commands.add_parser("ci", help="Selected backend and Chromium checks for public PRs")
+    command = commands.add_parser("ci", help="Selected backend or Chromium checks for public PRs")
     command.add_argument("--base", default="HEAD^", help="Base commit of the PR merge checkout")
     command.add_argument("--plan", action="store_true", help="Print required CI setup")
+    command.add_argument("--stage", choices=("backend", "browser"), help="The checks to run")
+    command.add_argument("--shard", help="Run browser partition INDEX/TOTAL")
     args = parser.parse_args()
     if args.command == "pre-commit":
         pre_commit()
@@ -582,7 +583,7 @@ def main():
     elif args.command == "platform":
         platform_check(full=args.full)
     elif args.command == "ci":
-        ci_check(args.base, args.plan)
+        ci_check(args.base, args.plan, args.stage, args.shard)
     else:
         full = args.command == "full"
         native = getattr(args, "native", False)

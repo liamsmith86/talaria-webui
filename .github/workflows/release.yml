@@ -15,6 +15,11 @@ jobs:
   version:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      tested: ${{ steps.reuse.outputs.tested }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -26,15 +31,24 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
         run: python3 .github/scripts/release.py validate
+      - name: Reuse a recent full CI pass of this exact tree
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/release.py reuse
 
   checks:
     needs: version
+    if: needs.version.outputs.tested != 'true'
     uses: ./.github/workflows/ci.yml
     with:
       full: true
 
   publish:
-    needs: checks
+    needs: [version, checks]
+    if: >-
+      !cancelled() && needs.version.result == 'success' && (needs.checks.result == 'success'
+      || (needs.checks.result == 'skipped' && needs.version.outputs.tested == 'true'))
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     permissions:

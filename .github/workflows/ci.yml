@@ -89,13 +89,11 @@ jobs:
 
   behavior:
     name: PR behavior
-    needs: lint
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       TALARIA_TEST_WORKERS: '3'
-      TALARIA_AXE_PATH: ${{ github.workspace }}/.local/axe.min.js
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -112,18 +110,9 @@ jobs:
           python-version: '3.14.9'
       - if: steps.scope.outputs.runtime == 'true'
         run: uv sync --locked
-      - if: steps.scope.outputs.browser == 'true'
-        uses: ./.github/actions/playwright-browser
-        with:
-          browser: chromium
-      - if: steps.scope.outputs.browser == 'true'
-        run: |
-          mkdir -p .local
-          curl --fail --show-error --silent --location --retry 3 https://cdn.jsdelivr.net/npm/axe-core@4.14.0/axe.min.js -o "$TALARIA_AXE_PATH"
-          echo '20c09fe157a8a34a30e241aaa1fcdade657734f08ab379ecfbeb7d45cc46e878  .local/axe.min.js' | sha256sum --check
-      - name: Run selected backend and Chromium regressions
+      - name: Run selected backend regressions
         if: steps.scope.outputs.runtime == 'true'
-        run: uv run --locked python contrib/check.py ci
+        run: uv run --locked python contrib/check.py ci --stage backend
       - name: Walk a new user's install through real Hermes
         if: steps.scope.outputs.install == 'true'
         run: uv run --locked python contrib/install_walkthrough.py
@@ -133,6 +122,51 @@ jobs:
           name: install-walkthrough-pr
           path: test-results/install-walkthrough/
           retention-days: 7
+
+  behavior_browser:
+    name: PR Chromium (${{ matrix.shard }}/2)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    env:
+      TALARIA_TEST_WORKERS: '3'
+      TALARIA_AXE_PATH: ${{ github.workspace }}/.local/axe.min.js
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Select checks from the PR merge changes
+        id: scope
+        run: python3 contrib/check.py ci --plan >> "$GITHUB_OUTPUT"
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        if: steps.scope.outputs.browser == 'true'
+        with:
+          version: '0.13.5'
+          checksum: *uv-checksum
+          python-version: '3.14.9'
+          # The backend job saves this same dependency cache.
+          save-cache: false
+      - if: steps.scope.outputs.browser == 'true'
+        run: uv sync --locked
+      - if: steps.scope.outputs.browser == 'true'
+        uses: ./.github/actions/playwright-browser
+        with:
+          browser: chromium
+      - if: steps.scope.outputs.browser == 'true'
+        run: |
+          mkdir -p .local
+          curl --fail --show-error --silent --location --retry 3 https://cdn.jsdelivr.net/npm/axe-core@4.14.0/axe.min.js -o "$TALARIA_AXE_PATH"
+          echo '20c09fe157a8a34a30e241aaa1fcdade657734f08ab379ecfbeb7d45cc46e878  .local/axe.min.js' | sha256sum --check
+      - name: Run selected Chromium regressions
+        if: steps.scope.outputs.browser == 'true'
+        env:
+          SHARD: ${{ matrix.shard }}/2
+        run: uv run --locked python contrib/check.py ci --stage browser --shard "$SHARD"
 
   platforms:
     needs: lint
@@ -175,17 +209,17 @@ jobs:
   browsers:
     needs: lint
     if: inputs.full || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.browser != 'none' && inputs.browser != '')
-    name: Browser (${{ matrix.browser }}, ${{ matrix.shard }}/2)
+    name: Browser (${{ matrix.browser }}, ${{ matrix.shard }}/4)
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     strategy:
       fail-fast: false
       matrix:
         browser: ${{ fromJSON((inputs.full || github.event_name == 'schedule') && '["chromium", "firefox", "webkit"]' || format('["{0}"]', inputs.browser)) }}
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     env:
       TALARIA_TEST_BROWSER: ${{ matrix.browser }}
-      TALARIA_TEST_SHARD: ${{ matrix.shard }}/2
+      TALARIA_TEST_SHARD: ${{ matrix.shard }}/4
       # A release runs everything on Chromium, and what can differ on the others.
       TALARIA_TEST_MARK: ${{ inputs.full && matrix.browser != 'chromium' && 'cross_browser' || 'browser' }}
       TALARIA_AXE_PATH: ${{ github.workspace }}/.local/axe.min.js
@@ -231,7 +265,6 @@ jobs:
 
   catalog:
     name: Plugin catalog admission
-    needs: lint
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -346,6 +379,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Ubuntu in WSL2
+        # Usually under a minute, and when it hangs it never recovers.
+        timeout-minutes: 5
         shell: pwsh
         run: |
           wsl --set-default-version 2
@@ -395,7 +430,7 @@ jobs:
   required:
     name: ${{ inputs.full && 'Release validation' || 'Required checks' }}
     if: always()
-    needs: [lint, behavior, dependency_review, platforms, browsers, catalog, hermes, install, wsl]
+    needs: [lint, behavior, behavior_browser, dependency_review, platforms, browsers, catalog, hermes, install, wsl]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -413,7 +448,7 @@ jobs:
           if os.environ['FULL'] == 'true':
               required.update({'platforms', 'browsers', 'hermes', 'install', 'wsl'})
           if os.environ['PULL_REQUEST'] == 'true':
-              required.update({'behavior', 'dependency_review'})
+              required.update({'behavior', 'behavior_browser', 'dependency_review'})
           if os.environ['NATIVE'] == 'true':
               required.update({'hermes', 'install'})
           assert all(results[name]['result'] == 'success' for name in required), results

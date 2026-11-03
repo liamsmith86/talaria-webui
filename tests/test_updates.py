@@ -482,8 +482,9 @@ def test_update_reload_recovers_interrupted_module_download(page, update_ui):
             route.continue_()
 
     page.route("**/static/conversation.js", module)
-    complete_browser_update(page, info)
-    expect(page.locator(".initial-loader")).to_be_visible()
+    # The retry can finish before the loader is ever seen, so wait for the reload's request.
+    with page.expect_request("**/static/conversation.js"):
+        complete_browser_update(page, info)
     expect(page.locator(".topbar-title")).to_be_visible(timeout=15000)
     assert len(requests) == 2
     expect(page.get_by_label("Password", exact=True)).to_have_count(0)

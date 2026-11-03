@@ -1,4 +1,5 @@
 import asyncio
+import fcntl
 import json
 import os
 import re
@@ -49,6 +50,13 @@ CROSS_BROWSER = {
     "test_sidebar_collapse.py",
     "test_stream_reveal.py",
 }
+# Started first, so the wait for the longest tests overlaps everything else.
+SLOWEST = (
+    "test_real_launcher_update_failure_and_rollback",
+    "test_real_git_wheel_install_update_failure_and_rollback",
+    "test_real_bootstrap_fresh_wheel_and_repeat_install",
+    "test_streamed_markdown_matches_a_full_parse",
+)
 
 
 def pytest_addoption(parser):
@@ -68,6 +76,7 @@ def browser_shard(items, shard):
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(config, items):
+    items.sort(key=lambda item: not item.name.startswith(SLOWEST))
     for item in items:
         if "playwright_runtime" in item.fixturenames:
             item.add_marker(pytest.mark.browser)
@@ -145,16 +154,23 @@ def copy_release_project(project, destination):
 
 @pytest.fixture(scope="session")
 def packaged_assets(tmp_path_factory):
-    root = tmp_path_factory.mktemp("packaged-assets")
-    subprocess.run(
-        [shutil.which("uv"), "build", "--wheel", "--out-dir", str(root)],
-        cwd=Path(__file__).resolve().parents[1],
-        check=True,
-        capture_output=True,
-    )
-    with zipfile.ZipFile(next(root.glob("*.whl"))) as wheel:
-        wheel.extractall(root / "wheel")
-    return root / "wheel/talaria/static"
+    # Every xdist worker shares its base directory's parent, so a run builds one wheel.
+    base = tmp_path_factory.getbasetemp()
+    root = (base.parent if os.environ.get("PYTEST_XDIST_WORKER") else base) / "packaged-assets"
+    root.mkdir(exist_ok=True)
+    assets = root / "wheel/talaria/static"
+    with (root / "lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not assets.is_dir():
+            subprocess.run(
+                [shutil.which("uv"), "build", "--wheel", "--out-dir", str(root)],
+                cwd=Path(__file__).resolve().parents[1],
+                check=True,
+                capture_output=True,
+            )
+            with zipfile.ZipFile(next(root.glob("*.whl"))) as wheel:
+                wheel.extractall(root / "wheel")
+    return assets
 
 
 @pytest.fixture

@@ -4,6 +4,7 @@ import hashlib
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from pre_commit_hooks.check_json import main as check_json
@@ -48,6 +49,34 @@ def files():
 def run(*args, **kwargs):
     print("+", " ".join(map(str, args)), flush=True)
     subprocess.run(args, check=True, **kwargs)
+
+
+def gate(*args, **kwargs):
+    """Run a check, returning its command and combined output for printing in order."""
+    command = "+ " + " ".join(map(str, args))
+    result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kwargs)
+    return command + "\n" + result.stdout.decode(errors="replace"), result.returncode, args
+
+
+def build_identity():
+    """Everything the production build's check depends on, including its committed output."""
+    digest = hashlib.sha256(js_identity().encode())
+    digest.update(Path("contrib/build.mjs").read_bytes())
+    for path in sorted(p for p in Path("src/talaria/static").rglob("*") if p.is_file()):
+        digest.update(str(path).encode() + b"\0" + path.read_bytes())
+    return digest.hexdigest()
+
+
+def check_build():
+    """Check the production build, unless these exact bytes have already passed."""
+    stamp = Path("node_modules/.talaria-build")
+    identity = build_identity()
+    if stamp.is_file() and stamp.read_text() == identity:
+        return "+ node contrib/build.mjs --check (unchanged since it last passed)\n", 0, ()
+    result = gate("node", "contrib/build.mjs", "--check")
+    if not result[1]:
+        stamp.write_text(identity)
+    return result
 
 
 def js_identity(root=Path(".")):
@@ -108,20 +137,31 @@ def hygiene(paths):
 def main():
     paths = files()
     hygiene(paths)
-    run("ruff", "check", ".", ".github/scripts")
-    run("ruff", "format", "--check", ".", ".github/scripts")
-    run("vulture")
     ensure_javascript()
-    run("node", "node_modules/eslint/bin/eslint.js", ".", "--max-warnings", "0")
-    run("node", "contrib/i18n.mjs", env={**os.environ, "TALARIA_I18N_PYTHON": sys.executable})
-    run(sys.executable, "contrib/vendor.py", "--check")
-    run("node", "contrib/build.mjs", "--check")
+    node = {**os.environ, "TALARIA_I18N_PYTHON": sys.executable}
     shell = [str(p) for p in paths if p.suffix == ".sh" or p.parent == Path(".githooks")]
-    if shell:
-        run("shellcheck", *shell)
     workflows = [str(p) for p in paths if p.parent == Path(".github/workflows")]
+    gates = [
+        lambda: gate("ruff", "check", ".", ".github/scripts"),
+        lambda: gate("ruff", "format", "--check", ".", ".github/scripts"),
+        lambda: gate("vulture"),
+        lambda: gate("node", "node_modules/eslint/bin/eslint.js", ".", "--max-warnings", "0"),
+        lambda: gate("node", "contrib/i18n.mjs", env=node),
+        lambda: gate(sys.executable, "contrib/vendor.py", "--check"),
+        check_build,
+    ]
+    if shell:
+        gates.append(lambda: gate("shellcheck", *shell))
     if workflows:
-        run("actionlint", "-oneline", *workflows)
+        gates.append(lambda: gate("actionlint", "-oneline", *workflows))
+    # The gates only read the tree, and each one's output stays together.
+    with ThreadPoolExecutor(len(gates)) as pool:
+        results = list(pool.map(lambda check: check(), gates))
+    for output, _, _ in results:
+        print(output, end="", flush=True)
+    for _, code, args in results:
+        if code:
+            raise subprocess.CalledProcessError(code, args)
 
 
 if __name__ == "__main__":

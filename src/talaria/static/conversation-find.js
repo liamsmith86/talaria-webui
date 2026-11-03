@@ -71,7 +71,7 @@ function revealMatch(range, viewport) {
   }
 }
 
-export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
+export function ConversationFind({ app, root, onLoadEarlier, olderBusy, onReveal }) {
   const [query, setQuery] = useState("");
   const [ranges, setRanges] = useState([]);
   const [index, setIndex] = useState(0);
@@ -154,6 +154,9 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
     article?.classList.add("find-focus");
     if (parent && move.current) {
       revealMatch(range, root.current);
+      // Settle following now: anything that follows the bottom before the
+      // scroll event arrives would otherwise pull the match back out of view.
+      onReveal();
       move.current = false;
     }
     return () => {
@@ -161,7 +164,7 @@ export function ConversationFind({ app, root, onLoadEarlier, olderBusy }) {
       CSS.highlights?.delete("talaria-current");
       article?.classList.remove("find-focus");
     };
-  }, [ranges, index, root]);
+  }, [ranges, index, root, onReveal]);
   function navigate(delta) {
     if (ranges.length) {
       move.current = true;

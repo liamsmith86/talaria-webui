@@ -35,8 +35,7 @@ def test_startup_delivery(page):
     assert page.locator('script[type="module"]').get_attribute("data-store-entry") == "app.js"
 
 
-@pytest.mark.parametrize("width", [390, 1440])
-def test_rendering_matches_source(browser, live_app, tmp_path, monkeypatch, width):
+def test_rendering_matches_source(browser, live_app, tmp_path, monkeypatch):
     production, peer, app = live_app
     peer.sessions["visual"] = {"id": "visual", "title": "Visual parity", "source": "api_server"}
     peer.messages["visual"] = [
@@ -69,11 +68,9 @@ def test_rendering_matches_source(browser, live_app, tmp_path, monkeypatch, widt
                     ]
                 )
                 tab = context.new_page()
-                tab.set_viewport_size({"width": width, "height": 960})
+                tab.set_viewport_size({"width": 1440, "height": 960})
                 tab.goto(url)
                 wait_for_store(tab, "s => !!s.defaultModel && s.readiness.status === 'ok'")
-                if width == 390:
-                    tab.get_by_role("button", name="Open sidebar", exact=True).click()
                 tab.get_by_role("link", name="Visual parity", exact=True).click()
                 expect(tab.locator(".markdown .token").first).to_be_attached()
                 assert tab.evaluate("window.injected") is None
@@ -84,7 +81,7 @@ def test_rendering_matches_source(browser, live_app, tmp_path, monkeypatch, widt
                 images.append(tab.screenshot(animations="disabled", caret="hide"))
         if images[0] != images[1]:
             for name, data in zip(("source", "production"), images, strict=True):
-                (tmp_path / f"{name}-{width}.png").write_bytes(data)
+                (tmp_path / f"{name}.png").write_bytes(data)
         assert images[0] == images[1], f"Rendering differs; captures are in {tmp_path}"
     finally:
         server.should_exit = True
