@@ -431,10 +431,7 @@ export function Composer({
           onClick=${onModel}
           disabled=${active || !app.connected}
         >
-          <span class="model-caption"
-            ><small>${displayedModel?.providerLabel || "Hermes"}</small
-            ><span>${displayedModel?.id || t("Configured model")}</span></span
-          >
+          <span class="model-caption">${displayedModel?.id || t("Configured model")}</span>
           <${Icon} name="chevron" size=${14} />
         </button>
         <button
@@ -446,10 +443,7 @@ export function Composer({
           onClick=${onReasoning}
           disabled=${active || !app.connected}
         >
-          <span class="model-caption"
-            ><small>${t("Reasoning")}</small
-            ><span>${reasoningText}</span></span
-          >
+          <span class="model-caption">${reasoningText}</span>
           <${Icon} name="chevron" size=${14} />
         </button>
       </div>

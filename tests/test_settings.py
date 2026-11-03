@@ -79,8 +79,8 @@ def test_extended_access_check_confirms_unchanged_result_and_clears_it_on_failur
 
 def test_models_are_scoped_to_each_session(page, live_app):
     chooser = page.get_by_role("button", name="Choose model", exact=True)
-    expect(chooser).to_contain_text("Test provider")
-    expect(chooser).to_contain_text("hermes-test")
+    expect(chooser).to_have_text("hermes-test")
+    expect(chooser).to_have_attribute("title", "Test provider · hermes-test · Default")
     expect(chooser).not_to_contain_text("Default")
     chooser.click()
     page.get_by_role("button", name="Hermes Fast").click()

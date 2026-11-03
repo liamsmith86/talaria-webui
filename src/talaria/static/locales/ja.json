@@ -351,7 +351,6 @@
   "Reading skill {subject}": "スキルを読み取り中: {subject}",
   "Reading {subject}": "読み取り中: {subject}",
   "Ready": "準備完了",
-  "Reasoning": "推論",
   "Reasoning setting": "推論設定",
   "Reasoning text": "推論内容",
   "Reasoning tokens": "推論トークン",
