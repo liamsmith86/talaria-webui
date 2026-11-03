@@ -1,0 +1,18 @@
+#!/bin/sh
+# Commit subjects follow Conventional Commits: type(scope)!: summary.
+subject=$(grep -v '^#' "$1" | sed -n '/[^[:space:]]/{p;q;}')
+case $subject in
+  # Git writes these itself, for merges, reverts and autosquash.
+  "Merge "* | "Revert "* | "fixup! "* | "squash! "* | "amend! "*) exit 0 ;;
+esac
+types='build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test'
+if printf '%s\n' "$subject" | grep -Eq "^($types)(\([a-z0-9._/-]+\))?!?: [^ ]"; then
+  exit 0
+fi
+cat >&2 <<EOF
+Commit subject is not semantic: "$subject"
+Use "type(scope): summary", where the scope is optional and type is one of:
+  ${types}
+For example: fix(settings): refresh agent details quietly
+EOF
+exit 1
