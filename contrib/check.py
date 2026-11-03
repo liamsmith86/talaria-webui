@@ -178,7 +178,7 @@ def plan(paths=None):
 def workers():
     available = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
     try:
-        count = int(os.environ.get("TALARIA_TEST_WORKERS", min(4, available or 1)))
+        count = int(os.environ.get("TALARIA_TEST_WORKERS", min(8, available or 1)))
     except ValueError:
         raise SystemExit("TALARIA_TEST_WORKERS must be a number from 0 to 16.") from None
     if not 0 <= count <= 16:
