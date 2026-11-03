@@ -406,27 +406,6 @@ jobs:
         with:
           fail-on-severity: moderate
 
-  outdated:
-    name: Outdated dependencies
-    if: github.event.schedule == '43 8 * * 1'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          version: '0.13.5'
-          checksum: *uv-checksum
-          python-version: '3.14.9'
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24.22.1'
-      - run: npm install --global npm@12.2.1 --ignore-scripts
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: uv run --locked --only-group lint python contrib/outdated.py
-
   required:
     name: ${{ inputs.full && 'Release validation' || 'Required checks' }}
     if: always()

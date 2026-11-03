@@ -1,7 +1,8 @@
 """Report anything pinned behind its newest release that has cleared the cooldown.
 
-Runs before a commit that changes dependencies, and weekly in CI, because Dependabot
-only reacts afterwards and can't see build requirements or hand-kept tool versions.
+Runs before a commit that changes dependencies, because Dependabot only reacts afterwards.
+With --hand-kept it checks only what Dependabot can't see: build requirements and the
+tool and runtime versions kept by hand, which a weekly workflow reports in an issue.
 Exits 1 when something is outdated and 2 when the check itself couldn't run.
 """
 
@@ -43,18 +44,7 @@ def pinned_uv():
     return re.search(r"astral-sh/uv:([\d.]+)@", (ROOT / "Dockerfile").read_text())[1]
 
 
-def python_packages():
-    config = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    groups = config["dependency-groups"].values()
-    pins = dict(
-        requirement(item)
-        for item in [
-            *config["build-system"]["requires"],
-            *config["project"]["dependencies"],
-            *(entry for group in groups for entry in group if isinstance(entry, str)),
-        ]
-    )
-    pins["uv"] = pinned_uv()
+def behind(pins):
     # Resolving bare names shows what the pins hide, and honours the cooldown.
     resolved = subprocess.run(
         [
@@ -68,7 +58,27 @@ def python_packages():
         text=True,
     ).stdout
     newest = dict(requirement(line) for line in resolved.splitlines())
-    found = [(name, pin, newest[name]) for name, pin in pins.items() if newest[name] != pin]
+    return [(name, pin, newest[name]) for name, pin in pins.items() if newest[name] != pin]
+
+
+def hand_kept_python():
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    pins = dict(requirement(item) for item in config["build-system"]["requires"])
+    pins["uv"] = pinned_uv()
+    return behind(pins)
+
+
+def python_packages():
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    groups = config["dependency-groups"].values()
+    pins = dict(
+        requirement(item)
+        for item in [
+            *config["project"]["dependencies"],
+            *(entry for group in groups for entry in group if isinstance(entry, str)),
+        ]
+    )
+    found = behind(pins)
     # Pins stop this upgrading direct dependencies, so it reports only indirect ones.
     locked = command("uv", "lock", "--upgrade", "--dry-run").stderr
     found += re.findall(r"^Update (\S+) v(\S+) -> v(\S+)$", locked, re.M)
@@ -141,8 +151,11 @@ def python_runtimes():
 
 
 def main():
+    hand_kept = "--hand-kept" in sys.argv[1:]
     try:
-        found = python_packages() + npm_packages() + workflow_pins() + python_runtimes()
+        found = hand_kept_python() + workflow_pins() + python_runtimes()
+        if not hand_kept:
+            found += python_packages() + npm_packages()
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         print(f"Could not check for outdated dependencies: {error}", file=sys.stderr)
         return 2
