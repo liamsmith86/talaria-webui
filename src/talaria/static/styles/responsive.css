@@ -226,16 +226,16 @@
     padding-top: 12px;
   }
   .user-content {
-    font-size: 14px;
+    font-size: 15px;
     padding: 12px 15px;
     max-width: 92%;
   }
   .markdown {
-    font-size: 14px;
+    font-size: 15px;
     line-height: 1.8;
   }
   .markdown code {
-    font-size: 12px;
+    font-size: 13px;
   }
   .message {
     margin-bottom: 25px;

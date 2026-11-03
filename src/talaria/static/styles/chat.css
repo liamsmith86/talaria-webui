@@ -217,7 +217,7 @@
   background: var(--user);
   border: 1px solid color-mix(in srgb, var(--line) 40%, transparent);
   border-radius: 16px 16px 4px 16px;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.7;
   max-height: 400px;
   overflow: auto;
@@ -266,7 +266,7 @@
   height: 14px;
 }
 .markdown {
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.85;
   overflow-wrap: anywhere;
 }
@@ -335,7 +335,7 @@
 }
 .markdown code {
   font:
-    11.5px ui-monospace,
+    13px ui-monospace,
     SFMono-Regular,
     Consolas,
     monospace;
@@ -346,7 +346,7 @@
 .markdown pre code {
   background: none;
   padding: 0;
-  font-size: 11px;
+  font-size: 12.5px;
 }
 .table-scroll {
   overflow: auto;
@@ -440,7 +440,7 @@
 .activity,
 .guidance,
 .notice > details {
-  font-size: 12.5px;
+  font-size: 13.5px;
   color: var(--muted);
 }
 /* Guidance is the reader's own words: shown in full, wrapping, beside the steps. */
@@ -551,7 +551,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   font:
-    11.5px ui-monospace,
+    12.5px ui-monospace,
     SFMono-Regular,
     Consolas,
     monospace;
@@ -599,7 +599,7 @@
   margin: 0;
   max-height: 300px;
   padding: 12px 14px;
-  font-size: 10.5px;
+  font-size: 11.5px;
 }
 .tool-content code {
   font: inherit;
@@ -607,7 +607,7 @@
 .tool-content p,
 .tool-content small {
   margin: 0;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .tool-content .tool-blocked {
@@ -639,7 +639,7 @@
   margin: 4px 0 10px 24px;
   padding: 0 0 0 12px;
   border-left: 2px solid var(--line);
-  font-size: 12.5px;
+  font-size: 13.5px;
   line-height: 1.75;
   color: var(--muted);
 }
