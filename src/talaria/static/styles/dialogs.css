@@ -12,9 +12,12 @@
   scrollbar-width: thin;
   animation: dialog-in 0.16s ease;
 }
+/* The backdrop fades in with the dialog. Shown at once, the dark theme's overlay
+   flashes across the page before the dialog appears. */
 .dialog::backdrop {
   background: var(--overlay);
   backdrop-filter: blur(3px);
+  animation: fade-in 0.16s ease;
 }
 .dialog-heading {
   display: flex;

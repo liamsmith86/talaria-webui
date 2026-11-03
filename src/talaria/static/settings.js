@@ -162,8 +162,10 @@ export function Settings({ app, onClose, initialSection = "agent" }) {
   }, [section, mobile]);
   const [busy, setBusy] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
-  async function refresh() {
-    setBusy(true);
+  // Opening Settings refreshes quietly: flipping the button to "Refreshing…"
+  // for a background read looks like the dialog is still loading.
+  async function refresh({ quiet = false } = {}) {
+    if (!quiet) setBusy(true);
     setRefreshFailed(false);
     const results = await Promise.allSettled([
       refreshAgentInfo(),
@@ -171,10 +173,10 @@ export function Settings({ app, onClose, initialSection = "agent" }) {
     ]);
     if (results.some((r) => r.status === "rejected"))
       setRefreshFailed(true);
-    setBusy(false);
+    if (!quiet) setBusy(false);
   }
   useEffect(() => {
-    refresh();
+    refresh({ quiet: true });
   }, []);
   return html`<${Dialog} title=${t("Settings")} onClose=${onClose} className="settings-dialog">
     <div class="settings-layout"><nav class="settings-navigation" role="tablist" aria-label=${t("Settings sections")}>${sections.map(
@@ -219,7 +221,7 @@ export function Settings({ app, onClose, initialSection = "agent" }) {
       ${section === "installation" && html`<${Installation} key=${installationRefresh} readOnly=${demo} />`}
       ${section === "connection" && html`<${ProfileConnections} app=${app} onRefresh=${refresh} readOnly=${demo} />`}
     </div></div>
-    <footer class="settings-footer"><span>Talaria ${app.version}</span><div>${section !== "installation" && html`<button disabled=${busy} onClick=${refresh}>${busy ? t("Refreshing…") : t("Refresh information")}</button>`}${!demo && html`<button onClick=${async () => {
+    <footer class="settings-footer"><span>Talaria ${app.version}</span><div>${section !== "installation" && html`<button disabled=${busy} onClick=${() => refresh()}>${busy ? t("Refreshing…") : t("Refresh information")}</button>`}${!demo && html`<button onClick=${async () => {
       try {
         await api("/logout", { method: "POST", body: {} });
         location.reload();
