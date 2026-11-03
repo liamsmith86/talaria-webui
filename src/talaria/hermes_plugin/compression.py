@@ -139,4 +139,19 @@ def compress_history(agent, history, args):
         if agent.session_id != prior_session:
             agent._flush_messages_to_session_db(result.after_messages, None)
         finalize_context_engine_compression_notification(agent, committed=True)
+        record_size(agent.session_id, prior_session, result.after_tokens)
     return "\n".join(lines)
+
+
+def record_size(session_id, prior_session, tokens):
+    """The size the report prints: Hermes's hook counts only the transcript, not the system prompt
+    and tool schemas that every request also sends."""
+    from hermes_constants import get_hermes_home
+
+    from .observations import Observations
+
+    Observations(get_hermes_home()).compacted(
+        session_id=session_id,
+        old_session_id=prior_session if prior_session != session_id else None,
+        after_tokens=tokens,
+    )

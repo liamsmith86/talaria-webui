@@ -13,7 +13,7 @@ import {
   update,
   collapseSidebar,
   newConversation,
-  openSession,
+  selectSession,
   refreshSessions,
   fail,
 } from "./store.js";
@@ -106,7 +106,7 @@ export function Sidebar({ app }) {
               onClick=${(event) => {
                 if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                 event.preventDefault();
-                openSession(session.id);
+                selectSession(session.id);
               }}
               aria-current=${app.active === session.id ? "page" : undefined}
               aria-label=${session.title || t("Untitled session")}

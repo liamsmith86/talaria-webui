@@ -138,7 +138,7 @@
   padding: 10px 6px;
   border: 1px solid transparent;
   border-radius: 8px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 .palette-option.selected {
@@ -194,7 +194,7 @@
 .model-option small {
   display: block;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   margin-top: 5px;
 }
 .model-option svg {
@@ -277,7 +277,7 @@
   background: var(--surface);
 }
 .login-footer {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--faint);
   margin-top: 24px;
   letter-spacing: 0.1px;

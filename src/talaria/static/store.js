@@ -323,7 +323,7 @@ export function chooseReasoning(value, id = state.active) {
   update({ draftReasoning: value });
 }
 let detailsRequest = 0;
-export async function refreshSessionDetails(id = state.active, signal) {
+export async function refreshSessionDetails(id = state.active, signal, leaveIfDeleted = true) {
   if (!id) return;
   const generation = navigation;
   const request = id === state.active ? ++detailsRequest : detailsRequest;
@@ -334,7 +334,7 @@ export async function refreshSessionDetails(id = state.active, signal) {
   } catch (error) {
     // Deleted elsewhere: leave for a new session instead of keeping a
     // transcript and message box that can no longer reach Hermes.
-    if (error.status === 404 && state.active === id && generation === navigation) {
+    if (leaveIfDeleted && error.status === 404 && state.active === id && generation === navigation) {
       newConversation(true);
       toast(msg("This session was deleted."));
     }
@@ -534,6 +534,21 @@ async function reconcileHistoryRun(id, history, current) {
   const { prepareRunReconciliation } = await import("./runs.js");
   return prepareRunReconciliation(id, history, current);
 }
+// Picking the open session again keeps it on screen and catches up quietly, as a
+// returning tab does. openSession reloads, which recovery paths rely on.
+export function selectSession(id) {
+  if (id !== state.active || state.searchWindow || !state.historyLoaded || state.loading)
+    return openSession(id);
+  update({ sidebar: false });
+  // A live reply owns its own transition to the saved transcript.
+  if (!state.lives[id])
+    refreshHistory(id, true, navigationSignal()).catch((error) => {
+      if (error.name !== "AbortError") fail(error);
+    });
+  // A deleted session reports itself there.
+  refreshSessionDetails(id, navigationSignal()).catch(() => {});
+  return Promise.resolve();
+}
 export async function openSession(id, parent = null, replace = false, messageId = null) {
   try {
     const saved = JSON.parse(readStorage("child-view", "null"));
@@ -562,6 +577,9 @@ export async function openSession(id, parent = null, replace = false, messageId 
     findOpen: false,
   });
   rememberSession(id, replace, messageId);
+  // Alongside the transcript, so the pickers settle with it rather than after it.
+  // The transcript decides whether the session still exists: it may have moved.
+  refreshSessionDetails(id, controller.signal, false).catch(() => {});
   try {
     const path = messageId ? `around?message_id=${encodeURIComponent(messageId)}` : "messages";
     const result = await api(`/sessions/${encodeURIComponent(id)}/${path}`, {
@@ -587,7 +605,7 @@ export async function openSession(id, parent = null, replace = false, messageId 
         historyHasMore: !!result.has_more,
         historyOffset: result.next_offset ?? (result.data || []).length,
       });
-      refreshSessionDetails(canonical).catch(() => {});
+      if (canonical !== id) refreshSessionDetails(canonical).catch(() => {});
     }
   } catch (error) {
     if (generation === navigation && request >= historyCommitted) {

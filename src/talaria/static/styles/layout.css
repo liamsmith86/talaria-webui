@@ -40,7 +40,7 @@
   border-radius: 5px;
   background: var(--accent-soft);
   color: var(--accent-text);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0;
 }
@@ -106,7 +106,7 @@ kbd {
   font-size: 11px;
 }
 .sidebar-search kbd {
-  font-size: 9px;
+  font-size: 11px;
 }
 .session-list {
   flex: 1;
@@ -117,7 +117,7 @@ kbd {
   scrollbar-color: var(--line-strong) transparent;
 }
 .session-group {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 550;
   color: var(--muted);
   letter-spacing: 0.3px;
@@ -238,7 +238,7 @@ kbd {
   align-items: center;
   gap: 5px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   margin-top: 5px;
   font-weight: 400;
 }
@@ -362,7 +362,7 @@ kbd {
   font-size: 12px;
 }
 .history-search-hit mark { background: var(--accent-soft); color: inherit; }
-.history-search-hit small { color: var(--muted); font-size: 10px; }
+.history-search-hit small { color: var(--muted); font-size: 11px; }
 .history-search .sidebar-empty:empty { display: none; }
 .session-activity { display: inline-flex; flex: none; color: var(--muted); }
 .session-activity.needs-input { color: var(--accent); }
