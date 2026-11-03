@@ -11,7 +11,7 @@
     "src/talaria/static/clarification.js": "040256f0cb78b482df79c02cab5bc7e53967eb1336202a8151fe04cb72a77c11",
     "src/talaria/static/command-activity.js": "088eac05ed3cabefab60af2421e123de41fce6f7da931665bc05271c3fb74fa9",
     "src/talaria/static/commands.js": "96a3cb023d658160cd0b500c92afe62b6300de577b2e3dce7b38c7935cd87334",
-    "src/talaria/static/composer.js": "20a5c78e5dc65d6387a57f8f6f8dfcbaddfc10676dfcf0bca991aa7230ea2e2d",
+    "src/talaria/static/composer.js": "dca61b7c8ee8eb904972262be7073726cbdc0d63b32752759f2529b0a38192f4",
     "src/talaria/static/content.js": "1c76fcc539dc036e1d3b3e1265b5c656ff9e4da73ba15cb838e51b9f38bf1f61",
     "src/talaria/static/conversation-actions.js": "eabf0942ccb6a2b49156025b3199729486226d4572eb9ac48eb89502504ddf21",
     "src/talaria/static/conversation-find.js": "0823d2357cfc96b428b090dc13cda9e5516336da211861a90ef51a8d0f0c6312",
@@ -87,9 +87,9 @@
     "src/talaria/static/vendor/purify.js": "60c5d5ccbb466de3de3ba863461a92bf134f8c156cef7992da43e0f659bc5cbd"
   },
   "outputs": {
-    "app.js": "20a5ca964f037cb8a721f80bc8d607df04f552ecad0115bd5b6fede2a91fe53f",
+    "app.js": "ba4123096cfa95eb7f80c9451d0d980d672b79f82a67e9af3bf0a1637be75731",
     "app.js.LEGAL.txt": "73d9bce4f8578d04671d5f292f69481102cded90049faf903f683c65a825eed3",
-    "app.js.map": "17cd53c7bba4121a34b593baf1421fbaffd030fe17208ef9291dcf713706b91c",
+    "app.js.map": "97fcb2b61d6039558f52ca0503ec8e6f740f0aa907d1d6744b5399a30eab8927",
     "appearance.js": "ee72fb422aa49fff0fccb147d55442d115a5bcff3d244e8479d6c696448b213a",
     "boot.js": "1f525fc72f6442a7286e25a1379aa92432e95dc0bb66109240207f4c72c43f3c",
     "index.html": "80820e8146097f515130ebd4edb58ce8178ab9c2762f0b3732eb3b4901fd516c",

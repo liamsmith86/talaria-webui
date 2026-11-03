@@ -393,7 +393,8 @@ export function Composer({
             attach(files);
           }
         }}
-        disabled=${!app.connected || sending}
+        disabled=${!app.connected}
+        readOnly=${sending}
         maxlength="800000"
       />
     </div>
