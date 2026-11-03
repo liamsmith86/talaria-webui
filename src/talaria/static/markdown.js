@@ -70,6 +70,20 @@ const TableRow = memo(({ cells }) => html`<tr>
 const ListItem = memo(({ item }) => html`<li
   dangerouslySetInnerHTML=${{ __html: inline(item.tokens[0]?.tokens || []) }}
 />`);
+// Finished inline markup keeps its DOM while the text after it grows.
+const InlineToken = memo(
+  ({ token }) => html`<span class="markdown-inline" dangerouslySetInnerHTML=${{ __html: inline([token]) }} />`,
+  (a, b) => a.token.raw === b.token.raw,
+);
+// The growing end of a paragraph or list item. Its trailing text fades in like
+// plain prose; text whose rendering differs from its source (escapes, entities)
+// renders as Markdown instead.
+function StreamingInline({ tokens }) {
+  return tokens.map((token, i) =>
+    i === tokens.length - 1 && token.type === "text" && token.raw === token.text && !token.text.includes("&")
+      ? html`<${StreamText} key=${`text${i}`} text=${token.text} active=${true} />`
+      : html`<${InlineToken} key=${i} token=${token} />`);
+}
 const Block = memo(({ block }) => {
   if (block.content) return html`<div class="markdown-block">${block.content}</div>`;
   if (block.parts)
@@ -150,14 +164,16 @@ export function Markdown({
     const next = visible.map((token, index) => {
       const highlight =
         highlightBlocks && (!streaming || index < visible.length - 1);
+      const tail = smooth && streaming && index === visible.length - 1;
       const old = previous.current[index];
       if (
         old?.raw === token.raw &&
         old.links === links &&
-        old.highlight === highlight
+        old.highlight === highlight &&
+        old.tail === tail
       )
         return old;
-      const block = { raw: token.raw, links, highlight, token };
+      const block = { raw: token.raw, links, highlight, token, tail };
       if (token.streamPlain) {
         block.content = html`<p>
           ${
@@ -169,6 +185,8 @@ export function Markdown({
               : token.text
           }
         </p>`;
+      } else if (tail && token.type === "paragraph" && token.raw.length <= 4096) {
+        block.content = html`<p><${StreamingInline} tokens=${token.tokens} /></p>`;
       } else if (token.type === "code") {
         const language = (token.lang || "text")
           .split(/\s/)[0]
@@ -235,8 +253,11 @@ export function Markdown({
             old.token.items[i]?.text === item.text ? old.token.items[i] : item,
           );
         const tag = token.ordered ? "ol" : "ul";
+        const growing = tail ? token.items.length - 1 : -1;
         block.content = html`<${tag} start=${token.ordered && token.start !== 1 ? token.start : undefined}>
-          ${token.items.map((item, i) => html`<${ListItem} key=${i} item=${item} />`)}
+          ${token.items.map((item, i) => i === growing
+            ? html`<li key=${i}><${StreamingInline} tokens=${item.tokens[0]?.tokens || []} /></li>`
+            : html`<${ListItem} key=${i} item=${item} />`)}
         </${tag}>`;
       }
       if (block.content) return block;

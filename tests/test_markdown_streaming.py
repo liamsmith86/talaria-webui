@@ -6,6 +6,8 @@ from .conftest import hold_timers
 
 
 def test_streamed_markdown_matches_full_parse_at_every_prefix(module_page):
+    # Reduced motion shows every prefix at once, while the smooth path still renders its spans.
+    module_page.emulate_media(reduced_motion="reduce")
     result = module_page.evaluate(r"""async () => {
       const {html, render} = await import('/static/lib.js');
       const {Markdown, renderMarkdown} = await import('/static/markdown.js');
@@ -27,32 +29,46 @@ def test_streamed_markdown_matches_full_parse_at_every_prefix(module_page):
         '- One\n- Two\n- Three\n\n  More in the third item\n\nAfter\n\n---\n',
         'A sentence. More words! www.example.com and 1. item\n\n```text\nA\n\nB\n```\n',
         'Intro\n\n| A | B |\n|---|---|\n| one | two |\n| three | four |\n  \nAfter',
+        "- Run `npm ci` first\n- Then **build**, it's \"fine\" (really)\n- 2) done & 50% / ok\n\n" +
+          "It's 3:00 \u2013 see `x`, *y* and [z](/z) -- then \\*literal\\* &amp; more\n\n--\n-\n",
       ];
       function actual() {
-        return [...root.querySelector('.markdown').children].map(el => el.innerHTML).join('');
+        const copy = root.querySelector('.markdown').cloneNode(true);
+        // Spans that only pace and fade the growing text are presentation, not content.
+        const spans = 'span.markdown-inline, span.markdown-inline span:not([class])';
+        for (const span of [...copy.querySelectorAll(spans)].reverse())
+          span.replaceWith(...span.childNodes);
+        return [...copy.children].map(el => el.innerHTML).join('');
       }
-      const normalize = value => value.replace(/>\s+</g, '><').trim();
-      let checked = 0;
+      const reparse = document.createElement('div');
+      const normalize = value => {
+        reparse.innerHTML = value;
+        return reparse.innerHTML.replace(/>\s+</g, '><').trim();
+      };
+      let checked = 0, faded = 0;
       try {
-        for (const source of cases) {
+        for (const smooth of [false, true]) for (const source of cases) {
           render(null, root);
           for (let i=0; i<=source.length; i++) {
             const text = source.slice(0,i);
             // Completed output must be identical to the existing sanitized parser.
-            render(html`<${Markdown} text=${text} streaming=${true} />`, root);
+            render(html`<${Markdown} text=${text} streaming=${true} smooth=${smooth} />`, root);
             if(normalize(actual()) !== normalize(renderMarkdown(text, false)))
-              return {phase:'streaming', source, i, actual:actual(),
+              return {phase:'streaming', smooth, source, i, actual:actual(),
                 expected:renderMarkdown(text, false)};
             checked++;
+            // The growing list item or marked-up paragraph fades in like plain prose.
+            const tail = 'li > .markdown-inline, p > .markdown-inline + .markdown-inline';
+            if (smooth && root.querySelector(tail)) faded++;
           }
           render(html`<${Markdown} text=${source} streaming=${false} />`, root);
           if(normalize(actual()) !== normalize(renderMarkdown(source)))
             return {phase:'complete', source, actual:actual(), expected:renderMarkdown(source)};
         }
-        return {checked};
+        return {checked, faded};
       } finally { window.Prism = prism; render(null,root); root.remove(); }
     }""")
-    assert result.get("checked", 0) > 400, result
+    assert result.get("checked", 0) > 800 and result["faded"] > 100, result
 
 
 def test_incremental_scanning_bounds_work_for_long_replies(module_page):
