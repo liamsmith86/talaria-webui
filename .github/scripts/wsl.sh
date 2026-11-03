@@ -9,5 +9,9 @@ cd /tmp/talaria-ci
 curl -fsSL https://astral.sh/uv/0.13.5/install.sh -o /tmp/install-uv.sh
 sh /tmp/install-uv.sh
 export PATH="/root/.local/bin:$PATH"
+# As install.sh does for root: the launcher's unprivileged process must reach the
+# interpreter, and root's home is private.
+export UV_PYTHON_INSTALL_DIR=/opt/talaria-python
+(umask 022; uv python install 3.12.15)
 uv sync --locked --python 3.12.15
 TALARIA_TEST_WORKERS=2 uv run --locked python contrib/check.py platform
