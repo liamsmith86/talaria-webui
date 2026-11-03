@@ -167,7 +167,7 @@ def test_touch_keyboard_newline_and_repeated_submit_preserve_intentional_guidanc
         mobile.route("**/api/runs", hold_run, times=1)
         with mobile.expect_request("**/api/runs"):
             mobile.get_by_role("button", name="Send message", exact=True).tap()
-            expect(text).to_be_disabled()
+            expect(text).not_to_be_editable()
             mobile.locator(".composer").dispatch_event("submit")
         mobile.wait_for_function("() => window.talariaTestRunHeld === true")
         assert len(held) == 1

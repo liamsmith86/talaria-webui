@@ -224,7 +224,9 @@ def hermes_request(python, home, *, owner=None, **request):
             capture_output=True,
             cwd=home,
             env=env,
-            timeout=45,
+            # Enabling a plugin syncs its environment, and Hermes may first download a
+            # toolchain for that: minutes on a slow network, not seconds.
+            timeout=600 if request.get("plugin") else 45,
             **identity,
         )
         if result.returncode:

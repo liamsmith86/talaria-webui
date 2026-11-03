@@ -2,6 +2,7 @@ import {
   html,
   isIMEKey,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   Icon,
@@ -75,7 +76,8 @@ export function Composer({
     textarea.current?.focus();
   }
   const commands = useCommands(app, draft, chooseCommand, { onModel, onReasoning, active }, commandActivity);
-  useEffect(() => {
+  // Before painting, so switching sessions never shows the previous draft.
+  useLayoutEffect(() => {
     setDraft(readStorage(key));
     setImages([]);
     setLoadingImages(true);
@@ -130,7 +132,7 @@ export function Composer({
       textarea.current?.focus();
     }
   }, [draftSuggestion, app.active, key]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = textarea.current;
     if (!el || CSS.supports("field-sizing", "content")) return;
     el.style.height = "auto";
@@ -393,7 +395,8 @@ export function Composer({
             attach(files);
           }
         }}
-        disabled=${!app.connected || sending}
+        disabled=${!app.connected}
+        readOnly=${sending}
         maxlength="800000"
       />
     </div>
