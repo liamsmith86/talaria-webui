@@ -599,6 +599,25 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
     scrollTop.current = top;
     setAway(!sticky.current);
   }, [reveal]);
+  // A step the reader expands shows from its start. Following the newest text
+  // would push it up out of view, and its body can open below the fold.
+  const revealExpanded = useCallback((event) => {
+    const details = event.target.closest?.("summary")?.parentElement;
+    if (!(details instanceof HTMLDetailsElement) || details.open) return;
+    // Before the step opens: its toggle event comes after the next frame's
+    // resize observers, which would already have followed the newest text.
+    sticky.current = false;
+    setAway(true);
+    requestAnimationFrame(() => {
+      const viewport = scroll.current;
+      if (!viewport || !details.isConnected || !details.open) return;
+      const view = viewport.getBoundingClientRect(), box = details.getBoundingClientRect();
+      // All of it if it fits, else its start at the top.
+      const below = box.bottom + 16 - view.bottom;
+      if (below > 0)
+        viewport.scrollBy({ top: Math.min(below, box.top - 16 - view.top), behavior: scrollBehavior() });
+    });
+  }, []);
   const [olderBusy, setOlderBusy] = useState(false);
   const live = app.searchWindow ? null : app.lives[app.active];
   const agentName = app.agent?.name?.trim() || "Hermes";
@@ -796,6 +815,7 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
     <div class="conversation-shell"><div
       class="conversation-viewport"
       ref=${scroll}
+      onClickCapture=${revealExpanded}
       onWheel=${(e) => {
         controls.reveal();
         if (e.deltaY < 0) {

@@ -277,3 +277,25 @@ def test_reply_start_appears_as_stream_grows_and_updates_on_resize(page):
     jump.click()
     wait_at_reply_start(page, "Growing reply")
     expect(jump).to_have_count(0)
+
+
+def test_expanding_a_thought_shows_its_start_instead_of_following_the_end(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "thinking")
+    peer.messages[sid] = [
+        {"id": 1, "role": "user", "content": "Think it through"},
+        {
+            "id": 2,
+            "role": "assistant",
+            "reasoning": "A line of thought.\n\n" * 80,
+            "content": "The answer.",
+        },
+    ]
+    page.evaluate("async sid => (await import('/static/store.js')).openSession(sid)", sid)
+    page.locator(".reasoning summary").click()
+    # Following the newest text kept the end in place and pushed the start out of view.
+    page.wait_for_function("""() => {
+      const view = document.querySelector('.conversation-viewport').getBoundingClientRect();
+      const top = document.querySelector('.reasoning').getBoundingClientRect().top - view.top;
+      return top >= 0 && top <= 20;
+    }""")
