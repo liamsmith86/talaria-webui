@@ -70,7 +70,7 @@ def peer():
 @pytest.fixture
 def cli_process(tmp_path, peer):
     @contextmanager
-    def launch(development=False, port=0):
+    def launch(port=0):
         settings = Settings(
             hermes_url=peer.url,
             port=port,
@@ -104,8 +104,6 @@ def cli_process(tmp_path, peer):
             "--config",
             str(path),
         ]
-        if development:
-            args.append("--dev")
         terminal, slave = os.openpty()
         try:
             with log_path.open("w") as log:
@@ -138,12 +136,11 @@ def cli_process(tmp_path, peer):
 
 
 @contextmanager
-def connect(cli, development=False):
+def connect(cli):
     match = wait_until(lambda: re.search(r"running on (http://[^ ]+)", cli.log.read_text()))
-    cookie = "talaria_dev_session" if development else auth.COOKIE
     client = httpx.Client(
         base_url=match[1],
-        cookies={cookie: auth.issue_cookie(cli.settings)},
+        cookies={auth.COOKIE: auth.issue_cookie(cli.settings)},
         timeout=3,
         trust_env=False,
     )
@@ -161,13 +158,10 @@ def connect(cli, development=False):
         client.close()
 
 
-@pytest.mark.parametrize("development", [False, True])
 @pytest.mark.parametrize("live", [False, True])
-def test_ctrl_c_exits_promptly_with_idle_connections_or_live_profiles(
-    cli_process, peer, development, live
-):
-    with cli_process(development) as cli, ExitStack() as stack:
-        client = stack.enter_context(connect(cli, development))
+def test_ctrl_c_exits_promptly_with_idle_connections_or_live_profiles(cli_process, peer, live):
+    with cli_process() as cli, ExitStack() as stack:
+        client = stack.enter_context(connect(cli))
         streams = []
         if live:
             for profile in ("default", "a" * 32):
@@ -182,8 +176,7 @@ def test_ctrl_c_exits_promptly_with_idle_connections_or_live_profiles(
                 streams.append(lines)
             assert len(peer.opened) == 2
         started = time.monotonic()
-        # Send actual Ctrl+C through the controlling terminal, including to
-        # Uvicorn's reload child when development mode is active.
+        # Send actual Ctrl+C through the controlling terminal.
         os.write(cli.terminal, b"\x03")
         cli.process.wait(timeout=3)
         assert time.monotonic() - started < 3

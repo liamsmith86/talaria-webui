@@ -59,14 +59,16 @@ It also tracks the browser libraries in `src/talaria/static/vendor/` through
 bundle, so a new version has to be rebuilt by hand.
 
 Every dependency and tool is pinned to an exact version. The build requirements, and the uv, npm,
-Node, Python and axe-core versions in `ci.yml`, `install.sh`, `.github/scripts/wsl.sh` and the
-`Dockerfile`, are updated by hand because Dependabot can't see them.
+Node, Python and axe-core versions in `ci.yml`, `outdated.yml`, `install.sh`,
+`.github/scripts/wsl.sh` and the `Dockerfile`, are updated by hand because Dependabot can't see them.
 
 `contrib/outdated.py` reports anything behind its newest release that has cleared the cooldown. It
 runs before a commit that changes `pyproject.toml`, `uv.lock`, the `Dockerfile` or an npm manifest,
 and blocks the commit if it finds something. Without a network it warns and lets the commit through.
-A weekly CI job runs it too, and pull requests fail if they add a dependency with a known moderate
-or worse vulnerability. To stay on an older major version on purpose, add it to `HELD` in that script.
+Weekly, `.github/workflows/outdated.yml` runs it with `--hand-kept` for the versions Dependabot
+can't see, and keeps one issue open while any are behind. Pull requests fail if they add a
+dependency with a known moderate or worse vulnerability. To stay on an older major version on
+purpose, add it to `HELD` in that script.
 
 ## Frontend build
 

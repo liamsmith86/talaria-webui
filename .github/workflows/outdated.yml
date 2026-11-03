@@ -1,0 +1,53 @@
+name: Hand-kept versions
+
+# Dependabot opens pull requests for packages, Actions and the Docker image. This covers what it
+# can't see, and keeps one issue open while any of those versions is behind.
+on:
+  schedule:
+    - cron: '43 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    name: Report hand-kept versions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          # Keep with the uv version in ci.yml.
+          version: '0.13.6'
+          checksum: 'f29c3e94ffabd7e6f3ba521dba169a9b7ec12100bf3257087f0f24f6123f3645'
+          python-version: '3.14.10'
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: Hand-kept versions are behind
+        run: |
+          status=0
+          report=$(uv run --locked --only-group lint python contrib/outdated.py --hand-kept 2>&1) || status=$?
+          printf '%s\n' "$report"
+          if [ "$status" -gt 1 ]; then exit "$status"; fi
+          issue=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
+            --jq ".[] | select(.title == env.TITLE) | .number" | head -n 1)
+          if [ "$status" -eq 1 ]; then
+            body=$(printf '%s\n\n~~~\n%s\n~~~\n\n%s\n' \
+              'These are updated by hand (see CONTRIBUTING.md), and each has cleared the 7-day cooldown:' \
+              "$report" 'This closes itself once the weekly check finds nothing behind.')
+            if [ -n "$issue" ]; then
+              gh issue edit "$issue" --body "$body"
+            else
+              gh issue create --title "$TITLE" --body "$body"
+            fi
+          elif [ -n "$issue" ]; then
+            gh issue close "$issue" --comment 'Every hand-kept version is current.'
+          fi

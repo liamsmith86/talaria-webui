@@ -77,9 +77,9 @@
     "src/talaria/static/vendor/htm-LICENSE.txt": "740725f7252e750af735d0028cc534970772f513331e9f68150fede8fb3ce00f",
     "src/talaria/static/vendor/htm.js": "ab33dd3f38059b9be4d5f5350128eefb2356639c4e0bbe9d9e8b3ba75847e9e4",
     "src/talaria/static/vendor/inter.woff2": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62",
-    "src/talaria/static/vendor/manifest.json": "d0f832e945979af2275880452f2c7954cfd19c655f179f3a80424373e5bcd48f",
+    "src/talaria/static/vendor/manifest.json": "ab2b4870e9b48428df1040b9e39291735c8164f55541cb410ad2692d2a013435",
     "src/talaria/static/vendor/marked-LICENSE.txt": "8e3a3f82f59a60958f56ca08f445647c32a4733dc7ca6c2c46f6eb898471ab9c",
-    "src/talaria/static/vendor/marked.js": "930457e5d55439f90465015cc507d3323366e80df5f7a701b61189d4e1046bda",
+    "src/talaria/static/vendor/marked.js": "e7b0919876c54c2d9ca6b927db18420a081f6fee8cf1ecfd7cb6ea97a3b55309",
     "src/talaria/static/vendor/preact-LICENSE.txt": "1fe6958409c8c257a70c587a18b6f7f412b179b456630790d30b2ec9a8e4b7d4",
     "src/talaria/static/vendor/preact.js": "c30e721ebfdc6e2ad4c18c14d2dfb82667829c8aec27de1207774e3fc16858a8",
     "src/talaria/static/vendor/prism-LICENSE.txt": "2b947f0901a7ffcf08a89957da9783c0e9c6e72cb6ce8e959f501ab5409e4d2b",
@@ -87,9 +87,9 @@
     "src/talaria/static/vendor/purify.js": "60c5d5ccbb466de3de3ba863461a92bf134f8c156cef7992da43e0f659bc5cbd"
   },
   "outputs": {
-    "app.js": "e0763ed53a126143c7582b2b6040d0ed1a1b13ec3820b3d11380061652cd627c",
+    "app.js": "3ca4c0dbe4c1600ab0e334ba567536945179bebed9d6505967d885ec59761111",
     "app.js.LEGAL.txt": "73d9bce4f8578d04671d5f292f69481102cded90049faf903f683c65a825eed3",
-    "app.js.map": "038a10ebc27077f6709c4226e8707c15c626b06014a0fc850846f585e8fac795",
+    "app.js.map": "de4965ae1db0e31b081c0d48d22eb26ff27d1fa68309a4547aa4837aac811b27",
     "appearance.js": "ee72fb422aa49fff0fccb147d55442d115a5bcff3d244e8479d6c696448b213a",
     "boot.js": "1f525fc72f6442a7286e25a1379aa92432e95dc0bb66109240207f4c72c43f3c",
     "index.html": "80820e8146097f515130ebd4edb58ce8178ab9c2762f0b3732eb3b4901fd516c",
