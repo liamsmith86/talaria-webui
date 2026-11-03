@@ -26,31 +26,35 @@ from .web import (
     robots,
 )
 
+SAMPLES = Path(__file__).with_name("demo_data.json")
+
+
+def bootstrap_data():
+    return {
+        "version": __version__,
+        "plugin_version": PLUGIN_VERSION,
+        "environment": "demo",
+        "authenticated": True,
+        "connected": True,
+        "agent": {"name": "Hermes", "name_source": "configured"},
+        "profile": {
+            "id": "default",
+            "label": "Hermes",
+            "profile": "default",
+            "configured": True,
+        },
+    }
+
 
 def create_demo(*, public_url="", production=False):
-    sample_data = Path(__file__).with_name("demo_data.json").read_bytes()
+    sample_data = SAMPLES.read_bytes()
     # A proxy can override revalidation headers. Give each demo build its own
     # asset directory so relative imports also bypass older browser/CDN caches.
     asset_path = build_path(STATIC, sample_data)
     assets = Assets(directory=STATIC, cache_control=IMMUTABLE, production=production)
 
     async def bootstrap(request):
-        return JSONResponse(
-            {
-                "version": __version__,
-                "plugin_version": PLUGIN_VERSION,
-                "environment": "demo",
-                "authenticated": True,
-                "connected": True,
-                "agent": {"name": "Hermes", "name_source": "configured"},
-                "profile": {
-                    "id": "default",
-                    "label": "Hermes",
-                    "profile": "default",
-                    "configured": True,
-                },
-            }
-        )
+        return JSONResponse(bootstrap_data())
 
     async def samples(request):
         return Response(sample_data, media_type="application/json")
@@ -79,6 +83,7 @@ def create_demo(*, public_url="", production=False):
         ],
     )
     app.state.settings = Settings(public_url=validate_public_url(public_url) if public_url else "")
+    app.state.asset_path = asset_path
     app.state.index_html = in_build(
         index_document(STATIC, production).replace(
             "</head>",

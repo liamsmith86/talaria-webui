@@ -1,10 +1,14 @@
 """The demo uses normal chat controls; visitor text stays in its browser tab."""
 
 import re
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect
 from starlette.responses import Response
+from starlette.staticfiles import StaticFiles
 
 from talaria.demo import create_demo
 from talaria.hermes_plugin.release import PLUGIN_VERSION
@@ -283,3 +287,60 @@ def test_demo_native_command_menu_and_results(demo_page):
     expect(page.locator(".message.user")).to_have_count(2)
     send(page, "/branch")
     expect(page.get_by_role("dialog", name="Branch session", exact=True)).to_be_visible()
+
+
+def exported_rules(text):
+    """Parse a Cloudflare Pages _headers file into {path: [(name, value)]}."""
+    rules = {}
+    for line in text.splitlines():
+        if not line.startswith(" "):
+            current = rules.setdefault(line, [])
+        elif not line.strip().startswith("!"):
+            name, value = line.strip().split(": ", 1)
+            current.append((name.encode(), value.encode()))
+    return rules
+
+
+def test_static_export_runs_the_demo_without_a_server(browser, tmp_path):
+    root = Path(__file__).parents[1]
+    site = tmp_path / "site"
+    subprocess.run([sys.executable, "contrib/demo_export.py", str(site)], cwd=root, check=True)
+    rules = exported_rules((site / "_headers").read_text())
+    files = StaticFiles(directory=site, html=True)
+
+    # Send what Pages will, so the page runs under the exported policy and preloads.
+    async def pages(scope, receive, send):
+        extra = rules["/*"] + rules["/"] * (scope["path"] == "/")
+
+        async def with_headers(message):
+            if message["type"] == "http.response.start":
+                message = {**message, "headers": [*message["headers"], *extra]}
+            await send(message)
+
+        await files(scope, receive, with_headers)
+
+    server, thread, url = serve(pages)
+    context = browser.new_context(viewport={"width": 1440, "height": 960})
+    errors = capture_browser_errors(context)
+    page = context.new_page()
+    try:
+        page.goto(url)
+        send(page, "Hello from a static site")
+        expect(page.get_by_role("button", name="Send message", exact=True)).to_be_visible(
+            timeout=20000
+        )
+        expect(page.locator(".message.assistant")).to_have_count(1)
+        # Each preload is a path the page really uses, and its response is reused.
+        used = page.evaluate("performance.getEntriesByType('resource').map(entry => entry.name)")
+        for _, value in rules["/"]:
+            if b"rel=preload" in value:
+                target = url.rstrip("/") + value.decode().split(">")[0].removeprefix("<")
+                assert used.count(target) == 1, target
+        page.goto(url + "?session=demo-weekend")
+        expect(page.locator(".conversation-content")).to_contain_text("Backup plan")
+        assert not errors
+    finally:
+        context.close()
+        server.should_exit = True
+        thread.join(6)
+        assert not thread.is_alive()
