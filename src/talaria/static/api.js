@@ -28,18 +28,20 @@ export class RequestError extends Error {
 }
 export async function api(path, options = {}) {
   let response;
+  const safe = ["GET", "HEAD"].includes((options.method || "GET").toUpperCase());
+  const body = options.body === undefined ? undefined : JSON.stringify(options.body);
   try {
+    // Only unsafe requests carry the CSRF headers the server checks. A plain read
+    // can then reuse a preloaded response, which Firefox refuses for custom headers.
     response = await request(path, {
       credentials: "same-origin",
       ...options,
       headers: {
-        "Content-Type": "application/json",
-        "X-Talaria-Request": "1",
-        "X-CSRF-Token": csrf,
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(safe ? {} : { "X-Talaria-Request": "1", "X-CSRF-Token": csrf }),
         ...options.headers,
       },
-      body:
-        options.body === undefined ? undefined : JSON.stringify(options.body),
+      body,
     });
   } catch (error) {
     if (error.name === "AbortError") throw error;

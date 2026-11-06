@@ -9,16 +9,16 @@ from talaria.demo import SAMPLES, bootstrap_data, create_demo
 from talaria.web import ENCODINGS, IMMUTABLE, SECURITY_HEADERS, STATIC
 
 ORIGIN = "https://fly.withtalaria.com"
-CORS = "; crossorigin"
 API_FILES = ("bootstrap", "samples")
-# What the first paint needs, as (path in the build, destination, fetched with CORS).
+# What the first paint needs, as (path in the build, how to preload it). Module scripts take
+# modulepreload, because Firefox doesn't hand a script preload to a module script.
 PRELOADS = (
-    ("appearance.js", "script", False),
-    ("styles.css", "style", False),
-    ("styles/demo.css", "style", False),
-    ("boot.js", "script", True),
-    ("app.js", "script", True),
-    ("vendor/inter.woff2", "font", True),
+    ("appearance.js", "rel=preload; as=script"),
+    ("styles.css", "rel=preload; as=style"),
+    ("styles/demo.css", "rel=preload; as=style"),
+    ("boot.js", "rel=modulepreload"),
+    ("app.js", "rel=modulepreload"),
+    ("vendor/inter.woff2", "rel=preload; as=font; crossorigin"),
 )
 
 
@@ -46,12 +46,11 @@ def headers(build):
         "cross-origin-opener-policy": "same-origin",
         "cross-origin-resource-policy": "same-origin",
     }
-    assets = "".join(
-        f"  Link: </{build}{path}>; rel=preload; as={kind}{CORS * cors}\n"
-        for path, kind, cors in PRELOADS
-    )
+    assets = "".join(f"  Link: </{build}{path}>; {preload}\n" for path, preload in PRELOADS)
     # These are only requested once the page has run, so preloading saves whole round trips.
-    data = "".join(f"  Link: </api/{name}>; rel=preload; as=fetch{CORS}\n" for name in API_FILES)
+    data = "".join(
+        f"  Link: </api/{name}>; rel=preload; as=fetch; crossorigin\n" for name in API_FILES
+    )
     return (
         "/*\n"
         + "".join(f"  {name}: {value}\n" for name, value in site.items())
