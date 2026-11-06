@@ -331,9 +331,11 @@ def test_static_export_runs_the_demo_without_a_server(browser, tmp_path):
         )
         expect(page.locator(".message.assistant")).to_have_count(1)
         # Each preload is a path the page really uses, and its response is reused.
+        # WebKit never hands a fetch preload to fetch(), so it requests those twice.
         used = page.evaluate("performance.getEntriesByType('resource').map(entry => entry.name)")
+        webkit = browser.browser_type.name == "webkit"
         for _, value in rules["/"]:
-            if b"rel=preload" in value:
+            if b"preload" in value and not (webkit and b"as=fetch" in value):
                 target = url.rstrip("/") + value.decode().split(">")[0].removeprefix("<")
                 assert used.count(target) == 1, target
         page.goto(url + "?session=demo-weekend")
