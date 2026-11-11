@@ -99,13 +99,8 @@ def compress(adapter, db, sid, args):
                 raise CommandError("This session has moved. Refresh it before compressing.")
             db.assert_resume_safe(sid, max_messages=20000, tip_only=True)
             history = db.get_messages_as_conversation(sid, include_row_ids=True)
-            result = compress_history(agent, history, args)
-            return {
-                "session_id": agent.session_id,
-                "text": result,
-                "changed": agent.session_id != sid
-                or getattr(agent, "_last_compaction_in_place", False) is True,
-            }
+            text = compress_history(agent, history, args)
+            return {"session_id": agent.session_id, "text": text, "changed": changed(agent, sid)}
     finally:
         finalize_context_engine_compression_notification(agent, committed=False)
         agent.close()
@@ -139,8 +134,18 @@ def compress_history(agent, history, args):
         if agent.session_id != prior_session:
             agent._flush_messages_to_session_db(result.after_messages, None)
         finalize_context_engine_compression_notification(agent, committed=True)
-        record_size(agent.session_id, prior_session, result.after_tokens)
+        # Hermes also reports "compressed" when it refused or aborted the summary.
+        if changed(agent, prior_session):
+            record_size(agent.session_id, prior_session, result.after_tokens)
     return "\n".join(lines)
+
+
+def changed(agent, prior_session):
+    """Whether the compaction rotated the session or rewrote it in place."""
+    return (
+        agent.session_id != prior_session
+        or getattr(agent, "_last_compaction_in_place", False) is True
+    )
 
 
 def record_size(session_id, prior_session, tokens):
