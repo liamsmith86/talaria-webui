@@ -4,9 +4,14 @@ import { marked } from "./vendor/marked.js";
 // In particular, punctuation that could complete a URL, entity, or delimiter
 // must go through the lexer again. Quotes, brackets, colons and dashes are safe
 // within a line, which covers most replies; a leading dash could become a rule.
+// A line of only colons, dashes and spaces may be a table delimiter row, which
+// decides whether the line above interrupts its paragraph, so it needs another
+// character first. Appending can't turn such a line back into a delimiter row.
 const prose = /^[\p{L}\p{N} ,.!?;:'"()\-‘’“”–—…]+$/u;
 const plain = (text) =>
-  prose.test(text) && !/www\.|^ {0,3}(?:\d{1,9}[.)](?: |$)|-)/i.test(text);
+  prose.test(text) &&
+  /[^ :-]/.test(text) &&
+  !/www\.|^ {0,3}(?:\d{1,9}[.)](?: |$)|-)/i.test(text);
 const flatItem = (item) =>
   !item.task &&
   !item.loose &&
