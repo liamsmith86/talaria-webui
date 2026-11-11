@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 from e2e.scripted_model import ECHO, plan, scripted_model, terminal  # noqa: E402
 
-STABLE_HERMES = "bf0203a794a07aac3ff764972ab9087baa4e4f4e"  # v0.22.5
+STABLE_HERMES = "3b421578588243f920886e6fe79a6faa87ea026e"  # v0.23.1
 OUTPUT = "walkthrough-output"
 
 
