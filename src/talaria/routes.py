@@ -11,7 +11,7 @@ from starlette.responses import JSONResponse, StreamingResponse
 
 from . import __version__, auth
 from .content import MAX_CHAT_BODY, REASONING, image_inputs
-from .extensions import PREFIX, Extensions, discover, numeric
+from .extensions import PREFIX, Extensions, change_session, discover, numeric
 from .hermes import (
     IDENTIFIER,
     APIError,
@@ -411,7 +411,7 @@ async def fork(request: Request):
     if await has_no_messages(client, sid):
         raise APIError(NO_HISTORY_BRANCH, 409)
     try:
-        result = await client.request("POST", f"{PREFIX}/sessions/{sid}/fork", json=payload)
+        result = await change_session(client, sid, "fork", payload)
     except APIError as exc:
         if exc.status != 404:
             raise  # An ambiguous failure must never create a second copy.

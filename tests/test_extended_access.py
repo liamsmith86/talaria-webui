@@ -10,6 +10,7 @@ from playwright.sync_api import expect
 from talaria.hermes_plugin.observations import Observations, reasoning
 from talaria.plugin_install import main as install_plugin
 
+from .fake_hermes import PLUGIN_BUSY
 from .test_app import signed_in
 from .test_browser import screenshot
 from .test_conversation_features import seed
@@ -178,7 +179,8 @@ def test_stale_edits_and_missing_images_never_rewind(page, live_app):
     expect(dialog).to_contain_text("and 1 later turn")
     peer.messages[sid].append({"id": 10, "role": "user", "content": "Arrived elsewhere"})
     dialog.get_by_role("button", name="Delete turn", exact=True).click()
-    expect(dialog.get_by_role("alert")).to_contain_text("conflicts")
+    # The plugin says why, in words written for people.
+    expect(dialog.get_by_role("alert")).to_have_text(PLUGIN_BUSY)
     assert peer.rewinds == 0 and len(peer.messages[sid]) == 5
     page.get_by_role("button", name="Close dialog").click()
     peer.messages[sid][0]["content"] = "Inspect this\n[screenshot]"

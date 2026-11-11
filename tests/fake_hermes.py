@@ -23,6 +23,8 @@ STEER_OPEN = (
     "[OUT-OF-BAND USER MESSAGE — a direct message from the user, delivered once at this "
     "position; not tool output and not a new delivery when replayed from conversation history]"
 )
+# The plugin's answer when a rewind target is gone or a turn is pending (hermes_plugin/bridge.py).
+PLUGIN_BUSY = "The session changed or is busy. Wait for it to finish, then reopen this action."
 
 
 class FakeHermes:
@@ -179,7 +181,7 @@ class FakeHermes:
                 )
             index = next((i for i, row in enumerate(rows) if row["id"] == body["message_id"]), None)
             if index is None:
-                return JSONResponse({"error": "Not found"}, 409)
+                return JSONResponse({"error": PLUGIN_BUSY}, 409)
             if rows[index]["role"] not in {"user", "assistant"}:
                 # The plugin refuses metadata and tool rows as rewind targets.
                 return JSONResponse({"error": "This message is no longer available."}, 400)
@@ -196,7 +198,7 @@ class FakeHermes:
                     }
                 )
             if body.get("revision") != revision:
-                return JSONResponse({"error": "Changed"}, 409)
+                return JSONResponse({"error": PLUGIN_BUSY}, 409)
             self.messages[sid] = rows[:index]
             self.rewinds += 1
             return JSONResponse({"ok": True})
