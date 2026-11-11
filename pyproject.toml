@@ -47,6 +47,7 @@ exclude-newer = "7 days"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "browser: requires Playwright",
     "cross_browser: browser tests that releases also run on Firefox and WebKit",
