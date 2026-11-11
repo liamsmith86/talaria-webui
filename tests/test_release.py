@@ -347,6 +347,10 @@ def test_workflow_gates_publication_and_keeps_prs_lightweight():
     assert workflow["jobs"]["checks"]["if"] == "needs.version.outputs.tested != 'true'"
     assert "needs.version.outputs.tested == 'true'" in workflow["jobs"]["publish"]["if"]
     assert workflow["jobs"]["manifest"]["needs"] == "publish"
+    # A skipped checks job must not skip promotion after publish succeeds.
+    assert workflow["jobs"]["manifest"]["if"] == (
+        "${{ !cancelled() && needs.publish.result == 'success' }}"
+    )
     assert workflow["jobs"]["manifest"]["permissions"]["statuses"] == "write"
     assert all(
         job.get("permissions", {}).get("statuses") != "write"
