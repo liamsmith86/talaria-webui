@@ -1,8 +1,8 @@
 """Report anything pinned behind its newest release that has cleared the cooldown.
 
 Runs before a commit that changes dependencies, because Dependabot only reacts afterwards.
-With --hand-kept it checks only what Dependabot can't see: build requirements and the
-tool and runtime versions kept by hand, which a weekly workflow reports in an issue.
+With --hand-kept it checks only what Dependabot can't see: the tool and runtime versions
+kept by hand, which a weekly workflow reports in an issue.
 Exits 1 when something is outdated and 2 when the check itself couldn't run.
 """
 
@@ -62,10 +62,7 @@ def behind(pins):
 
 
 def hand_kept_python():
-    config = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    pins = dict(requirement(item) for item in config["build-system"]["requires"])
-    pins["uv"] = pinned_uv()
-    return behind(pins)
+    return behind({"uv": pinned_uv()})
 
 
 def python_packages():
@@ -74,6 +71,7 @@ def python_packages():
     pins = dict(
         requirement(item)
         for item in [
+            *config["build-system"]["requires"],
             *config["project"]["dependencies"],
             *(entry for group in groups for entry in group if isinstance(entry, str)),
         ]
