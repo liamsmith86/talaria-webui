@@ -230,11 +230,15 @@ def promote():
     )
     if reference:
         # GitHub rejects a rewind or divergent history, including concurrent updates.
-        github(f"repos/{repository}/git/refs/heads/stable", {"sha": revision, "force": False})
+        updated = github(
+            f"repos/{repository}/git/refs/heads/stable", {"sha": revision, "force": False}
+        )
     else:
-        github(f"repos/{repository}/git/refs", {"ref": "refs/heads/stable", "sha": revision})
-    confirmed = github(f"repos/{repository}/git/ref/heads/stable")
-    if confirmed["object"]["sha"] != revision:
+        updated = github(
+            f"repos/{repository}/git/refs", {"ref": "refs/heads/stable", "sha": revision}
+        )
+    # Check the write's answer: a read right after it can still return the old ref.
+    if updated["object"]["sha"] != revision:
         raise RuntimeError("Stable source promotion could not be verified.")
 
 
