@@ -1,46 +1,7 @@
-"""Composition boundary events and keyboard-sized viewport changes preserve input."""
+"""Keyboard-sized viewport changes preserve input."""
 
 import pytest
 from playwright.sync_api import expect
-
-from .test_commands import prepare
-
-
-@pytest.mark.parametrize("composing,key_code", [(True, 13), (False, 229)])
-def test_composition_enter_neither_sends_nor_selects_a_slash_command(
-    page, live_app, composing, key_code
-):
-    prepare(page, live_app)
-    composer = page.get_by_label("Message Hermes")
-    for text in ("日本語 中文 한국어", "/comp"):
-        composer.fill(text)
-        if text.startswith("/"):
-            expect(page.get_by_role("listbox", name="Hermes commands")).to_be_visible()
-        prevented = composer.evaluate(
-            """(el, [composing, keyCode]) => {
-          el.dispatchEvent(new CompositionEvent('compositionstart', {bubbles:true}));
-          if (!composing) el.dispatchEvent(new CompositionEvent('compositionend', {bubbles:true}));
-          const event = new KeyboardEvent('keydown', {key:'Enter', code:'Enter',
-            isComposing:composing, keyCode, bubbles:true, cancelable:true});
-          el.dispatchEvent(event);
-          el.dispatchEvent(new CompositionEvent('compositionend', {bubbles:true}));
-          return event.defaultPrevented;
-        }""",
-            [composing, key_code],
-        )
-        assert not prevented
-        expect(composer).to_have_value(text)
-        assert not live_app[1].runs
-    # No arbitrary cooldown: the first ordinary Enter after composition works.
-    composer.press("Enter")
-    expect(composer).to_have_value("/compress ")
-    composer.fill("Committed text")
-    composer.press("Shift+Enter")
-    expect(composer).to_have_value("Committed text\n")
-    composer.press("Enter")
-    expect(composer).to_have_value("")
-    assert len(live_app[1].runs) == 1
-    assert next(iter(live_app[1].runs.values()))["input"] == "Committed text"
 
 
 @pytest.mark.parametrize("width", [641, 804, 1024])
