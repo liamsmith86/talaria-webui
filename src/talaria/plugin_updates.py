@@ -55,7 +55,8 @@ def restart_and_verify(home, target, command, *, owner=None):
     info = hermes_request(python, home, owner=owner)
     if not info.get("enabled") or not info.get("key"):
         raise DeploymentError("Enable this local Hermes API before managing its plugin.")
-    restart_gateway(home, command, owner=owner)
+    # Setup asked first, and an update says it restarts a linked Hermes whose plugin changed.
+    restart_gateway(home, command, owner=owner, unattended=info.get("unattended_restart") is True)
     expected = fingerprint(target)
     url = local_url(str(info["host"]), int(info["port"])) + "/talaria/v1/capabilities"
     deadline = time.monotonic() + 30

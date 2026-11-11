@@ -308,8 +308,13 @@ def apply_hermes_restart(args, prompts, home, python, info, *, owner=None):
     if args.restart_hermes or prompts.yes("Restart Hermes now? Active work may be interrupted."):
         print(f"\n{styled('Restarting Hermes…', HEADING)}", flush=True)
         try:
+            # The user agreed to interrupt active work, which is what Hermes asks for.
             restart_setup_hermes(
-                home, python, owner=owner, plugin_enabled=info.get("plugin_enabled")
+                home,
+                python,
+                owner=owner,
+                plugin_enabled=info.get("plugin_enabled"),
+                unattended=info.get("unattended_restart") is True,
             )
             return False
         except (ValueError, OSError, DeploymentError) as exc:
@@ -324,14 +329,14 @@ def hermes_restart_pending(home):
     )
 
 
-def restart_setup_hermes(home, python, *, owner=None, plugin_enabled=False):
+def restart_setup_hermes(home, python, *, owner=None, plugin_enabled=False, unattended=False):
     owner = owner or select_owner(home)
     if hermes_restart_pending(home) and plugin_enabled:
         from .plugin_updates import restart_and_verify
 
         restart_and_verify(home, home / "plugins/talaria-webui", None, owner=owner)
     else:
-        restart_gateway(home, owner=owner)
+        restart_gateway(home, owner=owner, unattended=unattended)
     if hermes_restart_pending(home):
         hermes_request(python, home, owner=owner, action="clear_restart")
 
@@ -665,7 +670,10 @@ def terminal(interactive, flag="--non-interactive"):
         yield Prompts(stream)
 
 
-def restart_gateway(home, command=None, *, owner=None):
+def restart_gateway(home, command=None, *, owner=None, unattended=False):
+    """`unattended` restarts Hermes 0.22.3+ the way its own updater does: without asking about
+    live work, which may be interrupted, and with the replacement for a gateway no service
+    manager runs started in the background rather than in this command."""
     owner = owner or select_owner(home)
     command = command or shutil.which("hermes")
     if not command:
@@ -675,6 +683,7 @@ def restart_gateway(home, command=None, *, owner=None):
     command = validate_execution(home, command, owner)
     env["HOME"] = owner.pw_dir
     command = [command, "gateway", "restart"] + (["--system"] if owner.pw_uid == 0 else [])
+    command += ["--interrupt", "--detach"] if unattended else []
     # Restart diagnostics can contain private Hermes configuration; keep them private.
     try:
         result = subprocess.run(
