@@ -119,6 +119,8 @@ jobs:
 
   manifest:
     needs: publish
+    # Without this, the implicit success() skips the job whenever reuse skipped checks.
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
     # Serialize alias updates across versions; never cancel a running promotion.
     concurrency:
       group: container-tags-${{ github.repository }}
