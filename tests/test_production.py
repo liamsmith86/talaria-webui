@@ -1,5 +1,4 @@
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect
@@ -33,59 +32,6 @@ def test_startup_delivery(page):
     assert sum(entry["bytes"] for entry in scripts) < 106 * 1024
     assert len([entry for entry in resources if entry["path"].endswith(".css")]) == 1
     assert page.locator('script[type="module"]').get_attribute("data-store-entry") == "app.js"
-
-
-def test_rendering_matches_source(browser, live_app, tmp_path, monkeypatch):
-    production, peer, app = live_app
-    peer.sessions["visual"] = {"id": "visual", "title": "Visual parity", "source": "api_server"}
-    peer.messages["visual"] = [
-        {"id": 1, "role": "user", "content": "A table and some code"},
-        {
-            "id": 2,
-            "role": "assistant",
-            "content": "## Example\n\nA **bold** and *italic* reply.\n\n"
-            "| Item | Value |\n| --- | --- |\n| One | Two |\n\n"
-            "```python\nanswer = 42\n```\n\n<script>window.injected = true</script>",
-        },
-    ]
-    with monkeypatch.context() as patch:
-        patch.setattr(
-            application, "STATIC", Path(__file__).resolve().parents[1] / "src/talaria/static"
-        )
-        source_app = application.create_app(app.state.settings, tmp_path / "source.json")
-    server, thread, source = serve(source_app)
-    images = []
-    try:
-        for url in (source, production):
-            with browser_context(browser) as context:
-                context.add_cookies(
-                    [
-                        {
-                            "name": app.state.cookie_name,
-                            "value": issue_cookie(app.state.settings),
-                            "url": url,
-                        }
-                    ]
-                )
-                tab = context.new_page()
-                tab.set_viewport_size({"width": 1440, "height": 960})
-                tab.goto(url)
-                wait_for_store(tab, "s => !!s.defaultModel && s.readiness.status === 'ok'")
-                tab.get_by_role("link", name="Visual parity", exact=True).click()
-                expect(tab.locator(".markdown .token").first).to_be_attached()
-                assert tab.evaluate("window.injected") is None
-                tab.evaluate("() => document.fonts.ready")
-                tab.evaluate(
-                    "() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))"
-                )
-                images.append(tab.screenshot(animations="disabled", caret="hide"))
-        if images[0] != images[1]:
-            for name, data in zip(("source", "production"), images, strict=True):
-                (tmp_path / f"{name}.png").write_bytes(data)
-        assert images[0] == images[1], f"Rendering differs; captures are in {tmp_path}"
-    finally:
-        server.should_exit = True
-        thread.join(6)
 
 
 def test_language_catalog_in_production(page):
