@@ -143,6 +143,17 @@ def plugin_refusal(exc):
     return APIError(exc.upstream_message or exc.message, exc.status, exc.code)
 
 
+async def change_session(client, sid, action, payload):
+    """Ask the plugin to rewind or fork a session. When it refuses, because the message can't be
+    changed or a turn is still pending, it explains why in words written for people."""
+    try:
+        return await client.request("POST", f"{PREFIX}/sessions/{sid}/{action}", json=payload)
+    except APIError as exc:
+        if exc.status in (400, 409) and exc.upstream_message:
+            raise plugin_refusal(exc) from exc
+        raise
+
+
 async def rewind_request(request: Request):
     from .routes import body, text_field
 
@@ -168,28 +179,20 @@ async def rewind_request(request: Request):
 async def session_extension(request: Request):
     sid = identifier(request.path_params["session_id"])
     action = request.url.path.rsplit("/", 1)[-1]
-    payload = {}
+    hermes = request.app.state.hermes
     if request.method == "POST":
-        payload["json"] = await rewind_request(request)
-    elif action == "response":
-        try:
-            mid = int(request.query_params.get("message_id", ""))
-            if not 1 <= mid <= 2**63 - 1:
-                raise ValueError
-        except ValueError as exc:
-            raise APIError("Choose a saved response.", 400) from exc
-        payload["params"] = {"message_id": str(mid)}
-    try:
-        result = await request.app.state.hermes.request(
-            "GET" if request.method == "HEAD" else request.method,
-            f"{PREFIX}/sessions/{sid}/{action}",
-            **payload,
-        )
-    except APIError as exc:
-        # The plugin explains why a turn cannot change, in words written for people.
-        if action == "rewind" and exc.status == 400 and exc.upstream_message:
-            raise plugin_refusal(exc) from exc
-        raise
+        result = await change_session(hermes, sid, action, await rewind_request(request))
+    else:
+        params = {}
+        if action == "response":
+            try:
+                mid = int(request.query_params.get("message_id", ""))
+                if not 1 <= mid <= 2**63 - 1:
+                    raise ValueError
+            except ValueError as exc:
+                raise APIError("Choose a saved response.", 400) from exc
+            params["message_id"] = str(mid)
+        result = await hermes.request("GET", f"{PREFIX}/sessions/{sid}/{action}", params=params)
     projected = project_details(action, result)
     if action == "context" and projected["context"] is None:
         projected["context"] = await reply_context(request, sid)

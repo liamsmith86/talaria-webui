@@ -14,7 +14,7 @@ git config --local core.hooksPath .githooks
 Native Hermes tests and the full suite also need Hermes and axe-core:
 
 ```sh
-git clone --depth 1 --branch v0.22.5 https://github.com/NousResearch/hermes-agent.git .local/hermes
+git clone --depth 1 --branch v0.23.1 https://github.com/NousResearch/hermes-agent.git .local/hermes
 UV_PROJECT_ENVIRONMENT=$PWD/.local/hermes/venv uv sync --project .local/hermes --frozen --no-dev --extra sms
 git config --local talaria.hermesSource "$PWD/.local/hermes"  # or export HERMES_SOURCE
 curl -fsSL https://cdn.jsdelivr.net/npm/axe-core@4.14.0/axe.min.js -o .local/axe.min.js
@@ -215,7 +215,7 @@ accurate. To prepare a catalog submission for `HEAD`:
 
 ```sh
 git clone https://github.com/NousResearch/hermes-agent.git .local/hermes-catalog
-git -C .local/hermes-catalog checkout bf0203a794a07aac3ff764972ab9087baa4e4f4e  # v0.22.5
+git -C .local/hermes-catalog checkout 3b421578588243f920886e6fe79a6faa87ea026e  # v0.23.1
 UV_EXCLUDE_NEWER="14 days" uv sync --project .local/hermes-catalog --frozen --no-dev --extra sms --python 3.14
 .local/hermes-catalog/.venv/bin/python contrib/plugin_catalog.py --revision HEAD --output .local/plugin-catalog
 ```

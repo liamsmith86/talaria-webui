@@ -11,6 +11,17 @@ import asyncio
 API_SOURCES = {"api_server"}
 
 
+def require_no_pending_turn(db, sid):
+    """Refuse, as Hermes's own rewind and branch do, while a turn another client sent is queued,
+    running or of unknown outcome. A branch from a message previews a rewind first."""
+    try:
+        from hermes_state_runtime import list_session_admissions
+    except ImportError:  # Before 0.22.1 turns are not admitted, and the turn lease suffices.
+        return
+    if list_session_admissions(db, session_id=sid):
+        raise RuntimeError("The session has a pending turn.")
+
+
 class BranchStore:
     def __init__(self, db, parent, *, owns_id, ends_parent=True):
         self.db, self.parent, self.owns_id = db, parent, owns_id
@@ -78,11 +89,17 @@ async def fork_session(adapter, request, db, sid):
         return web.json_response(
             {"error": {"code": "invalid_title", "message": str(exc)}}, status=400
         )
+    ends_parent = source.get("source") in API_SOURCES
+    if ends_parent:
+        try:
+            await asyncio.to_thread(require_no_pending_turn, db, sid)
+        except RuntimeError:
+            return web.json_response(
+                {"error": "Wait for this session's pending turn to finish, then branch it."},
+                status=409,
+            )
     store = BranchStore(
-        db,
-        sid,
-        owns_id=not (data.get("id") or data.get("session_id")),
-        ends_parent=source.get("source") in API_SOURCES,
+        db, sid, owns_id=not (data.get("id") or data.get("session_id")), ends_parent=ends_parent
     )
     succeeded = False
     try:

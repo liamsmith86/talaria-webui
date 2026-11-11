@@ -5,7 +5,7 @@ import contextlib
 import hashlib
 import json
 
-from .extensions import PREFIX
+from .extensions import change_session
 from .hermes import APIError, identifier, object_result
 from .transcripts import message_page
 
@@ -115,11 +115,7 @@ async def mark_branch_points(client, sid, rows):
 
 async def preview(client, sid, mid):
     return object_result(
-        await client.request(
-            "POST",
-            f"{PREFIX}/sessions/{sid}/rewind",
-            json={"message_id": mid, "preview": True},
-        )
+        await change_session(client, sid, "rewind", {"message_id": mid, "preview": True})
     )
 
 
@@ -139,13 +135,7 @@ async def branch_from_response(client, sid, mid, payload):
         (i for i in range(index + 1, len(original)) if original[i]["role"] != "session_meta"),
         len(original),
     )
-    result = object_result(
-        await client.request(
-            "POST",
-            f"{PREFIX}/sessions/{sid}/fork",
-            json=payload,
-        )
-    )
+    result = object_result(await change_session(client, sid, "fork", payload))
     child = object_result(result.get("session", result))
     child_id = identifier(child.get("id"))
     if child_id == sid or child.get("parent_session_id") != sid:
@@ -160,10 +150,8 @@ async def branch_from_response(client, sid, mid, payload):
             check = await preview(client, child_id, target)
             if check.get("target_id") != target or check.get("message_count") != len(copied) - cut:
                 raise APIError(UNAVAILABLE, 409)
-            await client.request(
-                "POST",
-                f"{PREFIX}/sessions/{child_id}/rewind",
-                json={"message_id": target, "revision": check["revision"]},
+            await change_session(
+                client, child_id, "rewind", {"message_id": target, "revision": check["revision"]}
             )
         if digests(await active_messages(client, child_id)) != digests(original[:cut]):
             raise APIError(UNAVAILABLE, 409)

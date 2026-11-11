@@ -393,6 +393,7 @@ const notices = {
   process_complete: [msg("Background process finished"), "terminal"],
   auto_continue: [msg("Resumed an interrupted turn"), "refresh"],
   model_switch: [msg("Model changed"), "spark"],
+  content_refused: [msg("Refused by the model’s safety filter"), "alert"],
   compaction: [msg("Context compressed"), "context"],
 };
 export function Notice({ kind, text, time, matched = false }) {

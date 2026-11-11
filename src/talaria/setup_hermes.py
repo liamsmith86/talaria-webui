@@ -40,9 +40,28 @@ def add_hermes_root():
         sys.path.insert(0, root)
 
 
+def hermes_version():
+    try:
+        from hermes_cli.version_info import get_version_info
+    except ImportError:
+        # 0.21.5 carries the release version in the package. From 0.21.6 a source checkout
+        # without an install stamp reports 0.0.0 there, and version_info reads Git instead.
+        from hermes_cli import __version__
+
+        return __version__
+    return get_version_info().display_version
+
+
+def unattended_restart():
+    """From 0.22.3 `hermes gateway restart` without a terminal refuses while turns, cron jobs or
+    delegations run, and takes the flags its own updater uses to proceed."""
+    from importlib.util import find_spec
+
+    return find_spec("hermes_cli.gateway_lifecycle_guards") is not None
+
+
 def configure(home, request):
     add_hermes_root()
-    from hermes_cli import __version__
     from hermes_cli.config import load_env, read_raw_config, save_env_value
     from hermes_cli.env_loader import load_hermes_dotenv
 
@@ -85,7 +104,8 @@ def configure(home, request):
         "key": key,
         "multiplex": config.multiplex_profiles,
         "changed": changed,
-        "version": __version__,
+        "version": hermes_version(),
+        "unattended_restart": unattended_restart(),
         "plugin_enabled": bool(
             request.get("plugin")
             or (

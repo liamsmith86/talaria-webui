@@ -72,7 +72,13 @@ async def message_page(client, sid, offset=0, *, order="latest", limit=100, incl
 
 
 # Hermes's own events, stored as user-role rows (static/content.js NOTICE_KINDS).
-NOTICE_KINDS = ("async_delegation_complete", "process_complete", "auto_continue", "model_switch")
+NOTICE_KINDS = (
+    "async_delegation_complete",
+    "process_complete",
+    "auto_continue",
+    "model_switch",
+    "content_refused",
+)
 # Guidance sent during a turn, in the marker Hermes delivers it with (static/content.js).
 GUIDANCE = re.compile(
     r"^\s*\[OUT-OF-BAND USER MESSAGE[^\]\n]*\]\s*(.*?)\s*\[/OUT-OF-BAND USER MESSAGE\]\s*$", re.S
@@ -113,7 +119,9 @@ def markdown_message(message):
         role, str(role).capitalize()
     )
     text = content_text(message.get("content"))
-    if role == "user" and message.get("display_kind") in NOTICE_KINDS:
+    if role == "user" and message.get("display_kind") == "content_refused":
+        label = "You (refused by the model’s safety filter)"
+    elif role == "user" and message.get("display_kind") in NOTICE_KINDS:
         label = "Hermes notice"
     if role == "user" and message.get("display_kind") == "steer":
         label = "Your guidance"

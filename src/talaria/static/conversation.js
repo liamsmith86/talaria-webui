@@ -298,6 +298,9 @@ function Approval({ sid, request }) {
   }
   const choices = request.choices || ["once", "deny"];
   const unavailable = !supports("run_approval_response");
+  // Hermes before 0.22.1 keys a "session" grant to the run. Its session authority, whose
+  // prompts carry an execution generation, keys it to the session until Hermes restarts.
+  const sessionScoped = Number.isInteger(request.execution_generation);
   return html`<section class="approval-card" aria-label=${t("Approval required")}>
     <div class="approval-heading">
       <${Icon} name="alert" size=${18} /><strong
@@ -326,7 +329,7 @@ ${request.command ||
         disabled=${busy || unavailable}
         onClick=${() => respond("session")}
       >
-        ${t("Allow for this response")}
+        ${sessionScoped ? t("Allow for this session") : t("Allow for this response")}
       </button>`}${choices.includes("once") &&
       html`<button
         class="button primary"
@@ -678,7 +681,8 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
     observer.observe(scroll.current);
     return () => observer.disconnect();
   }, [app.active, follow]);
-  const lastUser = items.findLast((m) => m.role === "user");
+  // A prompt the safety filter refused is saved as a notice, and no reply follows it.
+  const lastUser = items.findLast((m) => m.role === "user" || m.kind === "content_refused");
   const savedTurn = live?.persisted && live.savedMessageId != null
     ? items.find((item) => item.record?.id === live.savedMessageId)
     : null;
