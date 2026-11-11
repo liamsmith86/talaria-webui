@@ -75,6 +75,9 @@ def rewind_preview(db, sid, message_id):
 
     if (db.get_session(sid) or {}).get("source") != "api_server":
         raise ValueError("Only API sessions can be changed here.")
+    from .forks import require_no_pending_turn
+
+    require_no_pending_turn(db, sid)
 
     ids = db.get_active_message_ids(sid)
     if len(ids) > MAX_MESSAGES:
