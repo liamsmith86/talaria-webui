@@ -13,6 +13,7 @@
   "Add profile": "プロファイルを追加",
   "Agent": "エージェント",
   "Allow for this response": "この応答で許可",
+  "Allow for this session": "このセッションで許可",
   "Allow once": "今回のみ許可",
   "Answer the approval request before sending guidance.": "指示を送る前に、承認リクエストに応答してください。",
   "Answer the approval request to continue…": "続行するには承認リクエストに応答してください…",

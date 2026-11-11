@@ -298,6 +298,9 @@ function Approval({ sid, request }) {
   }
   const choices = request.choices || ["once", "deny"];
   const unavailable = !supports("run_approval_response");
+  // Hermes before 0.22.1 keys a "session" grant to the run. Its session authority, whose
+  // prompts carry an execution generation, keys it to the session until Hermes restarts.
+  const sessionScoped = Number.isInteger(request.execution_generation);
   return html`<section class="approval-card" aria-label=${t("Approval required")}>
     <div class="approval-heading">
       <${Icon} name="alert" size=${18} /><strong
@@ -326,7 +329,7 @@ ${request.command ||
         disabled=${busy || unavailable}
         onClick=${() => respond("session")}
       >
-        ${t("Allow for this response")}
+        ${sessionScoped ? t("Allow for this session") : t("Allow for this response")}
       </button>`}${choices.includes("once") &&
       html`<button
         class="button primary"

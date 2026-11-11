@@ -13,6 +13,7 @@
   "Add profile": "添加配置档案",
   "Agent": "智能体",
   "Allow for this response": "在本次回复中允许",
+  "Allow for this session": "在此会话中允许",
   "Allow once": "仅允许一次",
   "Answer the approval request before sending guidance.": "请先回应授权请求，再发送补充指令。",
   "Answer the approval request to continue…": "请回应授权请求以继续…",
