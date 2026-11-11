@@ -25,8 +25,8 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           # Keep with the uv version in ci.yml.
-          version: '0.13.6'
-          checksum: 'f29c3e94ffabd7e6f3ba521dba169a9b7ec12100bf3257087f0f24f6123f3645'
+          version: '0.13.7'
+          checksum: 'c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83'
           python-version: '3.14.10'
       - name: Open, update or close the issue
         env:
@@ -34,7 +34,7 @@ jobs:
           TITLE: Hand-kept versions are behind
         run: |
           status=0
-          report=$(uv run --locked --only-group lint python contrib/outdated.py --hand-kept 2>&1) || status=$?
+          report=$(uv run --quiet --locked --only-group lint python contrib/outdated.py --hand-kept 2>&1) || status=$?
           printf '%s\n' "$report"
           if [ "$status" -gt 1 ]; then exit "$status"; fi
           issue=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \

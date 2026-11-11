@@ -45,8 +45,8 @@ jobs:
           fetch-depth: 2
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: '0.13.6'
-          checksum: &uv-checksum ${{ runner.os == 'macOS' && '60fbd5c8a1ed681845eea28d9d622fcde03c51e91a43465b64a1e17db1ed3472' || runner.arch == 'ARM64' && '229e194255c7958d86d56e8790d969a6f74736592133f0dfd0076f754c642c1d' || 'f29c3e94ffabd7e6f3ba521dba169a9b7ec12100bf3257087f0f24f6123f3645' }}
+          version: '0.13.7'
+          checksum: &uv-checksum ${{ runner.os == 'macOS' && '81b811b57e4624df7ed3aac148e0359100d9962f3d9dce00aec533dc2e086731' || runner.arch == 'ARM64' && '71279f8d3c67241e807b9d8db872d1bf541579fb9f08b7d1eb1682196d1e57dc' || 'c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83' }}
           python-version: '3.14.10'
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -105,7 +105,7 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         if: steps.scope.outputs.runtime == 'true'
         with:
-          version: '0.13.6'
+          version: '0.13.7'
           checksum: *uv-checksum
           python-version: '3.14.10'
       - if: steps.scope.outputs.runtime == 'true'
@@ -146,7 +146,7 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         if: steps.scope.outputs.browser == 'true'
         with:
-          version: '0.13.6'
+          version: '0.13.7'
           checksum: *uv-checksum
           python-version: '3.14.10'
           # The backend job saves this same dependency cache.
@@ -192,7 +192,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: '0.13.6'
+          version: '0.13.7'
           checksum: *uv-checksum
           python-version: ${{ matrix.python }}
       - run: uv sync --locked
@@ -229,7 +229,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: '0.13.6'
+          version: '0.13.7'
           checksum: *uv-checksum
           python-version: '3.12.16'
           # The Linux backend job saves this same dependency cache.
@@ -281,7 +281,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: '0.13.6'
+          version: '0.13.7'
           checksum: *uv-checksum
           python-version: '3.14.10'
       - name: Prepare the locked Hermes validator
@@ -321,7 +321,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: '0.13.6'
+          version: '0.13.7'
           checksum: *uv-checksum
           python-version: ${{ matrix.hermes.python }}
       - run: uv sync --locked
@@ -353,7 +353,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: '0.13.6'
+          version: '0.13.7'
           checksum: *uv-checksum
           python-version: '3.14.10'
       - run: uv sync --locked
