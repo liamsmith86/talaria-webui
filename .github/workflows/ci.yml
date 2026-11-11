@@ -385,8 +385,13 @@ jobs:
         run: |
           wsl --set-default-version 2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          wsl --install --distribution Ubuntu-24.04 --web-download --no-launch
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # The download fails outright when a name doesn't resolve, so give the network another chance.
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            wsl --install --distribution Ubuntu-24.04 --web-download --no-launch
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -eq 3) { exit $LASTEXITCODE }
+            Start-Sleep -Seconds 30
+          }
           wsl --distribution Ubuntu-24.04 --user root --exec bash -c 'uname -r | grep -i microsoft-standard-WSL2'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test from the Linux filesystem
