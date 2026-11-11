@@ -42,7 +42,7 @@ function fromRecord(record, clock, reconnecting) {
     text: record.text,
     // Talaria's own explanation, translated where it is shown.
     notice: record.status === "unknown"
-      ? msg("Hermes did not report this command's result. Check the conversation before running it again.")
+      ? msg("Hermes did not report this command’s result. Check the conversation before running it again.")
       : null,
     // Hermes's time for the newest row when it began, or else Talaria's.
     anchor: Number.isFinite(record.anchor) ? record.anchor : record.started_at,

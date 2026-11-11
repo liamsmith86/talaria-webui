@@ -437,7 +437,7 @@ def test_command_whose_result_hermes_lost_says_so_and_frees_the_session(page, li
     wait_for(lambda: peer.commands, bool)
     peer.commands.clear()  # Hermes restarted; the plugin kept the job only in memory.
     expect(card).to_contain_text("Command result unknown", timeout=10000)
-    expect(card).to_contain_text("Hermes did not report this command's result.")
+    expect(card).to_contain_text("Hermes did not report this command’s result.")
     expect(page.locator(".message.notice")).to_have_count(0)
     page.get_by_role("textbox", name="Message Hermes").fill("Carry on")
     expect(page.get_by_role("button", name="Send message", exact=True)).to_be_enabled()

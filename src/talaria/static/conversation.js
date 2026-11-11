@@ -678,7 +678,8 @@ export function Conversation({ app, commands = [], onDismissCommand, noChat = fa
     observer.observe(scroll.current);
     return () => observer.disconnect();
   }, [app.active, follow]);
-  const lastUser = items.findLast((m) => m.role === "user");
+  // A prompt the safety filter refused is saved as a notice, and no reply follows it.
+  const lastUser = items.findLast((m) => m.role === "user" || m.kind === "content_refused");
   const savedTurn = live?.persisted && live.savedMessageId != null
     ? items.find((item) => item.record?.id === live.savedMessageId)
     : null;

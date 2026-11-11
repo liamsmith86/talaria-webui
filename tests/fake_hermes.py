@@ -536,6 +536,16 @@ class FakeHermes:
                 {"id": first, "role": "assistant", "content": "", "tool_calls": [call]},
                 {"id": first + 1, "role": "tool", "tool_call_id": call["id"], "content": "Notes"},
             ]
+        if "safety filter" in run["input"].lower():
+            # Hermes 0.23+ takes a refused prompt out of the model's context but keeps it on
+            # screen as a notice, with no reply after it.
+            messages = self.messages[run["session_id"]]
+            next(m for m in reversed(messages) if m["role"] == "user")["display_kind"] = (
+                "content_refused"
+            )
+            run["status"] = "failed"
+            yield event("run.failed", error="The provider's safety filter refused this message.")
+            return
         if "lost in a restart" in run["input"].lower():
             # The gateway died mid-turn: the stream ends and the next owner reports it unknown.
             run.update(status="unknown", admission_id="lost-admission", execution_generation=2)

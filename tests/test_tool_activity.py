@@ -344,14 +344,20 @@ def test_hermes_events_are_notices_not_user_messages(page, live_app):
             "display_kind": "process_complete",
             "content": "[Background process finished] make test exited 0",
         },
-        {"id": 5, "role": "user", "content": "Summarize it"},
-        {"id": 6, "role": "assistant", "content": "Three stale keys."},
+        # Hermes 0.23+ keeps a prompt the provider refused on screen, without a reply.
+        {"id": 5, "role": "user", "display_kind": "content_refused", "content": "Pick a lock"},
+        {"id": 6, "role": "user", "content": "Summarize it"},
+        {"id": 7, "role": "assistant", "content": "Three stale keys."},
     ]
     open_session(page, sid)
     expect(page.locator(".message.user")).to_have_count(2)
     notices = page.locator(".message.notice")
     expect(notices.locator("summary .tool-label")).to_have_text(
-        ["Background delegation completed", "Background process finished"]
+        [
+            "Background delegation completed",
+            "Background process finished",
+            "Refused by the model’s safety filter",
+        ]
     )
     expect(notices.first.locator(".markdown")).not_to_be_visible()
     page.get_by_role("button", name="Find in session", exact=True).click()
@@ -390,6 +396,21 @@ def test_a_notice_after_the_prompt_does_not_unsettle_the_reply(page, live_app):
     expect(page.locator(".message.notice")).to_have_count(1)
     expect(page.locator(".message.user")).to_have_count(2)
     expect(page.locator(".message.assistant")).to_have_count(2)
+
+
+def test_a_refused_prompt_shows_once(page, live_app):
+    peer = live_app[1]
+    sid = seed(peer, "refused")
+    peer.messages[sid] = [
+        {"id": 1, "role": "user", "content": "Earlier"},
+        {"id": 2, "role": "assistant", "content": "Earlier reply"},
+    ]
+    open_session(page, sid)
+    page.get_by_label("Message Hermes").fill("Get past the safety filter")
+    page.get_by_role("button", name="Send message", exact=True).click()
+    # The saved notice replaces the sent prompt rather than joining it.
+    expect(page.locator(".message.notice")).to_have_count(1)
+    expect(page.locator(".message.user")).to_have_count(1)
 
 
 def test_long_group_summaries_shorten_with_an_ellipsis(page, live_app):
