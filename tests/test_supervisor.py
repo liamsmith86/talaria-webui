@@ -1,5 +1,6 @@
 """Exercise the installed launcher, real wheels, HTTP privileges, and CLI rollback."""
 
+import json
 import os
 import pwd
 import secrets
@@ -16,6 +17,7 @@ from talaria.auth import hash_password
 from talaria.config import Settings, save
 from talaria.deployment import Deployment, DeploymentError, check_health, run, selected, write_json
 from talaria.installation import read_json
+from talaria.local_hermes import process_start
 from talaria.uninstall import stopped_launcher
 
 from .conftest import copy_release_project
@@ -74,8 +76,13 @@ def installed_launcher():
                 "service": None,
                 "scope": "user",
                 "health_url": address,
+                "hermes_home": str(base / "hermes"),
             },
         )
+        # A gateway that recorded this process as itself, so the launcher's answer can be checked.
+        (base / "hermes").mkdir()
+        record = {"pid": os.getpid(), "start_time": process_start(os.getpid())}
+        (base / "hermes/gateway.pid").write_text(json.dumps(record))
 
         def commit():
             run(["git", "-C", remote, "add", "."])
@@ -142,6 +149,10 @@ def test_real_launcher_update_failure_and_rollback(installed_launcher):
             timeout=90,
         )
 
+    # The launcher answers for the web process, which can't read another account's Hermes home.
+    answer = control.request(root, {"action": "plugin", "pid": os.getpid()})["plugin"]
+    assert (answer["home"], answer["status"]) == (str(root.parent / "hermes"), "missing")
+    assert control.request(root, {"action": "plugin", "pid": 1})["plugin"] is None
     with signed_in(address) as client:
         assert client.get("/api/installation").json()["can_update"]
         assert operation(client, "check")["status"] == "completed"

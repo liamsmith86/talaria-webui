@@ -1,7 +1,16 @@
+import getpass
+import json
+import os
 import re
+import shutil
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect
+
+import talaria
+from talaria import local_hermes
+from talaria.hermes_plugin.release import PLUGIN_VERSION
 
 from .conftest import STORE_URL
 from .test_browser import screenshot
@@ -37,6 +46,55 @@ def test_agent_settings_and_extended_access(page, live_app, tmp_path):
     expect(page.get_by_text("Talaria plugin not detected", exact=True)).to_be_visible()
     page.get_by_role("button", name="Close dialog").click()
     expect(page.get_by_text("Connected to Hermes", exact=True)).to_be_visible()
+
+
+def test_extended_access_explains_the_plugin_in_the_local_hermes(
+    page, live_app, tmp_path, monkeypatch
+):
+    home = tmp_path / "hermes"
+    plugin = home / "plugins/talaria-webui"
+    plugin.mkdir(parents=True)
+    (plugin / "plugin.yaml").write_text('name: talaria-webui\nversion: "1.6.2"\n')
+    (plugin / "__init__.py").write_text("")
+    record = {"talaria-webui": {"source": "https://example.invalid", "catalog": {"pin": "0" * 40}}}
+    (home / "plugins/.install-metadata.json").write_text(json.dumps(record))
+    pid = os.getpid()
+    (home / "gateway.pid").write_text(
+        json.dumps({"pid": pid, "start_time": local_hermes.process_start(pid)})
+    )
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    live_app[1].pid = pid
+    hermes = f"HERMES_HOME={home} hermes"
+
+    page.get_by_role("button", name="Settings").click()
+    page.get_by_role("tab", name="Connection", exact=True).click()
+    access = page.locator(".extended-access")
+    expect(access.get_by_text("Talaria plugin installed but not running")).to_be_visible()
+    expect(access).to_contain_text(
+        "On this server: version 1.6.2, installed from Hermes's plugin catalog."
+    )
+    expect(access).to_contain_text(f"doesn't have version {PLUGIN_VERSION} yet.")
+    expect(access).to_contain_text(f"Update it through Hermes, as {getpass.getuser()}:")
+    expect(access.locator("code").first).to_have_text(
+        f"{hermes} plugins update talaria-webui\n{hermes} gateway restart"
+    )
+    expect(access.locator("code").nth(1)).to_contain_text(
+        f"{hermes} plugins remove talaria-webui\ntalaria hermes-plugin --home {home}\n"
+    )
+    expect(access.get_by_text("Install the plugin on your Hermes host")).to_have_count(0)
+    access.scroll_into_view_if_needed()
+    screenshot(page, "extended-access-local-plugin")
+
+    shutil.rmtree(plugin)
+    shutil.copytree(Path(talaria.__file__).parent / "hermes_plugin", plugin)
+    (home / "plugins/.install-metadata.json").unlink()
+    live_app[1].extension = {}
+    page.get_by_role("button", name="Check again", exact=True).click()
+    expect(page.get_by_text("Connected · Talaria plugin", exact=True)).to_be_visible()
+    expect(access).to_contain_text(
+        f"version {PLUGIN_VERSION}, copied by hand and not updated automatically."
+    )
+    expect(access.locator("code")).to_have_count(0)
 
 
 @pytest.mark.clock

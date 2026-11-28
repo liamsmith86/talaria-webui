@@ -49,9 +49,14 @@ def main():
 
         return uninstall(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "hermes-plugin":
+        from .maintenance import DeploymentError
         from .plugin_install import main as install_plugin
 
-        return install_plugin(sys.argv[2:])
+        try:
+            return install_plugin(sys.argv[2:])
+        except (DeploymentError, ValueError) as exc:
+            # A refusal explains itself; a traceback would bury the explanation.
+            raise SystemExit(f"Talaria: {exc}") from None
     if len(sys.argv) > 1 and sys.argv[1] in {"install", "update", "rollback", "status"}:
         from .deployment import main as manage
 

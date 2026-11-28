@@ -11,7 +11,15 @@ from starlette.responses import JSONResponse, StreamingResponse
 
 from . import __version__, auth
 from .content import MAX_CHAT_BODY, REASONING, image_inputs
-from .extensions import PREFIX, Extensions, change_session, discover, hermes_release, numeric
+from .extensions import (
+    PREFIX,
+    Extensions,
+    change_session,
+    detailed_health,
+    discover,
+    hermes_release,
+    numeric,
+)
 from .hermes import (
     IDENTIFIER,
     APIError,
@@ -21,6 +29,7 @@ from .hermes import (
     object_result,
     valid_api_key,
 )
+from .local_hermes import local_plugin
 from .metadata import agent_identity
 from .profiles import connection_url
 from .relay import Relay
@@ -199,10 +208,10 @@ async def capabilities(request: Request):
     tasks = [
         asyncio.create_task(state.hermes.request("GET", "/v1/capabilities")),
         asyncio.create_task(discover(state.hermes)),
-        asyncio.create_task(hermes_release(state.hermes)),
+        asyncio.create_task(detailed_health(state.hermes)),
     ]
     try:
-        caps, extended, release = await asyncio.gather(*tasks)
+        caps, extended, health = await asyncio.gather(*tasks)
     finally:
         # Keep both reads inside this request's connection lifetime, including
         # when required discovery fails or the browser disconnects.
@@ -213,12 +222,16 @@ async def capabilities(request: Request):
     caps = object_result(caps)
     state.capabilities = caps
     extended = state.extensions.adopt(extended)
+    local = await asyncio.to_thread(
+        local_plugin, state.settings.hermes_url, health.get("pid"), state.development
+    )
     return JSONResponse(
         {
             **caps,
             "talaria_agent": agent_identity(caps, extended),
             "talaria_extensions": extended,
-            "talaria_hermes": release,
+            "talaria_hermes": hermes_release(health),
+            "talaria_local_plugin": local,
         }
     )
 

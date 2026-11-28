@@ -12,6 +12,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from talaria import local_hermes
 from talaria.hermes import APIError, Hermes
 from talaria.hermes_plugin import bridge
 
@@ -148,8 +149,23 @@ async def profiles_work():
     )
 
 
+async def gateway_pid(profile, key):
+    client = Hermes(base + (f"/p/{profile}" if profile else ""), key)
+    try:
+        return (await client.request("GET", "/health/detailed"))["pid"]
+    finally:
+        await client.close()
+
+
 with gateway("cold-start"):
     asyncio.run(profiles_work())
+    # Settings finds the plugin a connection uses through the PID Hermes reports and records.
+    # The gateway that starts first serves every profile with the plugin in its own home.
+    for name in keys:
+        pid = asyncio.run(gateway_pid("" if name == "default" else name, keys[name]))
+        found = local_hermes.describe(pid, [home])
+        assert found and found["home"] == str(home), (name, found)
+        assert (found["status"], found["managed"]) == ("current", "manual"), found
     reload_plugins()
     asyncio.run(profiles_work())
 

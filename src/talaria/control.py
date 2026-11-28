@@ -47,6 +47,14 @@ def request(root: Path, data):
     return result
 
 
+def plugin_query(data):
+    """The web process asks which local plugin serves a gateway by its PID, and nothing else."""
+    pid = data.get("pid")
+    if set(data) != {"action", "pid"} or type(pid) is not int or not 0 < pid < 2**31:
+        raise ControlError("Invalid plugin query.")
+    return pid
+
+
 def validate(data):
     if (
         not isinstance(data.get("action"), str)

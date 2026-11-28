@@ -13,7 +13,7 @@ import time
 from contextlib import suppress
 from pathlib import Path
 
-from .control import JOB, SOCKET, ControlError, receive, send, validate
+from .control import JOB, SOCKET, ControlError, plugin_query, receive, send, validate
 from .deployment import (
     Deployment,
     DeploymentError,
@@ -24,6 +24,7 @@ from .deployment import (
     write_json,
 )
 from .installation import read_json
+from .local_hermes import describe
 from .setup_services import check_system_directory
 
 
@@ -189,13 +190,24 @@ class Launcher:
             connection.settimeout(2)
             with connection.makefile("rwb") as stream:
                 try:
-                    result = self.begin(receive(stream))
+                    data = receive(stream)
+                    query = data.get("action") == "plugin"
+                    result = self.plugin(data) if query else self.begin(data)
                 except (ControlError, ValueError, OSError):
                     result = {
                         "error": "Update request unavailable or another operation is running."
                     }
                 with suppress(OSError):
                     send(stream, result)
+
+    def plugin(self, data):
+        """Answer for the web process, which can't read another account's Hermes home."""
+        pid = plugin_query(data)
+        config = read_json(self.root / "deployment.json")
+        linked = config.get("hermes_plugin")
+        linked = linked.get("home") if isinstance(linked, dict) else None
+        recorded = [path for path in (config.get("hermes_home"), linked) if isinstance(path, str)]
+        return {"plugin": describe(pid, recorded, linked)}
 
     def restart_request(self):
         # This socket is inherited only by the deployment worker, never HTTP.

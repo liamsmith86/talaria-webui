@@ -69,13 +69,17 @@ def project_details(action, result):
 PLUGIN_STATES = {"ready", "restart_required", "unsupported_hermes"}
 
 
-async def hermes_release(client):
-    """Hermes's version against Talaria's minimum; an unknown version is never called too old."""
+async def detailed_health(client):
     try:
         health = await client.request("GET", "/health/detailed", timeout=3)
     except APIError:
-        health = None
-    version = health.get("version") if isinstance(health, dict) else None
+        return {}
+    return health if isinstance(health, dict) else {}
+
+
+def hermes_release(health):
+    """Hermes's version against Talaria's minimum; an unknown version is never called too old."""
+    version = health.get("version")
     version = version[:40] if isinstance(version, str) else ""
     return {"version": version, "minimum": HERMES_MINIMUM, "supported": hermes_supported(version)}
 

@@ -13,7 +13,8 @@ from .hermes_plugin.release import fingerprint
 from .maintenance import DeploymentError, locked
 
 
-def hermes_managed(home):
+def hermes_install(home):
+    """How Hermes installed this plugin: "catalog", "git" or "other"; None if it didn't."""
     metadata = home / "plugins/.install-metadata.json"
     try:
         with metadata.open() as file:
@@ -27,11 +28,19 @@ def hermes_managed(home):
             "Cannot verify Hermes plugin ownership; nothing was changed."
         ) from exc
     target = home / "plugins/talaria-webui"
-    return (
-        "talaria-webui" in data
-        or (target / ".git").exists()
-        or (target / ".hermes-catalog.json").exists()
-    )
+    record = data.get("talaria-webui")
+    # Hermes's record holds a catalog install's provenance; newer Hermes copies it into the tree.
+    if (isinstance(record, dict) and isinstance(record.get("catalog"), dict)) or (
+        target / ".hermes-catalog.json"
+    ).exists():
+        return "catalog"
+    if (target / ".git").exists():
+        return "git"
+    return "other" if "talaria-webui" in data else None
+
+
+def hermes_managed(home):
+    return hermes_install(home) is not None
 
 
 def require_bundled_target(home):
