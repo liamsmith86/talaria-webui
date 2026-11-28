@@ -12,20 +12,20 @@ from .hermes_plugin.release import (
 )
 
 
-def hermes_supported(version):
-    """Whether a Hermes version meets Talaria's minimum, or None when it can't be read."""
+def hermes_supported(version, minimum=HERMES_MINIMUM):
+    """Whether a Hermes version meets a minimum, Talaria's by default; None if it can't be read."""
     match = re.match(r"v?(\d+)\.(\d+)\.(\d+)", version) if isinstance(version, str) else None
     if not match:
         return None
-    return tuple(map(int, match.groups())) >= tuple(map(int, HERMES_MINIMUM.split(".")))
+    return tuple(map(int, match.groups())) >= tuple(map(int, minimum.split(".")))
 
 
-def outdated_hermes(version):
+def outdated_hermes(version, minimum=HERMES_MINIMUM):
     """Why this Hermes can't take Talaria's plugin; None if it can or its version is unknown."""
-    if hermes_supported(version) is not False:
+    if hermes_supported(version, minimum) is not False:
         return None
     return (
-        f"Talaria needs Hermes {HERMES_MINIMUM} or later, and this is Hermes {version}. "
+        f"Talaria needs Hermes {minimum} or later, and this is Hermes {version}. "
         "Update Hermes, then try again."
     )
 

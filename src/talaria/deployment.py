@@ -534,7 +534,11 @@ class Deployment:
                     "Activation failed and service recovery needs attention. "
                     "The recovery journal has been retained. Run talaria status."
                 ) from recovery
-            raise DeploymentError("Activation failed; the previous release was restored.") from exc
+            # Say why: the cause is often one the user can fix, such as an outdated Hermes.
+            reason = f" {exc}" if isinstance(exc, DeploymentError) else ""
+            raise DeploymentError(
+                f"Activation failed; the previous release was restored.{reason}"
+            ) from exc
 
     def cleanup(self):
         keep = {

@@ -166,7 +166,7 @@ def main(argv, *, owner=None, report=print):
         run_as_owner(home, args.source, args.restart, args.hermes_command, owner=owner)
         return
     if python := find_hermes_python(home, command=args.hermes_command):
-        require_supported_hermes(home, python, owner)
+        require_supported_hermes(home, args.source, python, owner)
     restart = (
         (lambda target: restart_and_verify(home, target, args.hermes_command, owner=owner))
         if args.restart

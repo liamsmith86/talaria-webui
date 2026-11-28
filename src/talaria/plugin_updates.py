@@ -9,7 +9,7 @@ import httpx
 
 from .deployment import Deployment, DeploymentError, locked, write_json
 from .hermes_owner import execution_identity, select_owner, validate_execution
-from .hermes_plugin.release import fingerprint
+from .hermes_plugin.release import fingerprint, read_field
 from .hermes_runtime import hermes_runtime
 
 
@@ -34,7 +34,7 @@ def run_as_owner(home, source, restart=True, command=None, *, owner=None):
     python = find_hermes_python(home, command=command)
     if python is None:
         raise DeploymentError("Cannot locate Hermes's Python for local plugin maintenance.")
-    require_supported_hermes(home, python, owner)
+    require_supported_hermes(home, source, python, owner)
     python = validate_execution(home, python, owner)
     python, _ = hermes_runtime(python, env=env, cwd=home, identity=identity)
     python = validate_execution(home, python, owner)
@@ -46,12 +46,17 @@ def run_as_owner(home, source, restart=True, command=None, *, owner=None):
     run(python, home, source, owner, identity, env, verify)
 
 
-def require_supported_hermes(home, python, owner):
-    """Refuse before changing files: Hermes wouldn't load a plugin that requires a newer one."""
+def require_supported_hermes(home, source, python, owner):
+    """Refuse before changing files: Hermes won't load a plugin that requires a newer Hermes. The
+    source's own requirement, so restoring an older release's plugin still works."""
     from .plugin_status import outdated_hermes
     from .setup import hermes_request
 
-    if reason := outdated_hermes(hermes_request(python, home, owner=owner).get("version")):
+    minimum = read_field(source, "requires_hermes", ">=")
+    if not minimum:
+        return
+    version = hermes_request(python, home, owner=owner).get("version")
+    if reason := outdated_hermes(version, minimum):
         raise DeploymentError(reason)
 
 
