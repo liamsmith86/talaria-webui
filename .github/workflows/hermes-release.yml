@@ -1,0 +1,57 @@
+name: Hermes release watch
+
+# Hermes can't send this repository events, so this checks hourly for a new stable release and
+# runs the full CI against it. That run opens an issue if it fails, and so does this check.
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hermes-release-watch
+
+jobs:
+  watch:
+    name: Test a new Hermes release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Start CI for a release no run has tested
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          retry() { for wait in 20 40 0; do "$@" && return; sleep "$wait"; done; return 1; }
+          tag=$(retry gh release view --repo NousResearch/hermes-agent --json tagName --jq .tagName)
+          if [[ ! $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unexpected Hermes release tag: $tag"
+            exit 1
+          fi
+          # Each release gets one run, named by ci.yml's run-name, whatever its result.
+          runs=$(retry gh run list --workflow ci.yml --event workflow_dispatch --limit 200 \
+            --json displayTitle --jq '.[].displayTitle')
+          if grep -Fxq "CI on Hermes $tag" <<<"$runs"; then
+            echo "Hermes $tag has already been tested."
+          else
+            retry gh workflow run ci.yml --ref main -f full=true -f hermes_release="$tag"
+            echo "Started CI on Hermes $tag."
+          fi
+      - name: Report to the owner
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RESULT: ${{ job.status }}
+          LINK: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash .github/scripts/alert.sh "The Hermes release watch is failing" "$RESULT" "$LINK"

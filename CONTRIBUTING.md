@@ -48,6 +48,13 @@ Releases run every browser test on Chromium and those listed in `CROSS_BROWSER` 
 on Firefox and WebKit; add a file there if its behavior can differ between
 browsers. Every browser test runs on every browser nightly.
 
+The nightly run also tests Hermes `main` and its latest release. Hermes can't notify this
+repository, so `.github/workflows/hermes-release.yml` checks hourly for a new stable release and
+starts the full CI on it, named "CI on Hermes <tag>". To test a release again, run CI with that tag
+as `hermes_release`. When the nightly run, a release run or the hourly check fails, it opens an
+issue, comments on it at each later failure and closes it once it passes. GitHub emails those to
+anyone watching the repository.
+
 A change doesn't need a test of its own. Add one only for behavior that could
 plausibly break again and that nothing else covers, and delete tests that don't
 meet that bar. Keep real sessions and credentials out of tests. Don't bypass the lockfiles or
