@@ -29,10 +29,7 @@ function localSteps(local, serving) {
   if (local.managed === "hermes" && stale && local.source === "other")
     return [[msg("Hermes can't update this copy. To replace it with Talaria's copy, which Talaria keeps up to date, run as {owner}:"), local.commands.switch]];
   if (local.managed === "hermes" && stale)
-    return [
-      [msg("To update it to version {bundled}, run as {owner}:"), local.commands.hermes_update],
-      ...(local.source === "catalog" ? [[msg("If Hermes says it's already up to date, its catalog doesn't have version {bundled} yet. Switch to Talaria's copy instead, which Talaria keeps up to date:"), local.commands.switch]] : []),
-    ];
+    return [[msg("To update it to version {bundled}, run as {owner}:"), local.commands.hermes_update]];
   if (local.managed === "talaria" && local.status !== "current" && local.status !== "newer")
     return [[msg("Talaria keeps this plugin up to date. To install version {bundled} now, use the button below."), null]];
   if (local.managed === "manual" && local.status !== "current" && local.status !== "newer")

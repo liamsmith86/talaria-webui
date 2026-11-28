@@ -231,7 +231,6 @@
   "Hermes would like to run this command.": "Hermesがこのコマンドの実行を求めています。",
   "Hermes’s estimate: {cost}": "Hermesの見積もり：{cost}",
   "High": "高い",
-  "If Hermes says it's already up to date, its catalog doesn't have version {bundled} yet. Switch to Talaria's copy instead, which Talaria keeps up to date:": "Hermesが最新だと表示する場合、カタログにはまだバージョン{bundled}がありません。代わりに、Talariaが最新に保つTalaria側のコピーに切り替えてください：",
   "Image attachment": "添付画像",
   "Image attachments": "添付画像",
   "Image unavailable in this transcript": "この会話履歴では画像を表示できません",

@@ -231,7 +231,6 @@
   "Hermes would like to run this command.": "Hermes 请求执行此命令。",
   "Hermes’s estimate: {cost}": "Hermes 预估：{cost}",
   "High": "高",
-  "If Hermes says it's already up to date, its catalog doesn't have version {bundled} yet. Switch to Talaria's copy instead, which Talaria keeps up to date:": "如果 Hermes 提示已是最新，说明其目录中还没有版本 {bundled}。请改用 Talaria 自带的副本（由 Talaria 保持最新）：",
   "Image attachment": "图片附件",
   "Image attachments": "图片附件",
   "Image unavailable in this transcript": "此记录中的图片不可用",

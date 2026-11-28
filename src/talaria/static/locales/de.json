@@ -232,7 +232,6 @@
   "Hermes would like to run this command.": "Hermes möchte diesen Befehl ausführen.",
   "Hermes’s estimate: {cost}": "Schätzung von Hermes: {cost}",
   "High": "Hoch",
-  "If Hermes says it's already up to date, its catalog doesn't have version {bundled} yet. Switch to Talaria's copy instead, which Talaria keeps up to date:": "Meldet Hermes, dass es bereits aktuell ist, enthält sein Katalog Version {bundled} noch nicht. Wechsle stattdessen zur Kopie von Talaria, die Talaria aktuell hält:",
   "Image attachment": "Bildanhang",
   "Image attachments": "Bildanhänge",
   "Image unavailable in this transcript": "Bild in diesem Verlauf nicht verfügbar",

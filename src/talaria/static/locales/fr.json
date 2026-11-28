@@ -233,7 +233,6 @@
   "Hermes would like to run this command.": "Hermes souhaite exécuter cette commande.",
   "Hermes’s estimate: {cost}": "Estimation de Hermes : {cost}",
   "High": "Élevé",
-  "If Hermes says it's already up to date, its catalog doesn't have version {bundled} yet. Switch to Talaria's copy instead, which Talaria keeps up to date:": "Si Hermes indique qu’il est déjà à jour, son catalogue n’a pas encore la version {bundled}. Passez plutôt à la copie de Talaria, que Talaria tient à jour :",
   "Image attachment": "Image jointe",
   "Image attachments": "Images jointes",
   "Image unavailable in this transcript": "Image indisponible dans cette transcription",
