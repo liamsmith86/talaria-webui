@@ -471,3 +471,41 @@
     justify-content: space-between;
   }
 }
+.commands {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 8px 0 14px;
+  padding: 10px 10px 10px 14px;
+  background: var(--sidebar);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.command-lines {
+  flex: 1;
+  min-width: 0;
+}
+/* A long command wraps under itself, so each one still starts at the left edge. */
+.command-lines code {
+  display: block;
+  padding-left: 2ch;
+  text-indent: -2ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font:
+    12px/1.7 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+}
+.command-copy {
+  flex: none;
+  font-size: 11px;
+  padding: 3px 7px;
+  color: var(--muted);
+  border-radius: 4px;
+}
+.command-copy:hover {
+  color: var(--accent-text);
+  background: var(--surface);
+}

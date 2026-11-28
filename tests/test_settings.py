@@ -73,11 +73,13 @@ def test_extended_access_explains_the_plugin_in_the_local_hermes(
     expect(access).to_contain_text(
         "Plugin installed: version 1.6.2 · Source: Hermes plugin catalog"
     )
+    expect(access).to_contain_text(f"Update available · Latest: {PLUGIN_VERSION}")
     expect(access).to_contain_text(
-        f"To update it to version {PLUGIN_VERSION}, run as {getpass.getuser()}:"
+        "To update the Talaria plugin, run the following commands on Hermes Agent as "
+        f"{getpass.getuser()}:"
     )
-    expect(access.locator("code")).to_have_text(
-        f"{hermes} plugins update talaria-webui\n{hermes} gateway restart"
+    expect(access.locator(".commands code")).to_have_text(
+        [f"{hermes} plugins update talaria-webui", f"{hermes} gateway restart"]
     )
     expect(access.get_by_text("Install the plugin on your Hermes host")).to_have_count(0)
     access.scroll_into_view_if_needed()

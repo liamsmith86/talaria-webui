@@ -2,7 +2,6 @@ import { html, useEffect, useState, Icon } from "./lib.js";
 import { api } from "./api.js";
 import { state, update, useStore } from "./store.js";
 import { Installation } from "./installation.js";
-import { Markdown } from "./markdown.js";
 import { msg, rich, t } from "./i18n.js";
 
 const releaseLabels = {
@@ -29,14 +28,42 @@ function localSteps(local, serving) {
   if (local.managed === "hermes" && stale && local.source === "other")
     return [[msg("Hermes can't update this copy. To replace it with Talaria's copy, which Talaria keeps up to date, run as {owner}:"), local.commands.switch]];
   if (local.managed === "hermes" && stale)
-    return [[msg("To update it to version {bundled}, run as {owner}:"), local.commands.hermes_update]];
+    return [[msg("To update the Talaria plugin, run the following commands on Hermes Agent as {owner}:"), local.commands.hermes_update]];
   if (local.managed === "talaria" && local.status !== "current" && local.status !== "newer")
-    return [[msg("Talaria keeps this plugin up to date. To install version {bundled} now, use the button below."), null]];
+    return [[msg("Talaria keeps this plugin up to date. To update it now, use the button below."), null]];
   if (local.managed === "manual" && local.status !== "current" && local.status !== "newer")
-    return [[msg("To update it to version {bundled}, run as {owner}:"), local.commands.refresh]];
+    return [[msg("To update the Talaria plugin, run the following commands on Hermes Agent as {owner}:"), local.commands.refresh]];
   if (!serving && local.status === "current")
     return [[msg("To enable it and restart Hermes, run as {owner}:"), local.commands.enable]];
   return [];
+}
+
+const localStatus = {
+  outdated: msg("Update available \u00b7 Latest: {bundled}"),
+  unknown: msg("Update available \u00b7 Latest: {bundled}"),
+  current: releaseLabels.current,
+  newer: releaseLabels.newer,
+  different: releaseLabels.different,
+};
+
+// Shell commands for a narrow panel: long ones wrap, and one button copies them all.
+function Commands({ commands }) {
+  const [copied, setCopied] = useState("");
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(commands.join("\n"));
+      setCopied("copied");
+      setTimeout(() => setCopied(""), 1800);
+    } catch {
+      setCopied("failed");
+    }
+  }
+  return html`<div class="commands">
+    <div class="command-lines">${commands.map((command) => html`<code key=${command}>${command}</code>`)}</div>
+    <button type="button" class="command-copy" onClick=${copy}>
+      ${copied === "copied" ? t("Copied") : copied === "failed" ? t("Select text to copy") : t("Copy")}
+    </button>
+  </div>`;
 }
 
 // Steps wait while Hermes itself is too old, since it would refuse the plugin.
@@ -46,10 +73,11 @@ function LocalPlugin({ local, serving, steps }) {
   return html`<div class="local-plugin">
     <p class="field-help" role="status">
       ${label ? t(label, values) : t("Plugin not installed on this server.")}
+      ${localStatus[local.status] && html`<br />${t(localStatus[local.status], values)}`}
     </p>
     ${steps && localSteps(local, serving).map(([text, commands]) => html`<div key=${text}>
       <p class="field-help">${t(text, values)}</p>
-      ${commands && html`<${Markdown} text=${"```sh\n" + commands.join("\n") + "\n```"} />`}
+      ${commands && html`<${Commands} commands=${commands} />`}
     </div>`)}
   </div>`;
 }
@@ -100,7 +128,7 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
       <h3>${t("Extended access")}</h3>
       <span class="quiet-badge">${t("Optional")}</span>
     </div>
-    ${available && html`<p class="field-help" role="status">
+    ${available && !local && html`<p class="field-help" role="status">
       ${release?.version && `${release.version} · `}${t(releaseLabels[release?.status] || releaseLabels.unknown)}
     </p>`}
     <div class="access-status" role="status">

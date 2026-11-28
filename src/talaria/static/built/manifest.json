@@ -1,7 +1,7 @@
 {
   "version": 1,
   "inputs": {
-    "src/talaria/static/access-settings.js": "a27c81c0404b9069090ae8b038b8bd4496ef1f1e3aa16d16124ed60b7ee8dd9b",
+    "src/talaria/static/access-settings.js": "fdace7f59b82bb91c3a452ee75fb732b95b3e9a2db210e92faa439ea20bc9f07",
     "src/talaria/static/api.js": "21af95aba27c3da81bb72bd891ebaaefa6280cc705e8d07a73a8ff5b1a1be6b7",
     "src/talaria/static/app.js": "af7021606e1368628d3f020c1418ddc17e47a0685e8a59e6c8db9d6cfccce040",
     "src/talaria/static/app.webmanifest": "2980c46c6cd1a96648c112d78b3ba344ba3d27a7956b0b0aaa79413d2d23dcb0",
@@ -30,13 +30,13 @@
     "src/talaria/static/installation.js": "2444461c44e8d4ca5456d2098cdb94045073a444ee5241eccba37045cfab2512",
     "src/talaria/static/language.js": "3856243e82ea3d401ccc992511669df6bfde511b86156c8508cad365bd45ca3c",
     "src/talaria/static/lib.js": "d68ff8ca2ec3975d5d62c16e4f384be645f45de728441292469c9683455ff485",
-    "src/talaria/static/locales/de.json": "cca506fb12a5b5207ae3ccacd4ae80b79af532262d5c62604b0dc302e51c8b1a",
-    "src/talaria/static/locales/en.json": "7efa0cf147049996280af871a7df5b3e295aa820896ce40bbab7669b28d55cff",
-    "src/talaria/static/locales/es.json": "b39681a042a01cc566aaf68713b737ff5fda7741a85bdfd1c7de62bbfc2c43bb",
-    "src/talaria/static/locales/fr.json": "6b66c4170e12c6e682d4d1f8a4cd579d6222df22f576d4d150668fd0964f256e",
-    "src/talaria/static/locales/ja.json": "73b5cb5e97c67475b1e6146a7cd86bdfb6e3a29d54e29239edd967b89598acb5",
-    "src/talaria/static/locales/pt-BR.json": "0bbe6b8b643e796bb7e9bd12d86620fa3ddc0c45b614ba600cf79e3e6761778d",
-    "src/talaria/static/locales/zh-Hans.json": "8c28d80111450b76fca9c288d0b0951cb62711fe17975becd0d98788d8da46d8",
+    "src/talaria/static/locales/de.json": "2eaba1795155b5756d9720a9d1138f8c10555ed76c9686a433a15910f347b10e",
+    "src/talaria/static/locales/en.json": "97f91f045035cc1149cc2a556924fbde4f4c2f0a3b3599a51364d0c45a940a8a",
+    "src/talaria/static/locales/es.json": "cff13a7b94ed60d16429ce69ca9c9b563c31b39c38a98c60965f57bfaf9c8f86",
+    "src/talaria/static/locales/fr.json": "c4ecffae19a7aab519f711a602481e68f7c20c40214d9de9a0d491569d6959f8",
+    "src/talaria/static/locales/ja.json": "3b1585751689b89210f058b0691441c922f00c5ec07555f05e99a33a3cf21e3f",
+    "src/talaria/static/locales/pt-BR.json": "3c221897eb2b8ab2cc8e51aed91d3b0348064b598b66b4ec674e0c9adfdaac87",
+    "src/talaria/static/locales/zh-Hans.json": "aac7bd8d2b8d8153930e102c67f58dd99f9832e86d701269a9464080b9a7e70d",
     "src/talaria/static/mark.svg": "f370a3a4abb2a2e05e0e39335303041dfce6ee72947491386e9fabfdad8e9fd4",
     "src/talaria/static/markdown-stream.js": "cad2fc593b8c75e48dac8039c6b2b1701b9cda1ae678d0242ddd61ee617d558d",
     "src/talaria/static/markdown.js": "7bc0bd51f2159d8a3f88af6c2c94d6afddd4e535415dd2b0b86b7b26d90f42ca",
@@ -66,7 +66,7 @@
     "src/talaria/static/styles/dialogs.css": "9318bd18caec5a6150d12aefc0fd9694e021225bcddc6f75c12ebbf692fff54d",
     "src/talaria/static/styles/layout.css": "34029ae16d7e9c68c30071edd5575524f553a4c2fc4d8d72cf537d2dc4e00474",
     "src/talaria/static/styles/responsive.css": "aa54f8751ea310e2809ccb2a04a03333f8bd412a84d5a9d1d6941278b727454f",
-    "src/talaria/static/styles/settings.css": "3c9a8c69494760ea9d4322dfb7e0868999aaf30fdc809d357d5193a57dbeafaf",
+    "src/talaria/static/styles/settings.css": "09955cdfba54eb59e26aa45b18dba708e4f0755e0b2786c7cf039b6c9939ca84",
     "src/talaria/static/styles/theme.css": "21fa2e9b67da736dddf9efd8a041634aa80aff9d9cb62441942f66bef0d762f0",
     "src/talaria/static/tool-activity.js": "dbbe754f82e900e31e93784d4466bb4acd2774f6c9e41a47eede521d98a1c664",
     "src/talaria/static/tool-code.js": "befe27447170699f668babbf800f4f750cec5d6bd3dedef8474126257fc097a2",
@@ -87,14 +87,14 @@
     "src/talaria/static/vendor/purify.js": "1a06b721ad8b46d6174b21f22ea70290aaf3e5a81d65af3b7178113953f7c9b1"
   },
   "outputs": {
-    "app.js": "312718fa4d893408d67fb546d225d42e50baf597e24d146675bcbb3fa5128e89",
+    "app.js": "26ea4e5d86330132cf0443260f03c51d75e67ef21c1eb08fa3bb1a9506132e16",
     "app.js.LEGAL.txt": "5e8bec2691a57f15156bb556fc6a9433badc707bbf5675c76607b4c43f2ffbf7",
-    "app.js.map": "f932684515ba554af3e8c12873bdbe94845c384504e506c21d8fb88af18602d7",
+    "app.js.map": "96bcea8d6d92f083806e0c56326030defabfeb448e662accfccb26b51fcd63c5",
     "appearance.js": "ee72fb422aa49fff0fccb147d55442d115a5bcff3d244e8479d6c696448b213a",
     "boot.js": "1f525fc72f6442a7286e25a1379aa92432e95dc0bb66109240207f4c72c43f3c",
     "demo.js": "a76c6a7515e24be40ef5270543e3dede8edf882e83c08f0c485432215c6b21d7",
     "demo.js.map": "a2139e4ecf725ba5d3eba1db535710fbdeda2c42a38ece9be91ce7f51dbe2248",
     "index.html": "80820e8146097f515130ebd4edb58ce8178ab9c2762f0b3732eb3b4901fd516c",
-    "styles.css": "5fd3da17c37263f3aa84bd0b576d618629cf460303b9436934e6c1a7d18f55b9"
+    "styles.css": "23bccaeb64c0799d2b10ec99609a584bb2c740d4c25df8c58e474697252cc00d"
   }
 }
