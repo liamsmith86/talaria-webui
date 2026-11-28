@@ -195,7 +195,7 @@ def test_root_maintenance_rejects_another_accounts_interpreter(root_paths, monke
             )
         else:
             plugin_updates.run_as_owner(
-                Path("/fixture/home"), None, restart=False, owner=account(1002)
+                Path("/fixture/home"), Path("/fixture/source"), restart=False, owner=account(1002)
             )
 
     with pytest.raises(DeploymentError, match="owner or root"):

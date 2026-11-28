@@ -34,8 +34,8 @@ def run_as_owner(home, source, restart=True, command=None, *, owner=None):
     python = find_hermes_python(home, command=command)
     if python is None:
         raise DeploymentError("Cannot locate Hermes's Python for local plugin maintenance.")
-    require_supported_hermes(home, source, python, owner)
     python = validate_execution(home, python, owner)
+    require_supported_hermes(home, source, python, owner)
     python, _ = hermes_runtime(python, env=env, cwd=home, identity=identity)
     python = validate_execution(home, python, owner)
     verify = (
