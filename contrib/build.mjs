@@ -67,17 +67,31 @@ const templates = {
 const document = await fs.readFile(path.join(source, "index.html"), "utf8");
 const styles = [...document.matchAll(/href="__TALARIA_BASE__static\/(styles\/[^"]+\.css)"/g)]
   .map((match) => match[1]);
-const result = await build({
-  absWorkingDir: root,
-  entryPoints: { app: "talaria:app" },
-  outdir: output, entryNames: "[name]",
+// A sibling module the bundle imports by URL rather than including.
+const sibling = (name) => ({
+  name: `sibling ${name}`,
+  setup(builder) {
+    builder.onResolve({ filter: new RegExp(`^\\./${name.replace(".", "\\.")}$`) }, ({ resolveDir }) =>
+      resolveDir === source ? { path: `./${name}`, external: true } : undefined);
+  },
+});
+const scripts = {
+  absWorkingDir: root, outdir: output, entryNames: "[name]",
   bundle: true, format: "esm", platform: "browser", charset: "utf8",
   target: ["es2022"], treeShaking: true, minify: true,
-  sourcemap: "external", legalComments: "linked",
+  sourcemap: "external", legalComments: "linked", metafile: true,
   define: { "process.env.NODE_ENV": '"production"', module: "undefined", global: "undefined" },
-  plugins: [templates], write: false,
-});
-const artifacts = new Map(result.outputFiles.map((file) => [path.basename(file.path), file.contents]));
+  write: false,
+};
+// The demo transport loads only on the demo, so it stays out of every visitor's startup script.
+const [result, demo] = await Promise.all([
+  build({ ...scripts, entryPoints: { app: "talaria:app" }, plugins: [templates, sibling("demo.js")] }),
+  build({ ...scripts, entryPoints: { demo: path.join(source, "demo.js") }, plugins: [templates, sibling("app.js")] }),
+]);
+const copies = Object.keys(demo.metafile.inputs).filter((input) => input in result.metafile.inputs);
+if (copies.length) throw new Error(`demo.js must import ${copies.join(", ")} through app.js`);
+const artifacts = new Map([...result.outputFiles, ...demo.outputFiles]
+  .map((file) => [path.basename(file.path), file.contents]));
 
 async function optimizeScripts() {
   await Promise.all([...artifacts.keys()].filter((name) => name.endsWith(".js")).map(async (name) => {

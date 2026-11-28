@@ -38,7 +38,7 @@ def verify_views(home):
     store = plugin_store(db)
     adapter = APIServerAdapter(PlatformConfig(enabled=True, extra={"key": "fixture-key"}))
     try:
-        assert search.supported(store, adapter)
+        assert search.supported(adapter)
         db.create_session("visible", "api_server")
         target = db.append_message("visible", "user", "uncommonneedle 故事")
         db.append_message("visible", "assistant", "An answer")

@@ -56,6 +56,13 @@ import { t, useLanguage } from "./i18n.js";
 import { sourceLabel } from "./content.js";
 
 export { state, update, openSession, refreshSessions } from "./store.js";
+// For demo.js, which the build keeps out of this bundle.
+export { api, RequestError, setTransport } from "./api.js";
+export { randomId } from "./lib.js";
+export { plainContent } from "./content.js";
+export { rememberSession, selectedSession } from "./session-navigation.js";
+export { msg } from "./i18n.js";
+export { describeCall } from "./tool-activity.js";
 
 function Login({ development }) {
   const [password, setPassword] = useState("");

@@ -210,7 +210,7 @@ export function applyEvent(live, event) {
     next.clarification = null;
     next.status = "running";
   }
-  // Hermes 0.22.1+ asks through its session authority, keyed by prompt and generation.
+  // A session authority asks itself, keyed by prompt and generation.
   if (type === "clarify.request" && typeof event.prompt_id === "string") {
     next.clarification = nativePrompt(event);
     next.status = "waiting_for_input";

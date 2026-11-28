@@ -12,7 +12,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 from gateway.config import PlatformConfig
 from gateway.platforms.api_server import APIServerAdapter
-from hermes_fixtures import StoreFixtures, native, open_db
+from hermes_fixtures import native, open_db
 
 from talaria.hermes_plugin.bridge import wire
 
@@ -99,13 +99,6 @@ async def main():
     db.close()
 
 
-def branch_writes(db):
-    """Where a branch looks up its title and creates the child, and those methods' names."""
-    if isinstance(db, StoreFixtures):
-        return db.handle.sessions, ("get_by_title", "create")
-    return db, ("get_session_by_title", "create_session")
-
-
 async def verify_failed_branches(client, adapter, db, headers):
     # Default naming must be validated before closing or copying the source.
     db.create_session("long-title", "discord")
@@ -123,8 +116,8 @@ async def verify_failed_branches(client, adapter, db, headers):
     db.append_message("racing-parent", "user", "Synthetic original")
     db.append_message("racing-parent", "assistant", "Synthetic reply")
     barrier = threading.Barrier(2)
-    sessions, (lookup_name, create_name) = branch_writes(db)
-    lookup, create = getattr(sessions, lookup_name), getattr(sessions, create_name)
+    sessions = db.handle.sessions
+    lookup, create = sessions.get_by_title, sessions.create
     created = []
 
     def simultaneous_lookup(title):
@@ -135,9 +128,7 @@ async def verify_failed_branches(client, adapter, db, headers):
 
     def observed_create(*args, **kwargs):
         result = create(*args, **kwargs)
-        spec = args[0] if isinstance(db, StoreFixtures) else None
-        session_id = spec.session_id if spec else args[0]
-        parent = spec.parent_session_id if spec else kwargs.get("parent_session_id")
+        session_id, parent = args[0].session_id, args[0].parent_session_id
         if parent == "racing-parent":
             # The native INSERT itself must mark the child, not a later patch.
             assert (
@@ -156,8 +147,8 @@ async def verify_failed_branches(client, adapter, db, headers):
         return response.status, await response.json()
 
     with (
-        patch.object(sessions, lookup_name, simultaneous_lookup),
-        patch.object(sessions, create_name, observed_create),
+        patch.object(sessions, "get_by_title", simultaneous_lookup),
+        patch.object(sessions, "create", observed_create),
     ):
         results = await asyncio.gather(branch(), branch())
     assert sorted(status for status, _ in results) == [201, 400], results
@@ -166,7 +157,7 @@ async def verify_failed_branches(client, adapter, db, headers):
     assert len(surviving) == 1  # The rejected operation's child was rolled back.
     assert db.resolve_resume_session_id("racing-parent") == "racing-parent"
     assert adapter._session_db is native(db)
-    assert getattr(sessions, lookup_name) == lookup and getattr(sessions, create_name) == create
+    assert sessions.get_by_title == lookup and sessions.create == create
     assert db.get_session("racing-parent")["end_reason"] is None
 
 
@@ -175,13 +166,9 @@ async def verify_failed_copy(client, db, headers):
     db.append_message("copy-failure-parent", "user", "Keep this source untouched")
     source = db.get_session("copy-failure-parent")
     count = db.session_count()
-    # The copy Hermes makes before 0.23.3, and the one the plugin makes from 0.23.3.
-    messages, copy = (
-        (db.handle.messages, "replace_transcript")
-        if isinstance(db, StoreFixtures)
-        else (db, "replace_messages")
-    )
-    with patch.object(messages, copy, side_effect=ValueError("Synthetic copy failure")):
+    with patch.object(
+        db.handle.messages, "replace_transcript", side_effect=ValueError("Synthetic copy failure")
+    ):
         response = await client.post(
             "/talaria/v1/sessions/copy-failure-parent/fork",
             headers=headers,

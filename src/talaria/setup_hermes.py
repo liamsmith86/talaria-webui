@@ -44,20 +44,21 @@ def hermes_version():
     try:
         from hermes_cli.version_info import get_version_info
     except ImportError:
-        # 0.21.5 carries the release version in the package. From 0.21.6 a source checkout
-        # without an install stamp reports 0.0.0 there, and version_info reads Git instead.
+        # Older than Talaria supports, but setup names the version when it refuses it. 0.21.5
+        # carries it in the package; from 0.21.6 a source checkout reads Git instead.
         from hermes_cli import __version__
 
         return __version__
     return get_version_info().display_version
 
 
-def unattended_restart():
-    """From 0.22.3 `hermes gateway restart` without a terminal refuses while turns, cron jobs or
-    delegations run, and takes the flags its own updater uses to proceed."""
-    from importlib.util import find_spec
+def gateway_home(home):
+    """The default profile's home when its gateway serves this named profile, which then has no
+    listener of its own. Only a profile set to ``gateway.standalone`` runs its own gateway."""
+    from hermes_cli.gateway_runtime_multiplex import implied_host_root
 
-    return find_spec("hermes_cli.gateway_lifecycle_guards") is not None
+    root = implied_host_root(home)
+    return None if root is None else str(root)
 
 
 def configure(home, request):
@@ -102,10 +103,9 @@ def configure(home, request):
         "host": extra.get("host", "127.0.0.1"),
         "port": extra.get("port", 8642),
         "key": key,
-        "multiplex": config.multiplex_profiles,
+        "gateway_home": gateway_home(home),
         "changed": changed,
         "version": hermes_version(),
-        "unattended_restart": unattended_restart(),
         "plugin_enabled": bool(
             request.get("plugin")
             or (

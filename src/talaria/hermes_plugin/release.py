@@ -13,11 +13,12 @@ def fingerprint(directory):
     return digest.hexdigest()
 
 
-def read_version(directory):
+def read_field(directory, field, prefix=""):
+    """A version-shaped field of the manifest, such as ``version`` or ``requires_hermes``."""
     try:
         with (Path(directory) / "plugin.yaml").open() as manifest:
             match = re.search(
-                r"^version: *[\"\']?(\d{1,4}\.\d{1,4}\.\d{1,4})[\"\']? *$",
+                rf"^{field}: *[\"\']?{prefix}(\d{{1,4}}\.\d{{1,4}}\.\d{{1,4}})[\"\']? *$",
                 manifest.read(4096),
                 re.MULTILINE,
             )
@@ -26,5 +27,11 @@ def read_version(directory):
         return ""
 
 
+def read_version(directory):
+    return read_field(directory, "version")
+
+
 PLUGIN_VERSION = read_version(Path(__file__).parent)
+# Talaria's own minimum too: setup, plugin updates and Settings check Hermes against it.
+HERMES_MINIMUM = read_field(Path(__file__).parent, "requires_hermes", ">=")
 LOADED_REVISION = fingerprint(Path(__file__).parent)

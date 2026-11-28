@@ -11,7 +11,7 @@ from starlette.responses import JSONResponse, StreamingResponse
 
 from . import __version__, auth
 from .content import MAX_CHAT_BODY, REASONING, image_inputs
-from .extensions import PREFIX, Extensions, change_session, discover, numeric
+from .extensions import PREFIX, Extensions, change_session, discover, hermes_release, numeric
 from .hermes import (
     IDENTIFIER,
     APIError,
@@ -199,9 +199,10 @@ async def capabilities(request: Request):
     tasks = [
         asyncio.create_task(state.hermes.request("GET", "/v1/capabilities")),
         asyncio.create_task(discover(state.hermes)),
+        asyncio.create_task(hermes_release(state.hermes)),
     ]
     try:
-        caps, extended = await asyncio.gather(*tasks)
+        caps, extended, release = await asyncio.gather(*tasks)
     finally:
         # Keep both reads inside this request's connection lifetime, including
         # when required discovery fails or the browser disconnects.
@@ -217,6 +218,7 @@ async def capabilities(request: Request):
             **caps,
             "talaria_agent": agent_identity(caps, extended),
             "talaria_extensions": extended,
+            "talaria_hermes": release,
         }
     )
 
@@ -472,7 +474,7 @@ async def run(request: Request):
 
 
 def prompt_answer(data, field, value):
-    """Hermes 0.22.1+ session authority settles prompts by ID and execution generation."""
+    """Hermes's session authority settles prompts by ID and execution generation."""
     generation = data["execution_generation"]
     if type(generation) is not int or generation < 0:
         raise APIError("Invalid session or run identifier.", 400, "invalid_id")

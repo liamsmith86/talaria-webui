@@ -443,3 +443,20 @@ def test_custom_hermes_command_identifies_its_own_python(tmp_path):
     command.write_text("#!/custom/python\n")
     # Existing standard Hermes installations must not override an explicit CLI.
     assert setup.find_hermes_python(tmp_path / "profile", command=command) == python
+
+
+def test_plugin_updates_check_hermes_against_the_plugin_they_install(tmp_path, monkeypatch):
+    monkeypatch.setattr(setup, "hermes_request", lambda *a, **kw: {"version": "0.22.5"})
+    source = bundle(tmp_path / "source", "new")
+
+    def requires(minimum):
+        (source / "plugin.yaml").write_text(
+            f'name: talaria-webui\nversion: "1"\nrequires_hermes: ">={minimum}"\n'
+        )
+
+    requires("0.23.5")
+    with pytest.raises(DeploymentError, match=r"needs Hermes 0\.23\.5 .* Hermes 0\.22\.5"):
+        plugin_updates.require_supported_hermes(tmp_path, source, None, None)
+    # Rolling back restores an older release's plugin, which this Hermes can still load.
+    requires("0.21.5")
+    plugin_updates.require_supported_hermes(tmp_path, source, None, None)

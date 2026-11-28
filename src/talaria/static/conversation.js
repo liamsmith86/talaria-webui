@@ -298,7 +298,7 @@ function Approval({ sid, request }) {
   }
   const choices = request.choices || ["once", "deny"];
   const unavailable = !supports("run_approval_response");
-  // Hermes before 0.22.1 keys a "session" grant to the run. Its session authority, whose
+  // Without a session authority Hermes keys a "session" grant to the run. The authority, whose
   // prompts carry an execution generation, keys it to the session until Hermes restarts.
   const sessionScoped = Number.isInteger(request.execution_generation);
   return html`<section class="approval-card" aria-label=${t("Approval required")}>

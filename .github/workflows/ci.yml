@@ -303,10 +303,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Releases cover the oldest supported release, v0.23.1 (the last with SessionDB
-        # storage beside a session authority) and the current stable one, whose store
-        # handle the plugin reads from 0.23.3. Main's lockfile targets 3.14.
-        hermes: ${{ fromJSON((inputs.hermes_latest || github.event_name == 'schedule') && '[{"name":"main","ref":"main","python":"3.14.10"},{"name":"latest release","ref":"latest","python":"3.14.10"}]' || '[{"name":"0.21.5","ref":"f97608f178d1ffeca59860195ab7da295f7c8e5f","python":"3.12.16"},{"name":"v0.23.1","ref":"3b421578588243f920886e6fe79a6faa87ea026e","python":"3.14.10"},{"name":"v0.23.5","ref":"a428f5344f777ccafe389c79d5b09384abef1437","python":"3.14.10"}]') }}
+        # Releases cover the oldest supported release, which is also the current stable one.
+        # When a newer stable ships, add it beside this minimum. Main's lockfile targets 3.14.
+        hermes: ${{ fromJSON((inputs.hermes_latest || github.event_name == 'schedule') && '[{"name":"main","ref":"main","python":"3.14.10"},{"name":"latest release","ref":"latest","python":"3.14.10"}]' || '[{"name":"v0.23.5","ref":"a428f5344f777ccafe389c79d5b09384abef1437","python":"3.14.10"}]') }}
     env:
       HERMES_SOURCE: ${{ github.workspace }}/.local/hermes
       HERMES_DISABLE_LAZY_INSTALLS: '1'

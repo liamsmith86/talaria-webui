@@ -74,6 +74,7 @@ def prepare_gate_repo(destination):
     (catalogs.parent / "i18n.js").write_text('export const languages = [{ code: "en" }];\n')
     (catalogs.parent / "app.js").write_text("export const example = 42;\n")
     (catalogs.parent / "boot.js").write_text("import('./app.js');\n")
+    (catalogs.parent / "demo.js").write_text('export { example } from "./app.js";\n')
     (catalogs.parent / "appearance.js").write_text("window.Prism = { manual: true };\n")
     (catalogs.parent / "index.html").write_text(
         '<html><head><script src="__TALARIA_BASE__static/appearance.js"></script>'

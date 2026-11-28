@@ -66,7 +66,7 @@ def test_catalog_images_and_metadata_follow_the_reviewed_commit():
             "name": "talaria-webui",
             "version": "1.5.0",
             "description": "Plugin description from the manifest.",
-            "requires_hermes": ">=0.21.5",
+            "requires_hermes": ">=0.23.5",
             "provides_hooks": ["pre_api_request"],
             "provides_middleware": ["llm_request"],
         },

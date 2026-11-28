@@ -66,7 +66,7 @@ def revision(ids, content):
 def user_turn(row):
     handoff, user = user_turn_parts(row)
     if handoff is None and user is None and row.get("display_kind") == "internal_notification":
-        # Hermes 0.22.1+ stores each API turn's own message this way; its rewind accepts them.
+        # Hermes stores each API turn's own message this way; its rewind accepts them.
         return user_turn_parts({**row, "display_kind": None})
     return handoff, user
 
@@ -268,7 +268,7 @@ async def dispatch(request, adapter, commands=None):
         )
 
 
-async def capabilities(adapter, store):
+async def capabilities(adapter):
     from hermes_constants import get_hermes_home
 
     name = await asyncio.to_thread(probe, "agent name", read_name, get_hermes_home())
@@ -287,10 +287,10 @@ async def capabilities(adapter, store):
             "live_interactions": context_runs
             and probe("live interactions", live_supported, adapter),
             "profile_context": context.public() if context else {},
-            "rewind": probe("rewind", store.rewindable),
+            "rewind": True,
             # Branching a CLI, messaging or scheduled session leaves that session open.
             "external_session_copies": True,
-            "history_search": probe("history search", search_supported, store, adapter),
+            "history_search": probe("history search", search_supported, adapter),
             "session_activity": probe("session activity", activity_supported, adapter),
             "agent": {"name": name or ""},
         }
@@ -337,10 +337,6 @@ async def session_details(request, store, sid, action):
 
     observations = Observations(get_hermes_home())
     if action == "rewind":
-        if not store.rewindable():
-            return web.json_response(
-                {"error": "Update Hermes to enable session changes."}, status=501
-            )
         data = await request.json()
         if not isinstance(data, dict):
             raise ValueError("Choose a saved message.")
@@ -395,7 +391,7 @@ async def dispatch_action(request, adapter, commands=None):
     if action == "commands" and commands is not None:
         return await commands.dispatch(request, adapter, store)
     if action == "capabilities":
-        return await capabilities(adapter, store)
+        return await capabilities(adapter)
     return await dispatch_session(request, adapter, store, action)
 
 

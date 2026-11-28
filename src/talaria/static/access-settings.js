@@ -23,7 +23,10 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
   const inherited = app.caps.talaria_extensions?.context_runs;
   const context = app.caps.talaria_extensions?.profile_context || {};
   const release = app.caps.talaria_extensions?.release;
-  const needsInstall = !available || !["current", "newer"].includes(release?.status);
+  // Hermes refuses a plugin that requires a newer Hermes, so offer the Hermes update instead.
+  const hermes = app.caps.talaria_hermes;
+  const outdated = hermes?.supported === false;
+  const needsInstall = !outdated && (!available || !["current", "newer"].includes(release?.status));
   async function refresh() {
     setBusy(true);
     setError("");
@@ -53,11 +56,16 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
           ? t("Talaria plugin can't run on this Hermes version")
           : available
           ? t("Connected · Talaria plugin")
+          : outdated
+          ? t("Talaria plugin needs a newer Hermes")
           : t("Talaria plugin not detected")}</span
       >
     </div>
     ${unsupported && !needsInstall && html`<p class="field-help">
       ${t("Check for a Talaria update that supports this Hermes version.")}
+    </p>`}
+    ${outdated && html`<p class="field-help">
+      ${t("This Hermes is {version}. The Talaria plugin needs Hermes {minimum} or later: update Hermes, then check again.", hermes)}
     </p>`}
     ${restart && html`<p class="field-help" role="status">
       ${t("Restart the Hermes gateway after active work finishes to load the updated plugin.")}
@@ -67,7 +75,7 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
       html`<p class="field-help" role="status">
         ${t("Some profile context could not be loaded. Check its configuration in Hermes, then check again.")}
       </p>`}
-    ${!available &&
+    ${!available && !outdated &&
     html`<p class="field-help">
       ${t("Install the plugin on your Hermes host, then restart its gateway.")}
     </p>`}
@@ -75,6 +83,8 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
       ? t("Check complete. Talaria plugin can't run on this Hermes version.")
       : available
       ? t("Check complete. Talaria plugin is connected.")
+      : outdated
+      ? t("Check complete. Talaria plugin needs a newer Hermes.")
       : t("Check complete. Talaria plugin was not detected.")}</p>`}
     ${error && html`<p class="form-error" role="alert">${t(error)}</p>`}
     <div class="dialog-actions">

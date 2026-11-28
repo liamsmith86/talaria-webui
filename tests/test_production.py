@@ -1,4 +1,5 @@
 from dataclasses import replace
+from pathlib import PurePosixPath
 
 import pytest
 from playwright.sync_api import expect
@@ -23,15 +24,22 @@ test_demo_settings = demo_cases.test_demo_uses_real_readonly_settings_and_search
 pytestmark = pytest.mark.production
 
 
-def test_startup_delivery(page):
-    resources = page.evaluate("""() => performance.getEntriesByType('resource').map((r) => ({
-      path: new URL(r.name).pathname, bytes: r.encodedBodySize,
-    }))""")
-    scripts = [entry for entry in resources if entry["path"].endswith(".js")]
-    assert len(scripts) == 3
-    assert sum(entry["bytes"] for entry in scripts) < 108 * 1024
-    assert len([entry for entry in resources if entry["path"].endswith(".css")]) == 1
+def test_startup_delivery(page, packaged_assets):
+    paths = page.evaluate(
+        "() => performance.getEntriesByType('resource').map((r) => new URL(r.name).pathname)"
+    )
+    scripts = sorted(PurePosixPath(path).name for path in paths if path.endswith(".js"))
+    assert scripts == ["app.js", "appearance.js", "boot.js"]
+    assert len([path for path in paths if path.endswith(".css")]) == 1
     assert page.locator('script[type="module"]').get_attribute("data-store-entry") == "app.js"
+    # Count what the wheel sends a gzip client, its largest encoding: browsers negotiate
+    # different ones, so their own sizes differ. Files too small to precompress go as is.
+    built = packaged_assets / "built"
+    delivered = [
+        next(path for path in (built / f"{name}.gz", built / name) if path.is_file())
+        for name in scripts
+    ]
+    assert sum(path.stat().st_size for path in delivered) < 106 * 1024
 
 
 def test_language_catalog_in_production(page):

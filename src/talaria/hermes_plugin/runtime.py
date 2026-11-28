@@ -56,7 +56,7 @@ def saved_runtime(adapter, session_id, model_options, store=None):
 
 
 def authority_runs(adapter):
-    """Hermes 0.22.1+ runs admitted API turns itself; no agent passes through Talaria."""
+    """A session authority runs admitted API turns itself; no agent passes through Talaria."""
     return getattr(getattr(adapter, "gateway_runner", None), "session_authority", None) is not None
 
 

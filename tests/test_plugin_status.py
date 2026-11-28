@@ -9,7 +9,7 @@ import pytest
 from playwright.sync_api import expect
 
 from talaria import plugin_status
-from talaria.hermes_plugin.release import LOADED_REVISION, PLUGIN_VERSION
+from talaria.hermes_plugin.release import HERMES_MINIMUM, LOADED_REVISION, PLUGIN_VERSION
 
 from .conftest import wait_for_store
 from .test_app import signed_in
@@ -86,6 +86,13 @@ def test_connection_detects_releases_and_offers_native_installation(page, live_a
     page.get_by_role("button", name="Check again", exact=True).click()
     expect(page.get_by_role("tabpanel")).to_contain_text("Up to date")
     expect(page.get_by_role("tabpanel")).not_to_contain_text("Hermes version")
+    # Hermes refuses a plugin that requires a newer Hermes, so installing it would not help.
+    peer.extension, peer.version = None, "0.1.0"
+    page.get_by_role("button", name="Check again", exact=True).click()
+    expect(page.get_by_role("tabpanel")).to_contain_text(
+        f"This Hermes is 0.1.0. The Talaria plugin needs Hermes {HERMES_MINIMUM} or later"
+    )
+    expect(link).to_have_count(0)
 
 
 @pytest.mark.hermes
@@ -116,10 +123,5 @@ def test_native_plugin_validation(tmp_path):
         text=True,
         timeout=45,
     )
-    # Before 0.22.5 Hermes doesn't know these hooks, so they stay idle (see the plugin README).
-    known = (source / "hermes_cli/plugins.py").read_text()
-    idle = [hook for hook in ("post_compaction", "on_session_delete") if hook not in known]
-    errors = [line.strip() for line in result.stdout.splitlines() if "ERROR:" in line]
-    assert all(any(f"'{hook}'" in line for hook in idle) for line in errors), result.stdout
-    assert result.returncode == 0 or errors, result.stdout + result.stderr
-    assert "WARN:" not in result.stdout, result.stdout
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ERROR:" not in result.stdout and "WARN:" not in result.stdout, result.stdout

@@ -591,6 +591,29 @@ def test_native_hermes_key_reuse_plugin_and_config_preservation(tmp_path):
     assert (home / ".env").stat().st_mode & 0o077 == 0
 
 
+@pytest.mark.hermes
+@pytest.mark.skipif(
+    not os.getenv("HERMES_SOURCE"), reason="Set HERMES_SOURCE for native setup checks"
+)
+@pytest.mark.parametrize("standalone", [False, True])
+def test_native_named_profile_url_follows_the_gateway_that_serves_it(tmp_path, standalone):
+    source = Path(os.environ["HERMES_SOURCE"])
+    python = source / "venv/bin/python"
+    root = tmp_path / "hermes"
+    named = root / "profiles/research"
+    named.mkdir(parents=True)
+    for home, port in ((root, 8650), (named, 8651)):
+        api = {"enabled": True, "host": "127.0.0.1", "port": port, "key": f"key-{port}-" + "x" * 24}
+        gateway = {"standalone": True} if standalone and home == named else {}
+        (home / "config.yaml").write_text(
+            json.dumps({"platforms": {"api_server": api}, "gateway": gateway})
+        )
+    info = wizard.hermes_request(python, named)
+    assert info["key"] == "key-8651-" + "x" * 24
+    expected = "http://127.0.0.1:8651" if standalone else "http://127.0.0.1:8650/p/research"
+    assert wizard.profile_url(python, named, info) == expected
+
+
 def test_passwordless_sudo_selects_system_service_without_user_bus(monkeypatch):
     from talaria import setup_services
 
@@ -757,6 +780,22 @@ def test_current_enabled_plugin_does_not_prompt_or_restart(options, monkeypatch,
     prompts = wizard.Prompts(None)
     info = wizard.configure_hermes(options, prompts, Settings(), home, None, info)
     assert not wizard.apply_hermes_restart(options, prompts, home, None, info)
+
+
+def test_setup_refuses_an_older_hermes_before_changing_it(options, monkeypatch, tmp_path):
+    from talaria.config import Settings
+    from talaria.hermes_plugin.release import HERMES_MINIMUM
+
+    options.skip_hermes = False
+    options.plugin = options.enable_hermes_api = True
+    info = {"enabled": False, "plugin_enabled": False, "key": "", "version": "0.1.0"}
+    monkeypatch.setattr(wizard.Prompts, "yes", lambda *a: pytest.fail("Prompted"))
+    monkeypatch.setattr(wizard, "hermes_request", lambda *a, **kw: pytest.fail("Changed Hermes"))
+    with pytest.raises(ValueError, match=f"needs Hermes {HERMES_MINIMUM} or later.*Hermes 0.1.0"):
+        wizard.configure_hermes(
+            options, wizard.Prompts(None), Settings(), tmp_path / "hermes", None, info
+        )
+    assert not (tmp_path / "hermes").exists()
 
 
 @pytest.mark.parametrize("restart", [False, True])

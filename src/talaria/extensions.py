@@ -9,7 +9,8 @@ from starlette.responses import JSONResponse
 
 from .content import MAX_CHAT_BODY, image_inputs
 from .hermes import APIError, identifier, object_result
-from .plugin_status import reported_status
+from .hermes_plugin.release import HERMES_MINIMUM
+from .plugin_status import hermes_supported, reported_status
 
 PREFIX = "/talaria/v1"
 # A failed check is retried at most this often by requests that need the features.
@@ -66,6 +67,17 @@ def project_details(action, result):
 
 
 PLUGIN_STATES = {"ready", "restart_required", "unsupported_hermes"}
+
+
+async def hermes_release(client):
+    """Hermes's version against Talaria's minimum; an unknown version is never called too old."""
+    try:
+        health = await client.request("GET", "/health/detailed", timeout=3)
+    except APIError:
+        health = None
+    version = health.get("version") if isinstance(health, dict) else None
+    version = version[:40] if isinstance(version, str) else ""
+    return {"version": version, "minimum": HERMES_MINIMUM, "supported": hermes_supported(version)}
 
 
 async def discover(client):

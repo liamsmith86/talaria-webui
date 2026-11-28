@@ -6,7 +6,7 @@ controls, and live approval and clarification prompts to Hermes's API.
 
 ## Install
 
-Requires Hermes **0.21.5 or later**, Python 3.12+, and Hermes's API server with an
+Requires Hermes **0.23.5 or later**, Python 3.12+, and Hermes's API server with an
 API key. Follow the [plugin installation instructions](../../../README.md#hermes-plugin).
 
 Uses Hermes's default `plugins.isolation: in_process` mode. The optional `host`
@@ -29,9 +29,8 @@ alone.
   and search index, model inventory, `IDENTITY.md`, `SOUL.md`, and configured
   instructions and prefill. A configured prefill file can be outside the profile
   directory. Instructions and prefill are sent to the configured model;
-  status responses omit their contents and file paths. On Hermes 0.22.1 and
-  later, instructions travel in the run request, which Hermes keeps with the
-  run in its session database.
+  status responses omit their contents and file paths. Instructions travel in
+  the run request, which Hermes keeps with the run in its session database.
 - **Session changes:** Authenticated actions can rewind or compress API
   sessions and branch any session. Branching a CLI, messaging or scheduled
   session copies it into a new API session and leaves the original open. Search
@@ -40,10 +39,8 @@ alone.
 - **Local storage:** Keeps up to 10,000 response metadata records and 10,000
   compaction sizes in `$HERMES_HOME/talaria/observations.db`: identifiers, model
   names, token counts, timings and completion status. These records contain no
-  message bodies or credentials. On Hermes 0.22.5 and later, deleting a session
-  removes its records and archiving keeps them; older versions report neither
-  deletions nor the sizes of compactions Hermes starts itself, and log each of
-  those two hooks as unknown at load. Disabling the plugin leaves this file in place.
+  message bodies or credentials. Deleting a session removes its records and
+  archiving keeps them. Disabling the plugin leaves this file in place.
 - **Network:** Chat and compression use Hermes's configured providers; model
   inventory refreshes use its provider and catalog sources. These requests may
   incur provider charges. The plugin adds no analytics or telemetry.

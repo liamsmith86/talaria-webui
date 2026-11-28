@@ -63,7 +63,7 @@ def question_stream(peer, *, multi=False, native=False):
             "multi_select": multi,
         }
         if native:
-            # Hermes 0.22.1+ lists the prompt on the run instead of a Talaria status field.
+            # A session authority lists the prompt on the run instead of a Talaria status field.
             prompt.update(kind="clarify", prompt_id="question-one", execution_generation=2)
             run.update(pending_controls=[prompt])
             yield frame("clarify.request", **prompt)

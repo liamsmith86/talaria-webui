@@ -205,7 +205,7 @@ def test_failed_activation_restores_and_checks_previous(deployment, monkeypatch,
 
     monkeypatch.setattr(deployment, "restart", restart)
     monkeypatch.setattr(deployment, "verify_running", verify)
-    with pytest.raises(DeploymentError, match="previous release was restored"):
+    with pytest.raises(DeploymentError, match=r"previous release was restored\. Simulated"):
         deployment.activate(target)
     assert restarts == [target, f"releases/{A}"]
     assert verified[-1] == f"releases/{A}"

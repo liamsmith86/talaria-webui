@@ -13,7 +13,7 @@ class CommandError(ValueError):
     """Expected command feedback safe to return to the authenticated client."""
 
 
-def supported(adapter, store):
+def supported(adapter):
     try:
         from agent.conversation_compression_manual import compress_now, parse_compress_args
         from agent.turn_facade_lease import DurableTurnLease
@@ -22,7 +22,7 @@ def supported(adapter, store):
         inspect.signature(AIAgent._compress_context).bind(
             None, [], None, force=True, defer_context_engine_notification=True, verbatim_tail=[]
         )
-        return store.compressible() and all(
+        return all(
             callable(value)
             for value in (
                 DurableTurnLease,
@@ -57,23 +57,13 @@ def create_agent(adapter, session):
     return agent
 
 
-def namespace_token():
-    """Tells this gateway's lease holders apart from another PID namespace's."""
-    try:
-        from process_identity import holder_namespace_token
-    except ImportError:
-        try:  # 0.22.1 to 0.23.2
-            from hermes_state_pidns import holder_namespace_token
-        except ImportError:
-            return ""
-    return holder_namespace_token()
-
-
 @contextmanager
 def session_lease(agent, store, sid):
     from agent.turn_facade_lease import LEASE_TTL_SECONDS
+    from process_identity import holder_namespace_token
 
-    holder = f"pid={os.getpid()}{namespace_token()}:talaria-command={uuid.uuid4().hex}"
+    # The namespace token tells this gateway's holders apart from another PID namespace's.
+    holder = f"pid={os.getpid()}{holder_namespace_token()}:talaria-command={uuid.uuid4().hex}"
     lease = store.turn_lease(agent, sid, holder, LEASE_TTL_SECONDS)
     if lease is None:
         raise CommandError("This session is busy. Wait for the response to finish.")
