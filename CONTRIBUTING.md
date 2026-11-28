@@ -58,6 +58,11 @@ one seed and a nightly job tries a new one. To reproduce a failure, pass its see
 `node tests/markdown_stream_fuzz.mjs 100000 <seed>`.
 
 Dependabot updates the Python and npm lockfiles, GitHub Actions and the Docker base image weekly.
+Its minor and patch updates merge on their own once the required checks pass
+(`.github/workflows/auto-merge.yml`). Major versions, a new Python in the Docker image and the
+browser libraries below wait for review. Branch protection doesn't require a pull request to be up
+to date with `main`: Dependabot rebases only on a conflict, so that would hold back all but one of
+a week's updates. The nightly run tests `main` on every browser.
 It also tracks the browser libraries in `src/talaria/static/vendor/` through
 `contrib/vendor/package-lock.json`. On one of those pull requests, run
 `uv run --locked python contrib/vendor.py` to bring in the files, or lint fails. Prism is a custom

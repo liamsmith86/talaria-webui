@@ -2,6 +2,7 @@ version: 2
 
 # The cooldown matches `exclude-newer` in pyproject.toml and `min-release-age` in .npmrc.
 # Major versions stay out of the groups, so one breaking release can't hold up the rest.
+# Minor and patch updates merge once the required checks pass: see workflows/auto-merge.yml.
 updates:
   - package-ecosystem: uv
     directory: /
