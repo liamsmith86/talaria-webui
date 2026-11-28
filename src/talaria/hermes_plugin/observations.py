@@ -8,6 +8,8 @@ import time
 from collections import OrderedDict
 from contextlib import closing, suppress
 
+from .store import newest_row
+
 
 def number(value):
     try:
@@ -55,6 +57,15 @@ def reasoning(request):
     if thinking.get("type") in ("enabled", "adaptive") or value.get("enabled") is True:
         return "enabled"
     return None
+
+
+def cached_context_length(model, base_url):
+    try:
+        from agent.model_metadata import get_cached_context_length
+
+        return number(get_cached_context_length(model, base_url or ""))
+    except Exception:
+        return None
 
 
 class Observations:
@@ -246,14 +257,12 @@ class Observations:
         ended_at=None,
         finish_reason=None,
         api_request_id=None,
+        context_length=None,
         **kwargs,
     ):
-        try:
-            from agent.model_metadata import get_cached_context_length
-
-            context_max = number(get_cached_context_length(model, base_url or ""))
-        except Exception:
-            context_max = None
+        # The window Hermes compacts against, passed since 0.23.1. Hermes caches a length only
+        # for the endpoints it probes.
+        context_max = number(context_length) or cached_context_length(model, base_url)
 
         with self.lock:
             data = self.pending.get((task_id, turn_id))
@@ -291,8 +300,6 @@ class Observations:
         interrupted=False,
         **kwargs,
     ):
-        from hermes_state_registry import acquire, release_or_close
-
         with self.lock:
             data = self.pending.pop((task_id, turn_id), None)
         if (
@@ -303,11 +310,7 @@ class Observations:
             or (not interrupted and not data.get("usage"))
         ):
             return
-        db = acquire(self.home / "state.db")
-        try:
-            rows = db.get_messages(session_id, limit=1, latest=True)
-        finally:
-            release_or_close(db)
+        rows = newest_row(self.home, session_id)
         # Never attribute an observation to an older reply after a failed persistence.
         if not rows or rows[0].get("role") != "assistant":
             return

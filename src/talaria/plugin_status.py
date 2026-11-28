@@ -32,6 +32,15 @@ def release_status(data):
     return {"status": status, "version": version, "bundled_version": PLUGIN_VERSION}
 
 
+def reported_status(data):
+    """The release a plugin's answer describes: once a restart is due, the files it will load."""
+    data = data if isinstance(data, dict) else {}
+    installed = data.get("installed")
+    if data.get("state") == "restart_required" and isinstance(installed, dict):
+        return release_status(installed)
+    return release_status(data)
+
+
 def installed_status(home):
     directory = Path(home) / "plugins/talaria-webui"
     if not (directory / "plugin.yaml").is_file():

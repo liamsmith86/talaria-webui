@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .files import read_text
+from .live import LiveRun, supported
 from .runtime import (
     authority_runs,
     inherit_defaults,
@@ -16,6 +17,7 @@ from .runtime import (
     session_request,
     session_runtime,
 )
+from .store import open_store
 
 log = logging.getLogger(__name__)
 MAX_INSTRUCTIONS = 64 * 1024
@@ -110,8 +112,6 @@ class ProfileRunAdapter:
         return getattr(self._adapter, name)
 
     def _make_run_event_callback(self, run_id, loop):
-        from .live import LiveRun, supported
-
         original = self._adapter._make_run_event_callback(run_id, loop)
         if not self._live_interactions or not supported(self._adapter):
             return original
@@ -190,9 +190,9 @@ async def start_run(adapter, request):
             # inherited instructions and saved model travel in the body instead. They
             # become part of its idempotency fingerprint and admission record.
             if isinstance(data, dict):
-                db = await native._ensure_session_db_async()
+                store = await open_store(native)
                 body = await asyncio.to_thread(
-                    session_request, native, db, data, context.instructions, use_default
+                    session_request, native, store, data, context.instructions, use_default
                 )
                 request = CompletedRequest(request, body)
             return await api_server_runs._handle_runs(native, request, _api_server=api_server)

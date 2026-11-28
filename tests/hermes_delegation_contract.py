@@ -7,6 +7,7 @@ from unittest.mock import patch
 from agent.secret_scope import set_multiplex_active
 from gateway.run import _profile_runtime_scope
 from hermes_constants import get_hermes_home
+from tools import delegate_tool_child_run
 from tools.approval_context import (
     get_current_session_key,
     reset_current_session_key,
@@ -47,7 +48,11 @@ async def verify_delegation(home):
 
     set_multiplex_active(True)
     try:
-        with patch("tools.delegate_tool._get_child_timeout", return_value=5):
+        # From 0.23.2 the child run imports the timeout itself.
+        owner = "tools.delegate_tool" + (
+            "_child_run" if hasattr(delegate_tool_child_run, "_get_child_timeout") else ""
+        )
+        with patch(f"{owner}._get_child_timeout", return_value=5):
             await asyncio.gather(run_profile("delegate-a"), run_profile("delegate-b"))
     finally:
         set_multiplex_active(False)

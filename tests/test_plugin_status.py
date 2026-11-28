@@ -70,9 +70,22 @@ def test_connection_detects_releases_and_offers_native_installation(page, live_a
     page.get_by_role("button", name="Check again", exact=True).click()
     expect(page.get_by_role("tabpanel")).to_contain_text("Plugin is newer")
     expect(link).to_have_count(0)
-    peer.extension = {"plugin_version": PLUGIN_VERSION, "revision": LOADED_REVISION}
+    # An update waiting for a restart is judged by the files the restart loads.
+    current = {"plugin_version": PLUGIN_VERSION, "revision": LOADED_REVISION}
+    peer.extension = {"plugin_version": "1.0.0", "state": "restart_required", "installed": current}
+    page.get_by_role("button", name="Check again", exact=True).click()
+    expect(page.get_by_role("tabpanel")).to_contain_text("Restart the Hermes gateway")
+    expect(page.get_by_role("tabpanel")).to_contain_text("Up to date")
+    expect(link).to_have_count(0)
+    # A plugin that matches this release but not its Hermes needs a newer Talaria.
+    peer.extension = {**current, "state": "unsupported_hermes"}
+    page.get_by_role("button", name="Check again", exact=True).click()
+    expect(page.get_by_role("tabpanel")).to_contain_text("can't run on this Hermes version")
+    expect(page.get_by_role("tabpanel")).to_contain_text("Check for a Talaria update")
+    peer.extension = current
     page.get_by_role("button", name="Check again", exact=True).click()
     expect(page.get_by_role("tabpanel")).to_contain_text("Up to date")
+    expect(page.get_by_role("tabpanel")).not_to_contain_text("Hermes version")
 
 
 @pytest.mark.hermes

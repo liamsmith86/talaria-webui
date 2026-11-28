@@ -11,6 +11,7 @@ from pathlib import Path
 from aiohttp import ClientSession, ClientTimeout, web
 from gateway.config import Platform, PlatformConfig
 from gateway.platforms.api_server import APIServerAdapter
+from hermes_fixtures import adapter_db
 
 from talaria.hermes_plugin import bridge
 
@@ -264,7 +265,7 @@ async def main():
             assert settled["prompt_id"] == events[1]["prompt_id"], events
 
             # Another app's session takes no API turns; a branch continues it here.
-            db = adapter._ensure_session_db()
+            db = adapter_db(adapter)
             await asyncio.to_thread(db.create_session, "cli-session", "cli")
             await asyncio.to_thread(db.append_message, "cli-session", "user", "From the CLI")
             async with client.get(url + "/v1/capabilities", headers=auth) as r:

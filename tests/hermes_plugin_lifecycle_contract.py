@@ -65,7 +65,9 @@ async def verify_routes(client, base):
         base + "/talaria/v1/capabilities", headers={"Authorization": f"Bearer {key}"}
     ) as response:
         assert response.status == 200, await response.text()
-        assert (await response.json())["agent"]["name"] == "Startup agent"
+        caps = await response.json()
+        # Loading the same files again, as any forced discovery does, needs no restart.
+        assert caps["agent"]["name"] == "Startup agent" and caps["state"] == "ready", caps
     async with client.get(base + "/health") as response:
         assert response.status == 200
     async with client.get(base + "/api/sessions") as response:
@@ -182,12 +184,61 @@ async def late_load():
         await adapter.disconnect()
 
 
+async def unsupported():
+    """A Hermes whose session store the plugin doesn't know still answers the capability check."""
+    manager = discover(True)
+    factory = next(f for f, name in manager.get_platform_handler_factories("api_server"))
+    adapter = native_adapter()
+    try:
+        with patch.object(sys.modules[factory.__module__], "compatible", lambda adapter: False):
+            assert await adapter.connect()
+        base = f"http://127.0.0.1:{adapter._runner.addresses[0][1]}"
+        async with ClientSession() as client:
+            async with client.get(base + "/talaria/v1/capabilities") as response:
+                assert response.status == 401
+            async with client.get(
+                base + "/talaria/v1/capabilities", headers={"Authorization": f"Bearer {key}"}
+            ) as response:
+                caps = await response.json()
+                assert caps["state"] == "unsupported_hermes" and "rewind" not in caps, caps
+        assert "this Hermes keeps sessions in a way" in messages.getvalue()
+    finally:
+        await adapter.disconnect()
+
+
+async def update_on_disk():
+    """Files an update replaces in a running gateway wait for its restart: routes it serves never
+    mix them in, and the capability check says a restart is due."""
+    discover(True)
+    adapter = native_adapter()
+    models = plugin / "models.py"
+    original = models.read_text()
+    headers = {"Authorization": f"Bearer {key}"}
+    try:
+        assert await adapter.connect()
+        base = f"http://127.0.0.1:{adapter._runner.addresses[0][1]}"
+        models.write_text(original + "\n\ndef model_options(refresh=False):\n    return 'NEW'\n")
+        discover(True)  # What Hermes's plugins.auto_apply runs after an update
+        async with ClientSession() as client:
+            async with client.get(base + "/talaria/v1/models", headers=headers) as response:
+                assert response.status == 200 and "NEW" not in await response.text()
+            async with client.get(base + "/talaria/v1/capabilities", headers=headers) as response:
+                caps = await response.json()
+                assert caps["state"] == "restart_required", caps
+                assert caps["installed"]["revision"] != caps["revision"], caps
+    finally:
+        models.write_text(original)
+        await adapter.disconnect()
+
+
 async def main():
     try:
         await late_load()
         # Restart recovery uses a fresh native application and ordinary startup discovery.
         await startup()
         await startup()
+        await unsupported()
+        await update_on_disk()
     finally:
         get_plugin_manager().unload()
         logging.getLogger().removeHandler(handler)

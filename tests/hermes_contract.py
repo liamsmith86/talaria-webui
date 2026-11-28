@@ -14,20 +14,22 @@ from hermes_cli import inventory
 from hermes_cli import models_reasoning_caps as native_caps
 from hermes_cli.plugins_discovery import scan_directory
 from hermes_delegation_contract import verify_delegation
-from hermes_state import SessionDB
+from hermes_fixtures import open_db, plugin_store, serve
 from hermes_views_contract import verify_history, verify_views
 from providers import get_provider_profile
 
 from talaria.hermes_plugin.bridge import rewind, rewind_preview, wire
 from talaria.hermes_plugin.models import add_reasoning_defaults, model_options
 from talaria.hermes_plugin.observations import Observations
+from talaria.hermes_plugin.store import Legacy
 
 home = Path(sys.argv[1])
 assert home.is_dir() and str(home).startswith("/tmp/")
 verify_views(home)
 asyncio.run(verify_history(home))
 asyncio.run(verify_delegation(home))
-db = SessionDB(home / "state.db")
+db = open_db(home)
+store = plugin_store(db)
 db.create_session("contract", "api_server")
 first = db.append_message("contract", "user", "Keep this")
 db.append_message("contract", "assistant", "Keep reply")
@@ -42,11 +44,12 @@ db.append_message(
 )
 db.append_message("contract", "tool", "File output", tool_call_id="c")
 reply = db.append_message("contract", "assistant", "Retry reply", finish_reason="stop")
-preview, original_ids, _ = rewind_preview(db, "contract", reply)
+preview, _ = rewind_preview(store, "contract", reply)
+original_ids = db.get_active_message_ids("contract")
 assert preview["target_id"] == target and preview["message_count"] == 4
 assert db.try_acquire_session_turn_lease("contract", "test-active", ttl_seconds=30)
 try:
-    rewind(db, "contract", {"message_id": reply, "revision": preview["revision"]})
+    rewind(store, "contract", {"message_id": reply, "revision": preview["revision"]})
     raise AssertionError("Active turn was not protected")
 except RuntimeError:
     pass
@@ -55,13 +58,24 @@ finally:
 assert db.get_active_message_ids("contract") == original_ids
 db.append_message("contract", "user", "Newer turn")
 try:
-    rewind(db, "contract", {"message_id": reply, "revision": preview["revision"]})
+    rewind(store, "contract", {"message_id": reply, "revision": preview["revision"]})
     raise AssertionError("Stale confirmation was not rejected")
 except RuntimeError:
     pass
-preview, _, _ = rewind_preview(db, "contract", reply)
+# A row written after the read (a compaction's, or a background report) refuses the rewind.
+db.create_session("late-row", "api_server")
+db.append_message("late-row", "user", "Ask")
+_, change = rewind_preview(store, "late-row", db.append_message("late-row", "assistant", "Reply"))
+late = db.append_message("late-row", "assistant", "Background report")
+try:
+    store.rewind("late-row", *change)
+    raise AssertionError("A row written after the read was rewound")
+except RuntimeError:
+    pass
+assert late in db.get_active_message_ids("late-row")
+preview, _ = rewind_preview(store, "contract", reply)
 assert preview["turn_count"] == 2
-result = rewind(db, "contract", {"message_id": reply, "revision": preview["revision"]})
+result = rewind(store, "contract", {"message_id": reply, "revision": preview["revision"]})
 assert result["removed"] == 5
 assert [r["content"] for r in db.get_messages("contract")] == ["Keep this", "Keep reply"]
 archived = db.get_messages("contract", include_inactive=True)
@@ -76,9 +90,9 @@ carrier = (
 )
 carrier_id = db.append_message("compacted", "user", carrier)
 db.append_message("compacted", "assistant", "Compacted reply")
-preview, _, options = rewind_preview(db, "compacted", carrier_id)
-assert options["preserve_compaction_handoff"] and preview["user"]["content"] == "REAL ASK"
-rewind(db, "compacted", {"message_id": carrier_id, "revision": preview["revision"]})
+preview, (_, _, handoff, _) = rewind_preview(store, "compacted", carrier_id)
+assert handoff is not None and preview["user"]["content"] == "REAL ASK"
+rewind(store, "compacted", {"message_id": carrier_id, "revision": preview["revision"]})
 scaffold = db.get_messages("compacted")
 assert len(scaffold) == 1 and scaffold[0]["display_kind"] == "hidden"
 assert "REAL ASK" not in scaffold[0]["content"] and "old task" in scaffold[0]["content"]
@@ -87,7 +101,7 @@ assert "REAL ASK" not in scaffold[0]["content"] and "old task" in scaffold[0]["c
 db.create_session("terminal", "cli")
 terminal_message = db.append_message("terminal", "user", "Owned by a terminal")
 try:
-    rewind_preview(db, "terminal", terminal_message)
+    rewind_preview(store, "terminal", terminal_message)
     raise AssertionError("A different transport's history was editable")
 except ValueError:
     pass
@@ -246,11 +260,8 @@ async def http_contract():
         def _request_audit_log_suffix(self, request):
             return "test"
 
-        async def _ensure_session_db_async(self):
-            return db
-
     app = web.Application()
-    wire(app, Adapter())
+    wire(app, serve(Adapter, db)())
     async with TestClient(TestServer(app)) as client:
         assert (await client.get("/talaria/v1/capabilities")).status == 401
         assert (await client.get("/talaria/v1/models")).status == 401
@@ -273,11 +284,12 @@ async def http_contract():
             with patch("hermes_cli.config.load_config", return_value=config):
                 assert (await client.get("/talaria/v1/capabilities", headers=headers)).status == 404
         # Optional rewind signature drift must not break identity or response details.
-        with patch.object(
-            db, "rewind_to_message", lambda sid, target, expected_active_ids=None: None
-        ):
-            response = await client.get("/talaria/v1/capabilities", headers=headers)
-            assert response.status == 200 and (await response.json())["rewind"] is False
+        if isinstance(store, Legacy):
+            with patch.object(
+                db, "rewind_to_message", lambda sid, target, expected_active_ids=None: None
+            ):
+                response = await client.get("/talaria/v1/capabilities", headers=headers)
+                assert response.status == 200 and (await response.json())["rewind"] is False
         for invalid in (-1, 0, 2**63):
             assert (
                 await client.get(

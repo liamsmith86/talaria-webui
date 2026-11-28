@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 from e2e.scripted_model import ECHO, plan, scripted_model, terminal  # noqa: E402
 
-STABLE_HERMES = "3b421578588243f920886e6fe79a6faa87ea026e"  # v0.23.1
+STABLE_HERMES = "a428f5344f777ccafe389c79d5b09384abef1437"  # v0.23.5
 OUTPUT = "walkthrough-output"
 
 
@@ -110,6 +110,8 @@ class Walkthrough:
             "--skip-browser",
             "--skip-computer-use",
         )
+        # Later steps find hermes on PATH, which also holds uv's folder; it may hold another one.
+        assert (self.home / ".local/bin/hermes").is_file(), "Hermes's installer published no hermes"
 
     def configure_hermes(self, model):
         settings = {

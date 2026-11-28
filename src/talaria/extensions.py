@@ -9,7 +9,7 @@ from starlette.responses import JSONResponse
 
 from .content import MAX_CHAT_BODY, image_inputs
 from .hermes import APIError, identifier, object_result
-from .plugin_status import release_status
+from .plugin_status import reported_status
 
 PREFIX = "/talaria/v1"
 # A failed check is retried at most this often by requests that need the features.
@@ -65,6 +65,9 @@ def project_details(action, result):
     return result
 
 
+PLUGIN_STATES = {"ready", "restart_required", "unsupported_hermes"}
+
+
 async def discover(client):
     """The plugin's features: {} without a usable plugin, or None when the check failed."""
     try:
@@ -80,7 +83,9 @@ async def discover(client):
         context = context if isinstance(context, dict) else {}
         return {
             "version": 1,
-            "release": release_status(result),
+            "release": reported_status(result),
+            # A plugin before 1.6.3 reports no state; an unknown one leaves the features to say.
+            "state": result.get("state") if result.get("state") in PLUGIN_STATES else "ready",
             "agent": {"name": name[:80] if isinstance(name, str) else ""},
             "profile_context": {
                 key: context.get(key)

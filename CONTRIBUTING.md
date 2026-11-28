@@ -14,10 +14,10 @@ git config --local core.hooksPath .githooks
 Native Hermes tests and the full suite also need Hermes and axe-core:
 
 ```sh
-git clone --depth 1 --branch v0.23.1 https://github.com/NousResearch/hermes-agent.git .local/hermes
+git clone --depth 1 --branch v0.23.5 https://github.com/NousResearch/hermes-agent.git .local/hermes
 UV_PROJECT_ENVIRONMENT=$PWD/.local/hermes/venv uv sync --project .local/hermes --frozen --no-dev --extra sms
 git config --local talaria.hermesSource "$PWD/.local/hermes"  # or export HERMES_SOURCE
-curl -fsSL https://cdn.jsdelivr.net/npm/axe-core@4.14.0/axe.min.js -o .local/axe.min.js
+curl -fsSL https://cdn.jsdelivr.net/npm/axe-core@4.14.1/axe.min.js -o .local/axe.min.js
 ```
 
 `uv run --locked talaria demo` serves sample chats at http://127.0.0.1:8768.
@@ -164,7 +164,7 @@ can be compared without replacing the running development server.
 `contrib/install_walkthrough.py` installs real Hermes with its own installer and real
 Talaria with `install.sh` in a throwaway home, then signs in, runs a chat with a tool,
 updates and uninstalls. It takes about a minute and needs no provider key. CI runs it for
-changes to the install files, for releases, and against Hermes `main` each week.
+changes to the install files, for releases, and against Hermes `main` each day.
 
 ```sh
 uv run --locked python contrib/install_walkthrough.py [--hermes-ref main]
@@ -215,7 +215,7 @@ accurate. To prepare a catalog submission for `HEAD`:
 
 ```sh
 git clone https://github.com/NousResearch/hermes-agent.git .local/hermes-catalog
-git -C .local/hermes-catalog checkout 3b421578588243f920886e6fe79a6faa87ea026e  # v0.23.1
+git -C .local/hermes-catalog checkout a428f5344f777ccafe389c79d5b09384abef1437  # v0.23.5
 UV_EXCLUDE_NEWER="14 days" uv sync --project .local/hermes-catalog --frozen --no-dev --extra sms --python 3.14
 .local/hermes-catalog/.venv/bin/python contrib/plugin_catalog.py --revision HEAD --output .local/plugin-catalog
 ```

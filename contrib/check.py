@@ -273,7 +273,7 @@ def check(full=False, native=False, paths=None, skip_native=False):
         raise SystemExit("Native checks need HERMES_SOURCE (see CONTRIBUTING.md).")
     if full or "tests/test_accessibility.py" in scope["extra_browser"]:
         axe = Path(env.get("TALARIA_AXE_PATH", ""))
-        digest = "20c09fe157a8a34a30e241aaa1fcdade657734f08ab379ecfbeb7d45cc46e878"
+        digest = "29348999450cdf2849a8e70b7912fc2da85a849da39c0d0d5394f51d4a9ed95c"
         if not axe.is_file() or hashlib.sha256(axe.read_bytes()).hexdigest() != digest:
             raise SystemExit(f"Save the verified axe-core script as {AXE} or set TALARIA_AXE_PATH.")
     lint(paths=None if full else paths)

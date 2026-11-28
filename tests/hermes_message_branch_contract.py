@@ -10,7 +10,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 from gateway.config import PlatformConfig
 from gateway.platforms.api_server import APIServerAdapter
-from hermes_state import SessionDB
+from hermes_fixtures import native, open_db
 
 from talaria.branching import branch_from_response, mark_branch_points
 from talaria.hermes import APIError, Hermes
@@ -22,9 +22,9 @@ assert home.is_dir() and str(home).startswith("/tmp/")
 
 
 async def main():
-    db = SessionDB(home / "state.db")
+    db = open_db(home)
     adapter = APIServerAdapter(PlatformConfig(enabled=True, extra={"key": "fixture-key"}))
-    adapter._session_db = db
+    adapter._session_db = native(db)
     app = web.Application()
     app.router.add_get("/api/sessions/{session_id}", adapter._handle_get_session)
     app.router.add_delete("/api/sessions/{session_id}", adapter._handle_delete_session)
@@ -91,14 +91,14 @@ async def main():
             )
             db.append_message("handoff", "user", carrier)
             db.append_message("handoff", "assistant", "New answer")
-            count = db._read_one("SELECT count(*) AS n FROM sessions")["n"]
+            count = db.session_count()
             retained = db.get_messages("handoff")
             try:
                 await branch_from_response(client, "handoff", old, {})
                 raise AssertionError("Future compaction context survived the cut")
             except APIError:
                 pass
-            assert db._read_one("SELECT count(*) AS n FROM sessions")["n"] == count
+            assert db.session_count() == count
             assert db.get_messages("handoff") == retained
         finally:
             await client.close()

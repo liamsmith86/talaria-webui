@@ -2,6 +2,8 @@
 
 from copy import deepcopy
 
+from .store import open_store_sync
+
 ROUTING_FIELDS = {
     "only": "providers_allowed",
     "ignore": "providers_ignored",
@@ -40,12 +42,13 @@ def session_runtime(adapter, kwargs):
         kwargs.update(route=route, session_model=None if route else model)
 
 
-def saved_runtime(adapter, session_id, model_options, db=None):
+def saved_runtime(adapter, session_id, model_options, store=None):
     """Hermes's resolution of a session's saved selection, and its stored model."""
     resolver = getattr(adapter, "_effective_session_runtime_request", None)
     if not callable(resolver) or not session_id:
         return None
-    session = (db or adapter._ensure_session_db()).get_session(session_id)
+    store = store or open_store_sync(adapter)
+    session = store and store.session(session_id)
     if not session:
         return None
     runtime = resolver(session=session, body={"model_options": model_options})
@@ -57,7 +60,7 @@ def authority_runs(adapter):
     return getattr(getattr(adapter, "gateway_runner", None), "session_authority", None) is not None
 
 
-def session_request(adapter, db, body, instructions, use_default_model):
+def session_request(adapter, store, body, instructions, use_default_model):
     """Request what the agent path would inherit, using fields Hermes's own turns read.
 
     Hermes applies the profile's prefill, service tier, routing and fast mode itself.
@@ -67,7 +70,7 @@ def session_request(adapter, db, body, instructions, use_default_model):
         body["instructions"] = instructions
     if use_default_model or body.get("model") or body.get("provider"):
         return body
-    saved = saved_runtime(adapter, body.get("session_id"), body.get("model_options"), db)
+    saved = saved_runtime(adapter, body.get("session_id"), body.get("model_options"), store)
     if saved is None:
         return body
     runtime, model = saved
