@@ -17,6 +17,7 @@ from .hermes_plugin.release import PLUGIN_VERSION
 from .maintenance import DeploymentError
 from .plugin_install import hermes_install
 from .plugin_status import installed_status
+from .setup_command import short_command
 
 MAX_DISCOVERY_HOMES = 32
 MAX_PROFILES = 32
@@ -167,12 +168,18 @@ def local_address(url):
     return False
 
 
-def hermes_cli(home, owner):
-    """The Hermes command that selects this home when its owner runs it."""
+def default_home(owner):
+    """The ~/.hermes that both Hermes and Talaria use when the owner names no other."""
     try:
-        default = Path(pwd.getpwnam(owner).pw_dir) / ".hermes"
+        return Path(pwd.getpwnam(owner).pw_dir) / ".hermes"
     except KeyError:
-        default = None
+        return None
+
+
+def hermes_cli(home, owner):
+    """The Hermes command that selects this home when its owner runs it, as Hermes's own
+    guidance spells it."""
+    default = default_home(owner)
     if home == default:
         return "hermes"
     if default and home.parent == default / "profiles":
@@ -184,10 +191,14 @@ def commands(facts, talaria, *, linkable, elevate):
     """The commands Settings offers for this plugin, run on this machine as the home's owner."""
     home = Path(facts["home"])
     hermes = hermes_cli(home, facts["owner"])
-    talaria = f"{'sudo ' if elevate else ''}{talaria} hermes-plugin --home {shlex.quote(str(home))}"
+    talaria = f"{'sudo ' if elevate else ''}{talaria} hermes-plugin"
+    # Under sudo, Talaria's default would be root's home, and sudo's PATH may not reach Hermes.
+    if elevate or home != default_home(facts["owner"]):
+        talaria += f" --home {shlex.quote(str(home))}"
+    command = ' --hermes-command "$(command -v hermes)"' if elevate else ""
     enable = f"{hermes} plugins enable talaria-webui"
     # The restart verifies that the gateway serves the new files, and restores the old ones if not.
-    link = [f'{talaria} --manage-updates --hermes-command "$(command -v hermes)"'] * linkable
+    link = [f"{talaria} --manage-updates{command}"] * linkable
     install = [talaria, enable, f"{talaria} --restart", *link]
     return {
         "hermes_update": [f"{hermes} plugins update talaria-webui", f"{hermes} gateway restart"],
@@ -232,8 +243,10 @@ def local_plugin(url, pid, development=False):
     # Only a launcher-managed install can link the plugin to its updates, unless another tool
     # runs its service.
     linkable = bool(root) and not (config.get("service") and not config.get("setup"))
-    talaria = shlex.quote(str(root / "bin/talaria")) if root else "talaria"
     elevate = config.get("scope") == "system" and facts["owner"] != "root"
+    talaria = "talaria"
+    if root:
+        talaria = shlex.quote(str(root / "bin/talaria")) if elevate else short_command(root)
     return {
         **{key: facts.get(key) for key in ("home", "owner", "status", "version", "managed")},
         "source": facts.get("source"),

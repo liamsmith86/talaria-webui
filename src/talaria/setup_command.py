@@ -29,6 +29,14 @@ def links_to(root):
     ]
 
 
+def short_command(root):
+    """`talaria` where the system command directory links to this launcher: every login shell
+    searches it, though sudo's narrower PATH may not."""
+    launcher = root / "bin/talaria"
+    system, _ = link_directories()
+    return LINK_NAME if is_link_to(system / LINK_NAME, launcher) else shlex.quote(str(launcher))
+
+
 def shell_path():
     # install.sh and uv add their own directories, so PATH alone can't say what the user finds.
     return os.environ.get("TALARIA_SHELL_PATH", os.environ.get("PATH", ""))
