@@ -1,0 +1,36 @@
+name: Dependabot auto-merge
+
+# Dependabot's minor and patch updates merge once the required checks pass. Major versions, a new
+# Python in the Docker image and the vendored browser libraries wait for a person: the libraries
+# need contrib/vendor.py and a rebuild, which Dependabot can't run.
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  enable:
+    name: Enable auto-merge
+    # Only Dependabot's own pushes, so a person who takes over a pull request decides its merge.
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+      # A grouped pull request reports its largest update. Dependabot calls a new image digest a patch.
+      - name: Merge once the required checks pass
+        if: >-
+          steps.metadata.outputs.directory != '/contrib/vendor'
+          && (steps.metadata.outputs.update-type == 'version-update:semver-patch'
+          || (steps.metadata.outputs.update-type == 'version-update:semver-minor'
+          && steps.metadata.outputs.package-ecosystem != 'docker'))
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.html_url }}
+          SUBJECT: ${{ github.event.pull_request.title }} (#${{ github.event.pull_request.number }})
+        run: gh pr merge "$PR" --auto --merge --match-head-commit "$HEAD" --subject "$SUBJECT" --body ""
