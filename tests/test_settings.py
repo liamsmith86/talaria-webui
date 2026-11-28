@@ -26,7 +26,9 @@ def test_agent_settings_and_extended_access(page, live_app, tmp_path):
     page.keyboard.press("ArrowLeft")
     expect(page.get_by_role("tab", name="Connection", exact=True)).to_be_focused()
     expect(page.get_by_label("Hermes directory", exact=True)).to_have_count(0)
-    expect(page.get_by_text("Talaria plugin not detected", exact=True)).to_be_visible()
+    expect(
+        page.get_by_text("Talaria's Hermes Agent helper plugin not detected", exact=True)
+    ).to_be_visible()
     live_app[1].extension = {"agent": {"name": "Juniper"}}
     page.get_by_role("button", name="Check again", exact=True).click()
     expect(page.get_by_text("Connected · Talaria plugin", exact=True)).to_be_visible()
@@ -42,7 +44,9 @@ def test_agent_settings_and_extended_access(page, live_app, tmp_path):
     page.get_by_role("button", name="Settings").click()
     expect(page.get_by_role("heading", name="Hermes", exact=True)).to_be_visible()
     page.get_by_role("tab", name="Connection", exact=True).click()
-    expect(page.get_by_text("Talaria plugin not detected", exact=True)).to_be_visible()
+    expect(
+        page.get_by_text("Talaria's Hermes Agent helper plugin not detected", exact=True)
+    ).to_be_visible()
     page.get_by_role("button", name="Close dialog").click()
     expect(page.get_by_text("Connected to Hermes", exact=True)).to_be_visible()
 
@@ -107,7 +111,10 @@ def test_extended_access_check_confirms_unchanged_result_and_clears_it_on_failur
     page.get_by_role("tab", name="Connection", exact=True).click()
     expect(
         page.get_by_text(
-            "Connected · Talaria plugin" if connected else "Talaria plugin not detected", exact=True
+            "Connected · Talaria plugin"
+            if connected
+            else "Talaria's Hermes Agent helper plugin not detected",
+            exact=True,
         )
     ).to_be_visible()
     result = page.get_by_role("status").filter(has_text="Check complete.")
@@ -118,7 +125,7 @@ def test_extended_access_check_confirms_unchanged_result_and_clears_it_on_failur
     expect(result).to_have_text(
         "Check complete. Talaria plugin is connected."
         if connected
-        else "Check complete. Talaria plugin was not detected."
+        else "Check complete. Talaria's Hermes Agent helper plugin was not detected."
     )
     page.clock.fast_forward(10000)
     expect(result).to_be_visible()

@@ -27,7 +27,7 @@ const localSources = {
 };
 
 const localStatus = {
-  missing: msg("Not installed"),
+  missing: msg("Helper plugin quick start"),
   outdated: msg("Update available · Latest: {bundled}"),
   unknown: msg("Update available · Latest: {bundled}"),
   current: releaseLabels.current,
@@ -39,7 +39,7 @@ const localStatus = {
 function localSteps(local, serving) {
   const stale = ["outdated", "unknown"].includes(local.status);
   if (local.status === "missing")
-    return [[msg("To install it, run the following commands on Hermes Agent:"), local.commands.install]];
+    return [[msg("To install the Talaria helper plugin, run the following commands on your Hermes Agent:"), local.commands.install]];
   if (local.managed === "hermes" && stale && local.source === "other")
     return [[msg("Hermes can't update this copy. To replace it with Talaria's copy, which Talaria keeps up to date, run the following commands on Hermes Agent:"), local.commands.switch]];
   if (local.managed === "hermes" && stale)
@@ -77,11 +77,13 @@ function Commands({ commands }) {
 // old, since it would refuse the plugin.
 function LocalPlugin({ local, serving, steps }) {
   const source = localSources[local.managed === "hermes" ? local.source : local.managed];
+  // Without a plugin there is no release to describe, only how to install one.
+  const missing = local.status === "missing";
   return html`<div class="local-plugin">
-    <${ReleaseSummary} level=${4} title=${t("Talaria plugin")} version=${local.version}
+    ${!missing && html`<${ReleaseSummary} level=${4} title=${t("Talaria plugin")} version=${local.version}
       details=${source ? [[t("Source"), local.source === "catalog" && local.managed === "hermes"
-        ? html`<${CatalogLink}>${t(source)}<//>` : t(source)]] : []} />
-    <section class="installation-update" aria-label=${t("Updates")}>
+        ? html`<${CatalogLink}>${t(source)}<//>` : t(source)]] : []} />`}
+    <section class=${missing ? "" : "installation-update"} aria-label=${t("Updates")}>
       <p class="installation-status" role="status">
         ${t(localStatus[local.status], { bundled: local.bundled_version })}
       </p>
@@ -152,7 +154,7 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
           ? t("Talaria plugin needs a newer Hermes")
           : idle
           ? t("Hermes isn't loading the Talaria plugin")
-          : t("Talaria plugin not detected")}</span
+          : t("Talaria's Hermes Agent helper plugin not detected")}</span
       >
     </div>
     ${unsupported && !needsInstall && html`<p class="field-help">
@@ -184,7 +186,7 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
       ? t("Check complete. Talaria plugin needs a newer Hermes.")
       : idle
       ? t("Check complete. Hermes isn't loading the Talaria plugin.")
-      : t("Check complete. Talaria plugin was not detected.")}</p>`}
+      : t("Check complete. Talaria's Hermes Agent helper plugin was not detected.")}</p>`}
     ${error && html`<p class="form-error" role="alert">${t(error)}</p>`}
     <div class="dialog-actions">
       ${needsInstall && !local && html`<a class="button secondary"
