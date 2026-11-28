@@ -255,7 +255,7 @@ function Message({
         />
         <${IconButton}
           name="trash"
-          label=${t("Delete turn")}
+          label=${t("Remove turn")}
           onClick=${() =>
             update({
               modal: {

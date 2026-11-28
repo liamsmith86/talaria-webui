@@ -69,7 +69,7 @@ export function MessageAction({ action, session, message, onClose }) {
   const deleting = action === "delete",
     editing = action === "edit";
   const title = deleting
-    ? t("Delete turn")
+    ? t("Remove turn")
     : editing
       ? t("Edit and resend")
       : t("Regenerate response");

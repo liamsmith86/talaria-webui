@@ -59,8 +59,8 @@ def test_regenerating_keeps_one_reply(chat):
 def test_deleting_the_last_turn(chat):
     chat.send(plan("first"))
     chat.send(plan("second"))
-    chat.page.get_by_role("button", name="Delete turn", exact=True).last.click()
-    chat.confirm("Delete turn")
+    chat.page.get_by_role("button", name="Remove turn", exact=True).last.click()
+    chat.confirm("Remove turn")
     expect(chat.page.locator(".message.user")).to_have_count(1)
     expect(chat.page.locator(".conversation-content")).not_to_contain_text("second")
 

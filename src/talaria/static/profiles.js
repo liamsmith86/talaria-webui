@@ -131,7 +131,7 @@ export function ProfileConnections({ app, onRefresh, readOnly = false, focusPlug
               html`<button
                 class="icon-button"
                 disabled=${readOnly}
-                aria-label=${t("Remove {name}", { name: profile.label })}
+                aria-label=${t("Remove profile {name}", { name: profile.label })}
                 title=${t("Remove profile")}
                 onClick=${() => setRemoving(profile)}
               >

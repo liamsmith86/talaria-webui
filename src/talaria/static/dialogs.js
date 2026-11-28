@@ -192,7 +192,7 @@ export function Connection({
           placeholder="default"
       /></label>
       <p class="field-help">
-        ${rich("Use {profile} for the main agent, or the name of an existing Hermes profile. Each profile needs their own Hermes API key.", { profile: html`<code>default</code>` })}
+        ${rich("Use {profile} for the main agent, or the name of an existing Hermes profile. Each profile needs its own Hermes API key.", { profile: html`<code>default</code>` })}
       </p>
       <label class="field"
         >${t("API key")}<input
