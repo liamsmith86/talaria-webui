@@ -204,6 +204,20 @@
   font-size: 12px;
   line-height: 1.7;
 }
+.access-status .text-button {
+  margin-left: auto;
+  font-size: 12px;
+}
+.extended-access .check-result {
+  margin-top: 10px;
+}
+.extended-access .field-help.check-result {
+  min-height: 1.8em;
+  text-align: right;
+}
+.agent-overview > .access-status {
+  margin-bottom: 18px;
+}
 .access-status svg {
   margin-top: 2px;
   color: var(--accent-text);
@@ -470,4 +484,45 @@
     width: 100%;
     justify-content: space-between;
   }
+}
+.commands {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 8px 0 14px;
+  padding: 10px 10px 10px 14px;
+  background: var(--sidebar);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.command-lines {
+  flex: 1;
+  min-width: 0;
+}
+/* A long command wraps under itself, so each one still starts at the left edge. */
+.command-lines code {
+  display: block;
+  padding-left: 2ch;
+  text-indent: -2ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font:
+    12px/1.7 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+}
+.command-copy {
+  flex: none;
+  font-size: 11px;
+  padding: 3px 7px;
+  color: var(--muted);
+  border-radius: 4px;
+}
+.command-copy:hover {
+  color: var(--accent-text);
+  background: var(--surface);
+}
+.local-plugin {
+  margin-top: 24px;
 }

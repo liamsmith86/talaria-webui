@@ -8,7 +8,6 @@ import io
 import ipaddress
 import json
 import os
-import pwd
 import shutil
 import socket
 import subprocess
@@ -36,6 +35,7 @@ from .deployment import (
 from .hermes_owner import execution_identity, select_owner, validate_execution
 from .hermes_runtime import LAUNCHER, hermes_runtime, launcher_behind
 from .installation import read_json
+from .local_hermes import account_homes
 from .setup_command import install_command, print_linger_hint, sudo_prefix
 from .setup_output import (
     ACCENT,
@@ -57,8 +57,6 @@ from .setup_services import (
     service_plan,
     supported_service,
 )
-
-MAX_DISCOVERY_HOMES = 32
 
 
 class Prompts:
@@ -449,7 +447,7 @@ def discover_hermes_home(args, prompts):
         or os.geteuid() != 0
     ):
         return home
-    candidates = discover_account_homes()
+    candidates = account_homes()
     if not candidates:
         return home
     paths = sorted(candidates, key=str)
@@ -655,6 +653,7 @@ def _setup(args, prompts, stack):
         deployment = install_runtime(
             args, root, config, settings, metadata, existing_service, settings_changed
         )
+        record_hermes_home(deployment, home if info else None)
         if plan:
             activate_setup_service(plan, root, config, deployment, settings)
     finally:
@@ -761,39 +760,6 @@ def apply_local_hermes(args, settings, home, python, info, enable, plugin, *, ow
         if not args.hermes_key_file and not settings.api_key and not args.hermes_url:
             settings.api_key = info["key"]
     return info
-
-
-def discover_account_homes():
-    # One directory lookup per distinct account home; never traverse its contents.
-    candidates = {}
-    seen = set()
-    accounts = sorted(
-        pwd.getpwall(),
-        key=lambda account: (
-            Path(account.pw_shell).name in {"nologin", "false", "sync", "halt", "shutdown"},
-            account.pw_name,
-        ),
-    )
-    for account in accounts:
-        directory = Path(account.pw_dir)
-        if not directory.is_absolute() or directory == Path("/"):
-            continue
-        candidate = directory / ".hermes"
-        if candidate in seen:
-            continue
-        if len(seen) == MAX_DISCOVERY_HOMES:
-            print(
-                f"Discovery stopped after {MAX_DISCOVERY_HOMES} account homes. "
-                "Use --hermes-home PATH for another location."
-            )
-            break
-        seen.add(candidate)
-        try:
-            if candidate.is_dir():
-                candidates[candidate] = account.pw_name
-        except OSError:
-            continue
-    return candidates
 
 
 def validate_setup(args):
@@ -959,6 +925,13 @@ def activate_setup_service(plan, root, config, deployment, settings):
         raise
     deployment.config.update(service=plan["service"], scope=plan["scope"], manager=plan["kind"])
     write_json(root / "deployment.json", deployment.config)
+
+
+def record_hermes_home(deployment, home):
+    """Remember the Hermes this setup connected, where Settings looks for its plugin first."""
+    if home and deployment.config.get("hermes_home") != str(home):
+        deployment.config["hermes_home"] = str(home)
+        write_json(deployment.root / "deployment.json", deployment.config)
 
 
 def install_runtime(args, root, config, settings, metadata, existing_service, settings_changed):

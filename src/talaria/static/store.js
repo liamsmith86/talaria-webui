@@ -254,6 +254,11 @@ export function refreshReadiness() {
   readinessPending = pending;
   return pending;
 }
+// Capabilities include what Talaria finds on this machine, which a Hermes update or restart changes.
+export async function refreshCapabilities() {
+  const caps = await api("/capabilities");
+  update({ caps, agent: caps.talaria_agent || state.agent });
+}
 export async function refreshAgentInfo() {
   const request = ++agentInfoRequest;
   // Agent details also report health; both endpoints share the latest check.

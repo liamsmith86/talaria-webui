@@ -118,6 +118,15 @@ def configure(home, request):
     }
 
 
+def failure(exc):
+    frame = exc.__traceback__
+    while frame and frame.tb_next:
+        frame = frame.tb_next
+    where = frame and frame.tb_frame.f_globals.get("__name__")
+    cause = ": ".join(filter(None, (type(exc).__name__, getattr(exc, "name", None))))
+    return f"{cause} in {where}" if isinstance(where, str) and where != "__main__" else cause
+
+
 def main():
     home = Path(os.environ["HERMES_HOME"])
     request = json.load(sys.stdin)
@@ -132,10 +141,10 @@ def main():
     else:
         try:
             result = configure(home, request)
-        except Exception as exc:
-            # A type and module name say what broke; Hermes's own text can contain credentials.
-            cause = ": ".join(filter(None, (type(exc).__name__, getattr(exc, "name", None))))
-            print("TALARIA_SETUP_ERROR=" + json.dumps(cause))
+        except (Exception, SystemExit) as exc:
+            # Names say what broke, and where: Hermes's own text can contain credentials, and
+            # Hermes exits on some refusals after explaining them on stderr, which isn't shown.
+            print("TALARIA_SETUP_ERROR=" + json.dumps(failure(exc)))
             raise SystemExit(1) from None
     # Delimit native CLI chatter; the caller captures this pipe and never logs secrets.
     print("TALARIA_SETUP_RESULT=" + json.dumps(result))

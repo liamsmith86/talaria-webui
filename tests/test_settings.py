@@ -1,7 +1,15 @@
+import json
+import os
 import re
+import shutil
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect
+
+import talaria
+from talaria import local_hermes
+from talaria.hermes_plugin.release import PLUGIN_VERSION
 
 from .conftest import STORE_URL
 from .test_browser import screenshot
@@ -18,7 +26,9 @@ def test_agent_settings_and_extended_access(page, live_app, tmp_path):
     page.keyboard.press("ArrowLeft")
     expect(page.get_by_role("tab", name="Connection", exact=True)).to_be_focused()
     expect(page.get_by_label("Hermes directory", exact=True)).to_have_count(0)
-    expect(page.get_by_text("Talaria plugin not detected", exact=True)).to_be_visible()
+    expect(
+        page.get_by_text("Talaria's Hermes Agent helper plugin not detected", exact=True)
+    ).to_be_visible()
     live_app[1].extension = {"agent": {"name": "Juniper"}}
     page.get_by_role("button", name="Check again", exact=True).click()
     expect(page.get_by_text("Connected · Talaria plugin", exact=True)).to_be_visible()
@@ -34,34 +44,87 @@ def test_agent_settings_and_extended_access(page, live_app, tmp_path):
     page.get_by_role("button", name="Settings").click()
     expect(page.get_by_role("heading", name="Hermes", exact=True)).to_be_visible()
     page.get_by_role("tab", name="Connection", exact=True).click()
-    expect(page.get_by_text("Talaria plugin not detected", exact=True)).to_be_visible()
+    expect(
+        page.get_by_text("Talaria's Hermes Agent helper plugin not detected", exact=True)
+    ).to_be_visible()
     page.get_by_role("button", name="Close dialog").click()
     expect(page.get_by_text("Connected to Hermes", exact=True)).to_be_visible()
 
 
-@pytest.mark.clock
-@pytest.mark.parametrize("connected", [False, True])
-def test_extended_access_check_confirms_unchanged_result_and_clears_it_on_failure(
-    page, live_app, connected
+def test_extended_access_explains_the_plugin_in_the_local_hermes(
+    page, live_app, tmp_path, monkeypatch
 ):
-    live_app[1].extension = {} if connected else None
+    home = tmp_path / "hermes"
+    plugin = home / "plugins/talaria-webui"
+    plugin.mkdir(parents=True)
+    (plugin / "plugin.yaml").write_text('name: talaria-webui\nversion: "1.6.2"\n')
+    (plugin / "__init__.py").write_text("")
+    record = {"talaria-webui": {"source": "https://example.invalid", "catalog": {"pin": "0" * 40}}}
+    (home / "plugins/.install-metadata.json").write_text(json.dumps(record))
+    pid = os.getpid()
+    (home / "gateway.pid").write_text(
+        json.dumps({"pid": pid, "start_time": local_hermes.process_start(pid)})
+    )
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    live_app[1].pid = pid
+    hermes = f"HERMES_HOME={home} hermes"
+
+    page.get_by_role("button", name="Settings").click()
+    overview = page.locator(".agent-overview")
+    expect(overview.get_by_role("status").first).to_contain_text(
+        "Hermes isn't loading the Talaria plugin"
+    )
+    overview.get_by_role("button", name="Set up", exact=True).click()
+    expect(page.get_by_role("tab", name="Connection", exact=True)).to_have_attribute(
+        "aria-selected", "true"
+    )
+    access = page.locator(".extended-access")
+    expect(access).to_be_in_viewport()
+    expect(access.get_by_text("Hermes isn't loading the Talaria plugin")).to_be_visible()
+    local = access.locator(".local-plugin")
+    expect(local.locator("h4")).to_have_text("Talaria plugin 1.6.2")
+    expect(local.locator(".installation-details")).to_have_text("SourceHermes plugin catalog")
+    expect(local.get_by_role("link", name="Hermes plugin catalog")).to_have_attribute(
+        "href", "https://hermes-agent.nousresearch.com/marketplace/talaria-webui"
+    )
+    expect(local.get_by_role("status")).to_have_text(f"Update available · Latest: {PLUGIN_VERSION}")
+    expect(local).to_contain_text(
+        "To update the Talaria plugin, run the following commands on Hermes Agent:"
+    )
+    expect(access.locator(".commands code")).to_have_text(
+        [f"{hermes} plugins update talaria-webui", f"{hermes} gateway restart"]
+    )
+    expect(access.get_by_text("Install the plugin on your Hermes host")).to_have_count(0)
+    access.scroll_into_view_if_needed()
+    screenshot(page, "extended-access-local-plugin")
+
+    shutil.rmtree(plugin)
+    shutil.copytree(Path(talaria.__file__).parent / "hermes_plugin", plugin)
+    (home / "plugins/.install-metadata.json").unlink()
+    live_app[1].extension = {}
+    page.get_by_role("button", name="Check again", exact=True).click()
+    expect(page.get_by_text("Connected · Talaria plugin", exact=True)).to_be_visible()
+    expect(local.locator(".installation-details")).to_have_text("SourceCopied by hand")
+    expect(local.get_by_role("status")).to_have_text("Up to date")
+    expect(access.locator("code")).to_have_count(0)
+
+
+@pytest.mark.clock
+def test_extended_access_check_confirms_unchanged_result_and_clears_it_on_failure(page, live_app):
+    live_app[1].extension = {}
     page.get_by_role("button", name="Settings").click()
     page.get_by_role("tab", name="Connection", exact=True).click()
-    expect(
-        page.get_by_text(
-            "Connected · Talaria plugin" if connected else "Talaria plugin not detected", exact=True
-        )
-    ).to_be_visible()
+    expect(page.get_by_text("Connected · Talaria plugin", exact=True)).to_be_visible()
     result = page.get_by_role("status").filter(has_text="Check complete.")
     expect(result).to_have_count(0)
     button = page.get_by_role("button", name="Check again", exact=True)
+    # At the end of the panel, a result that changed its height would scroll or hide.
+    page.locator("#settings-content").evaluate("panel => panel.scrollTo(0, panel.scrollHeight)")
+    position = button.bounding_box()["y"]
     button.click()
-    expect(button).to_be_enabled()
-    expect(result).to_have_text(
-        "Check complete. Talaria plugin is connected."
-        if connected
-        else "Check complete. Talaria plugin was not detected."
-    )
+    expect(result).to_have_text("Check complete.")
+    expect(result).to_be_in_viewport()
+    assert button.bounding_box()["y"] == position
     page.clock.fast_forward(10000)
     expect(result).to_be_visible()
 

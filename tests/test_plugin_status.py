@@ -1,5 +1,6 @@
 """Release drift must not disguise newer/custom plugins or break ordinary chat."""
 
+import getpass
 import os
 import shutil
 import subprocess
@@ -8,7 +9,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from talaria import plugin_status
+from talaria import local_hermes, plugin_status
 from talaria.hermes_plugin.release import HERMES_MINIMUM, LOADED_REVISION, PLUGIN_VERSION
 
 from .conftest import wait_for_store
@@ -42,6 +43,25 @@ def test_local_detection_compares_files_not_just_the_version(tmp_path):
     with (target / "bridge.py").open("a") as file:
         file.write("\n# Local modification\n")
     assert plugin_status.installed_status(tmp_path)["status"] == "different"
+
+
+def test_local_commands_leave_out_what_the_owner_already_has():
+    owner = getpass.getuser()
+    home = local_hermes.default_home(owner)
+    facts = {"home": str(home), "owner": owner}
+    plain = local_hermes.commands(facts, "talaria", linkable=True, elevate=False)
+    assert plain["hermes_update"][0] == "hermes plugins update talaria-webui"
+    assert plain["refresh"] == [
+        "talaria hermes-plugin --restart",
+        "talaria hermes-plugin --manage-updates",
+    ]
+    # sudo changes the home Talaria defaults to and the PATH that finds Hermes.
+    elevated = local_hermes.commands(facts, "talaria", linkable=True, elevate=True)
+    assert elevated["refresh"] == [
+        f"sudo talaria hermes-plugin --home {home} --restart",
+        f"sudo talaria hermes-plugin --home {home} --manage-updates"
+        ' --hermes-command "$(command -v hermes)"',
+    ]
 
 
 @pytest.mark.parametrize("version", [True, 2, "1", None])

@@ -11,8 +11,9 @@ import { api } from "./api.js";
 import { Installation } from "./installation.js";
 import { Dialog } from "./dialogs.js";
 import { ProfileConnections } from "./profiles.js";
-import { refreshAgentInfo, refreshModels, supports, fail } from "./store.js";
+import { refreshAgentInfo, refreshCapabilities, refreshModels, supports, fail } from "./store.js";
 import { ReadinessNotice } from "./readiness.js";
+import { PluginStatus, pluginState } from "./access-settings.js";
 import { msg, t } from "./i18n.js";
 import { LanguageSelector } from "./language.js";
 import { statusLabel } from "./content.js";
@@ -38,7 +39,7 @@ function Facts({ items }) {
   </dl>`;
 }
 
-function Overview({ app }) {
+function Overview({ app, onPlugin }) {
   const info = app.agentInfo,
     model = app.defaultModel;
   return html`<div class="agent-overview">
@@ -54,6 +55,11 @@ function Overview({ app }) {
         >${app.connected ? t("Connected") : t("Offline")}</span
       >
     </div>
+    <${PluginStatus} caps=${app.caps}>
+      <button class="text-button" onClick=${onPlugin}>
+        ${pluginState(app.caps).ready ? t("Details") : t("Set up")}
+      </button>
+    <//>
     <${ReadinessNotice} app=${app} compact />
     <section class="default-model-card">
       <div class="section-heading">
@@ -153,6 +159,12 @@ export function Settings({ app, onClose, initialSection = "agent" }) {
   const demo = app.environment === "demo";
   const [section, setSection] = useState(initialSection);
   const [installationRefresh, setInstallationRefresh] = useState(0);
+  // "Your agent" can open Connection at the plugin section.
+  const [focusPlugin, setFocusPlugin] = useState(false);
+  function open(id, plugin = false) {
+    setFocusPlugin(plugin);
+    setSection(id);
+  }
   const mobile = useMediaQuery("(max-width: 700px)");
   useEffect(() => {
     if (mobile)
@@ -168,6 +180,7 @@ export function Settings({ app, onClose, initialSection = "agent" }) {
     if (!quiet) setBusy(true);
     setRefreshFailed(false);
     const results = await Promise.allSettled([
+      refreshCapabilities(),
       refreshAgentInfo(),
       ...(supports("model_options") ? [refreshModels()] : []),
     ]);
@@ -188,7 +201,7 @@ export function Settings({ app, onClose, initialSection = "agent" }) {
           aria-selected=${section === id}
           tabindex=${section === id ? 0 : -1}
           onClick=${() => {
-            setSection(id);
+            open(id);
             if (id === "installation") setInstallationRefresh((value) => value + 1);
           }}
           onKeyDown=${(e) => {
@@ -204,7 +217,7 @@ export function Settings({ app, onClose, initialSection = "agent" }) {
                       : null;
             if (next !== null) {
               e.preventDefault();
-              setSection(sections[next][0]);
+              open(sections[next][0]);
               document
                 .getElementById(`settings-tab-${sections[next][0]}`)
                 ?.focus();
@@ -216,10 +229,10 @@ export function Settings({ app, onClose, initialSection = "agent" }) {
     )}</nav>
     <div key=${section} class="settings-panel" id="settings-content" role="tabpanel" aria-labelledby=${`settings-tab-${section}`} tabindex="0">
       ${refreshFailed && html`<p class="form-error" role="alert">${t("Some agent information could not be refreshed. Your other settings are still available.")}</p>`}
-      ${section === "agent" && html`<${Overview} app=${app} />`}
+      ${section === "agent" && html`<${Overview} app=${app} onPlugin=${() => open("connection", true)} />`}
       ${section === "appearance" && html`<${Appearance} />`}
       ${section === "installation" && html`<${Installation} key=${installationRefresh} readOnly=${demo} />`}
-      ${section === "connection" && html`<${ProfileConnections} app=${app} onRefresh=${refresh} readOnly=${demo} />`}
+      ${section === "connection" && html`<${ProfileConnections} app=${app} onRefresh=${refresh} readOnly=${demo} focusPlugin=${focusPlugin} />`}
     </div></div>
     <footer class="settings-footer"><span>Talaria ${app.version}</span><div>${section !== "installation" && html`<button disabled=${busy} onClick=${() => refresh()}>${busy ? t("Refreshing…") : t("Refresh information")}</button>`}${!demo && html`<button onClick=${async () => {
       try {

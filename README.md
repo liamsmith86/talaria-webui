@@ -109,6 +109,8 @@ hermes plugins install talaria-webui --enable &&
 hermes gateway restart
 ```
 
+When Talaria runs on the same machine as Hermes, Settings → Connection shows the installed plugin's version, whether Hermes or Talaria keeps it up to date, and the commands to update it.
+
 ## Features
 
 ### Chat

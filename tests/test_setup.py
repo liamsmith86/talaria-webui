@@ -12,9 +12,11 @@ import socket
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from talaria import local_hermes
 from talaria import setup as wizard
 from talaria.auth import verify_password
 from talaria.config import load
@@ -131,13 +133,13 @@ def test_discovery_limits_directory_checks_to_32_homes(options, monkeypatch, tmp
         )
         for i in range(1000)
     ]
-    monkeypatch.setattr(wizard.pwd, "getpwall", lambda: accounts)
+    monkeypatch.setattr(local_hermes.pwd, "getpwall", lambda: accounts)
     checked = []
     monkeypatch.setattr(Path, "is_dir", lambda path: checked.append(path) or False)
     current = wizard.default_hermes_home(options)
     assert wizard.discover_hermes_home(options, wizard.Prompts(None)) == current
     assert checked[0] == current
-    assert len(checked[1:]) == wizard.MAX_DISCOVERY_HOMES == 32
+    assert len(checked[1:]) == local_hermes.MAX_DISCOVERY_HOMES == 32
     assert "--hermes-home" in capsys.readouterr().out
 
 
@@ -154,7 +156,7 @@ def test_discovery_selects_without_reading_other_users_configuration(
         directory = tmp_path / name
         (directory / ".hermes").mkdir(parents=True)
         accounts.append(SimpleNamespace(pw_dir=str(directory), pw_name=name, pw_shell="/bin/sh"))
-    monkeypatch.setattr(wizard.pwd, "getpwall", lambda: accounts)
+    monkeypatch.setattr(local_hermes.pwd, "getpwall", lambda: accounts)
     monkeypatch.setattr(Path, "read_text", lambda *a, **kw: pytest.fail("Read during discovery"))
     with pytest.raises(ValueError, match="select one with --hermes-home"):
         wizard.discover_hermes_home(options, wizard.Prompts(None))
@@ -162,7 +164,9 @@ def test_discovery_selects_without_reading_other_users_configuration(
     monkeypatch.setattr(prompts, "ask", lambda *a: "2")
     assert wizard.discover_hermes_home(options, prompts) == tmp_path / "bob/.hermes"
     assert options.hermes_home == tmp_path / "bob/.hermes"
-    monkeypatch.setattr(wizard.pwd, "getpwall", lambda: pytest.fail("Ignored explicit selection"))
+    monkeypatch.setattr(
+        local_hermes.pwd, "getpwall", lambda: pytest.fail("Ignored explicit selection")
+    )
     assert wizard.discover_hermes_home(options, prompts) == options.hermes_home
     options.hermes_home = None
     current = wizard.default_hermes_home(options)
@@ -839,12 +843,15 @@ def test_failed_hermes_restart_comes_after_the_install_and_does_not_undo_it(
 
     monkeypatch.setattr(wizard, "inspect_hermes", lambda *a: (home, None, {}, None))
     monkeypatch.setattr(wizard, "configure_hermes", lambda *a, **kw: {"changed": True})
-    monkeypatch.setattr(wizard, "install_runtime", lambda *a: calls.append("install"))
+    deployment = SimpleNamespace(root=tmp_path, config={})
+    monkeypatch.setattr(wizard, "install_runtime", lambda *a: calls.append("install") or deployment)
     monkeypatch.setattr(wizard, "restart_setup_hermes", fail_restart)
     # An explicit --restart-hermes still reports the failure, once Talaria is in place.
     with pytest.raises(ValueError, match="Talaria is installed"):
         wizard.setup(options, wizard.Prompts(None))
     assert calls == ["install", "restart"]
+    # Settings looks for this Hermes's plugin there.
+    assert json.loads((tmp_path / "deployment.json").read_text())["hermes_home"] == str(home)
 
 
 @pytest.mark.parametrize("fails", [False, True])

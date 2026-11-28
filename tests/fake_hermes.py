@@ -47,6 +47,7 @@ class FakeHermes:
         self.discovery_overrides = {}
         self.extension = None
         self.version = "1.2.3"
+        self.pid = 12345
         self.rewinds = 0
         # Plugin command jobs by request ID. A test finishes one by replacing its result.
         self.commands = {}
@@ -265,7 +266,7 @@ class FakeHermes:
                     "active_agents": 0,
                     "readiness": {"status": "ok", "checks": {}},
                     "platforms": {"api_server": {"state": "connected"}},
-                    "pid": 12345,
+                    "pid": self.pid,
                     "private_future_field": KEY,
                 }
             )
