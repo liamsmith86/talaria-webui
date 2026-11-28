@@ -14,30 +14,31 @@ const releaseLabels = {
 };
 
 const localLabels = {
-  catalog: msg("On this server: version {version}, installed from Hermes's plugin catalog."),
-  hermes: msg("On this server: version {version}, installed by Hermes."),
-  talaria: msg("On this server: version {version}, updated with Talaria."),
-  manual: msg("On this server: version {version}, copied by hand and not updated automatically."),
+  catalog: msg("Plugin installed: version {version} · Source: Hermes plugin catalog"),
+  git: msg("Plugin installed: version {version} · Source: Git, installed with Hermes"),
+  hermes: msg("Plugin installed: version {version} · Source: installed with Hermes"),
+  talaria: msg("Plugin installed: version {version} · Source: Talaria, which keeps it up to date"),
+  manual: msg("Plugin installed: version {version} · Source: copied by hand, no automatic updates"),
 };
 
 // What the plugin files in the Hermes serving this connection need, as steps for their owner.
 function localSteps(local, serving) {
   const stale = ["outdated", "unknown"].includes(local.status);
   if (local.status === "missing")
-    return [[msg("Install it on this server, as {owner}:"), local.commands.install]];
+    return [[msg("To install it, run as {owner}:"), local.commands.install]];
   if (local.managed === "hermes" && stale && local.source === "other")
-    return [[msg("Hermes can't update this copy. To use the plugin bundled with Talaria, which then updates with Talaria, run as {owner}:"), local.commands.switch]];
+    return [[msg("Hermes can't update this copy. To replace it with Talaria's copy, which Talaria keeps up to date, run as {owner}:"), local.commands.switch]];
   if (local.managed === "hermes" && stale)
     return [
-      [msg("Update it through Hermes, as {owner}:"), local.commands.hermes_update],
-      ...(local.source === "catalog" ? [[msg("If Hermes finds no update, its catalog doesn't have version {bundled} yet. To use the plugin bundled with Talaria instead, which then updates with Talaria, run:"), local.commands.switch]] : []),
+      [msg("To update it to version {bundled}, run as {owner}:"), local.commands.hermes_update],
+      ...(local.source === "catalog" ? [[msg("If Hermes says it's already up to date, its catalog doesn't have version {bundled} yet. Switch to Talaria's copy instead, which Talaria keeps up to date:"), local.commands.switch]] : []),
     ];
   if (local.managed === "talaria" && local.status !== "current" && local.status !== "newer")
-    return [[msg("Talaria installs its bundled plugin with each update. The button below installs it now."), null]];
+    return [[msg("Talaria keeps this plugin up to date. To install version {bundled} now, use the button below."), null]];
   if (local.managed === "manual" && local.status !== "current" && local.status !== "newer")
-    return [[msg("Install the version bundled with Talaria, as {owner}:"), local.commands.refresh]];
+    return [[msg("To update it to version {bundled}, run as {owner}:"), local.commands.refresh]];
   if (!serving && local.status === "current")
-    return [[msg("Hermes isn't running the installed plugin. Enable it and restart the gateway, as {owner}:"), local.commands.enable]];
+    return [[msg("To enable it and restart Hermes, run as {owner}:"), local.commands.enable]];
   return [];
 }
 
@@ -47,7 +48,7 @@ function LocalPlugin({ local, serving, steps }) {
   const values = { version: local.version || t("unknown"), owner: local.owner, bundled: local.bundled_version };
   return html`<div class="local-plugin">
     <p class="field-help" role="status">
-      ${label ? t(label, values) : t("Not installed in the Hermes on this server.")}
+      ${label ? t(label, values) : t("Plugin not installed on this server.")}
     </p>
     ${steps && localSteps(local, serving).map(([text, commands]) => html`<div key=${text}>
       <p class="field-help">${t(text, values)}</p>
@@ -114,7 +115,7 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
           : outdated
           ? t("Talaria plugin needs a newer Hermes")
           : idle
-          ? t("Talaria plugin installed but not running")
+          ? t("Hermes isn't loading the Talaria plugin")
           : t("Talaria plugin not detected")}</span
       >
     </div>
@@ -137,7 +138,7 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
     ${!available && !outdated && !local &&
     html`<p class="field-help">
       ${t("Install the plugin on your Hermes host, then restart its gateway.")}
-      ${" "}${rich("If it's installed, {command} on that host shows its version and whether it's enabled.", { command: html`<code>hermes plugins show talaria-webui</code>` })}
+      ${" "}${rich("To check whether it's installed and enabled, run {command} on that host.", { command: html`<code>hermes plugins show talaria-webui</code>` })}
     </p>`}
     ${checked && html`<p class="field-help" role="status">${unsupported
       ? t("Check complete. Talaria plugin can't run on this Hermes version.")
@@ -146,7 +147,7 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
       : outdated
       ? t("Check complete. Talaria plugin needs a newer Hermes.")
       : idle
-      ? t("Check complete. Talaria plugin is installed but not running.")
+      ? t("Check complete. Hermes isn't loading the Talaria plugin.")
       : t("Check complete. Talaria plugin was not detected.")}</p>`}
     ${error && html`<p class="form-error" role="alert">${t(error)}</p>`}
     <div class="dialog-actions">
