@@ -57,6 +57,15 @@ def reasoning(request):
     return None
 
 
+def cached_context_length(model, base_url):
+    try:
+        from agent.model_metadata import get_cached_context_length
+
+        return number(get_cached_context_length(model, base_url or ""))
+    except Exception:
+        return None
+
+
 class Observations:
     def __init__(self, home):
         self.home = home
@@ -246,14 +255,12 @@ class Observations:
         ended_at=None,
         finish_reason=None,
         api_request_id=None,
+        context_length=None,
         **kwargs,
     ):
-        try:
-            from agent.model_metadata import get_cached_context_length
-
-            context_max = number(get_cached_context_length(model, base_url or ""))
-        except Exception:
-            context_max = None
+        # The window Hermes compacts against, passed since 0.23.1. Hermes caches a length only
+        # for the endpoints it probes.
+        context_max = number(context_length) or cached_context_length(model, base_url)
 
         with self.lock:
             data = self.pending.get((task_id, turn_id))
