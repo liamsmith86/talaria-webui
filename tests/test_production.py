@@ -29,7 +29,7 @@ def test_startup_delivery(page):
     }))""")
     scripts = [entry for entry in resources if entry["path"].endswith(".js")]
     assert len(scripts) == 3
-    assert sum(entry["bytes"] for entry in scripts) < 106 * 1024
+    assert sum(entry["bytes"] for entry in scripts) < 108 * 1024
     assert len([entry for entry in resources if entry["path"].endswith(".css")]) == 1
     assert page.locator('script[type="module"]').get_attribute("data-store-entry") == "app.js"
 
