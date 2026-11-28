@@ -1,7 +1,7 @@
 {
   "version": 1,
   "inputs": {
-    "src/talaria/static/access-settings.js": "862d9f47994c228641cab58e0ce637939da6498e599aea0017a96699620da2f7",
+    "src/talaria/static/access-settings.js": "e6bbc7593e9fe654e49cec5cf23187f944b74af8c54f8cc4dc103612896411c9",
     "src/talaria/static/api.js": "21af95aba27c3da81bb72bd891ebaaefa6280cc705e8d07a73a8ff5b1a1be6b7",
     "src/talaria/static/app.js": "af7021606e1368628d3f020c1418ddc17e47a0685e8a59e6c8db9d6cfccce040",
     "src/talaria/static/app.webmanifest": "2980c46c6cd1a96648c112d78b3ba344ba3d27a7956b0b0aaa79413d2d23dcb0",
@@ -59,7 +59,7 @@
     "src/talaria/static/startup.js": "e37988093acc0c16f218d51285d3f3e74ccdab1c4de6d0b21451bcb4edb635bd",
     "src/talaria/static/store.js": "d7b264bd5b7c930a6bc0ea8fb655b1f45dbbb39b0ba01c25b856a70db3e8ec8c",
     "src/talaria/static/stream-reveal.js": "572386761c635f6337de2b14507a8373e043072b81bd08489c535fb88d9d6e73",
-    "src/talaria/static/styles/base.css": "1b2e3eb901194b1bfbf41b00a80948b9d80104ce26e4e927cf9dbfdb84816c87",
+    "src/talaria/static/styles/base.css": "d8475e4dca642f8954e2e78b2d3d8d99271638f371d80b36193330a22d315bbf",
     "src/talaria/static/styles/chat.css": "4e27a3e3eed7b15f9e3ec0c94ab9899ec9f0247e7a52bb22f71ad7939554cb16",
     "src/talaria/static/styles/conversation-features.css": "98694903375d1f6bb821618ebd2dcbd50578f542157b3157e726a27b1f2b3576",
     "src/talaria/static/styles/demo.css": "054e5325f012fe4d3b3b6dcdd537af849c6515f01aaaeeafaa431ee6e1b62387",
@@ -87,14 +87,14 @@
     "src/talaria/static/vendor/purify.js": "1a06b721ad8b46d6174b21f22ea70290aaf3e5a81d65af3b7178113953f7c9b1"
   },
   "outputs": {
-    "app.js": "66ea1473f3848d3f2c8ebf42dd5a1eea7f2bec54a89883146f2fae8285ead638",
+    "app.js": "794b769fc44ab94d0195d8ee58b4e900fe19dcede54ef6d5e2b6d7d9ea24953a",
     "app.js.LEGAL.txt": "5e8bec2691a57f15156bb556fc6a9433badc707bbf5675c76607b4c43f2ffbf7",
-    "app.js.map": "1bfe4c99e629794924541ae1ec5e17829482a38287c81030fe537eec0d7f7856",
+    "app.js.map": "130f6391f39a7d64ca9a58fbff3bab23b414109daacfcd7e5ef9639c78e0a07a",
     "appearance.js": "ee72fb422aa49fff0fccb147d55442d115a5bcff3d244e8479d6c696448b213a",
     "boot.js": "1f525fc72f6442a7286e25a1379aa92432e95dc0bb66109240207f4c72c43f3c",
     "demo.js": "a76c6a7515e24be40ef5270543e3dede8edf882e83c08f0c485432215c6b21d7",
     "demo.js.map": "a2139e4ecf725ba5d3eba1db535710fbdeda2c42a38ece9be91ce7f51dbe2248",
     "index.html": "80820e8146097f515130ebd4edb58ce8178ab9c2762f0b3732eb3b4901fd516c",
-    "styles.css": "11e9e9338cd8f6f7f9e2508e76b34e20e23f910152a88ca7878bbad1ef025f9f"
+    "styles.css": "add905df2a88ce1b765023e0b8b3e07de79aa703d1667077b87607db21737f90"
   }
 }

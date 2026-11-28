@@ -72,6 +72,9 @@ def test_extended_access_explains_the_plugin_in_the_local_hermes(
     local = access.locator(".local-plugin")
     expect(local.locator("h4")).to_have_text("Talaria plugin 1.6.2")
     expect(local.locator(".installation-details")).to_have_text("SourceHermes plugin catalog")
+    expect(local.get_by_role("link", name="Hermes plugin catalog")).to_have_attribute(
+        "href", "https://hermes-agent.nousresearch.com/marketplace/talaria-webui"
+    )
     expect(local.get_by_role("status")).to_have_text(f"Update available · Latest: {PLUGIN_VERSION}")
     expect(local).to_contain_text(
         "To update the Talaria plugin, run the following commands on Hermes Agent:"

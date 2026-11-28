@@ -146,6 +146,13 @@ summary {
   border-color: var(--line);
   background: var(--surface);
 }
+/* A link that looks like a button, such as one to an outside page. */
+a.button {
+  text-decoration: none;
+}
+a.secondary {
+  color: var(--text);
+}
 .secondary:hover {
   background: var(--surface-hover);
 }

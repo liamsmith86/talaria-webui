@@ -12,6 +12,12 @@ const releaseLabels = {
   unknown: msg("Plugin version not reported"),
 };
 
+const CATALOG = "https://hermes-agent.nousresearch.com/marketplace/talaria-webui";
+
+function CatalogLink({ children, className }) {
+  return html`<a class=${className} href=${CATALOG} target="_blank" rel="noopener noreferrer">${children}</a>`;
+}
+
 const localSources = {
   catalog: msg("Hermes plugin catalog"),
   git: msg("Git, installed by Hermes"),
@@ -73,7 +79,8 @@ function LocalPlugin({ local, serving, steps }) {
   const source = localSources[local.managed === "hermes" ? local.source : local.managed];
   return html`<div class="local-plugin">
     <${ReleaseSummary} level=${4} title=${t("Talaria plugin")} version=${local.version}
-      details=${source ? [[t("Source"), t(source)]] : []} />
+      details=${source ? [[t("Source"), local.source === "catalog" && local.managed === "hermes"
+        ? html`<${CatalogLink}>${t(source)}<//>` : t(source)]] : []} />
     <section class="installation-update" aria-label=${t("Updates")}>
       <p class="installation-status" role="status">
         ${t(localStatus[local.status], { bundled: local.bundled_version })}
@@ -184,6 +191,9 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
         href="https://github.com/liamsmith86/talaria-webui#hermes-plugin" target="_blank" rel="noopener noreferrer">
         ${t("Server installation instructions")}
       </a>`}
+      ${(local ? local.status === "missing" : needsInstall) && html`<${CatalogLink} className="button secondary">
+        <${Icon} name="link" size=${15} />${t("Hermes plugin catalog")}
+      <//>`}
       <button class="button secondary" disabled=${busy || readOnly} onClick=${() => refresh()}>
         ${busy ? t("Checking…") : t("Check again")}
       </button>
