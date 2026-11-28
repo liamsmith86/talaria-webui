@@ -1,10 +1,12 @@
 name: CI
+# The release watch (hermes-release.yml) finds earlier runs for a release by this name.
+run-name: ${{ inputs.hermes_release && format('CI on Hermes {0}', inputs.hermes_release) || '' }}
 
 on:
   pull_request:
   schedule:
     # Every browser test on every browser, and the native tests on Hermes main and its latest
-    # release, so a Hermes change that breaks Talaria shows within a day.
+    # release, so a Hermes change that breaks Talaria shows within a day. A failure opens an issue.
     - cron: '17 7 * * *'
   workflow_call:
     inputs:
@@ -26,12 +28,16 @@ on:
         description: Test Hermes main and its latest release
         type: boolean
         default: false
+      hermes_release:
+        description: Test Hermes main and this release tag; a failure opens an issue
+        type: string
+        default: ''
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.full && 'full' || inputs.browser || 'none' }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.hermes_release || inputs.full && 'full' || inputs.browser || 'none' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -296,7 +302,7 @@ jobs:
 
   hermes:
     needs: lint
-    if: inputs.full || inputs.hermes_latest || github.event_name == 'schedule'
+    if: inputs.full || inputs.hermes_latest || inputs.hermes_release || github.event_name == 'schedule'
     name: Native Hermes (${{ matrix.hermes.name }})
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -305,7 +311,7 @@ jobs:
       matrix:
         # Releases cover the oldest supported release, which is also the current stable one.
         # When a newer stable ships, add it beside this minimum. Main's lockfile targets 3.14.
-        hermes: ${{ fromJSON((inputs.hermes_latest || github.event_name == 'schedule') && '[{"name":"main","ref":"main","python":"3.14.10"},{"name":"latest release","ref":"latest","python":"3.14.10"}]' || '[{"name":"v0.23.5","ref":"a428f5344f777ccafe389c79d5b09384abef1437","python":"3.14.10"}]') }}
+        hermes: ${{ fromJSON((inputs.hermes_latest || inputs.hermes_release || github.event_name == 'schedule') && '[{"name":"main","ref":"main","python":"3.14.10"},{"name":"latest release","ref":"latest","python":"3.14.10"}]' || '[{"name":"v0.23.5","ref":"a428f5344f777ccafe389c79d5b09384abef1437","python":"3.14.10"}]') }}
     env:
       HERMES_SOURCE: ${{ github.workspace }}/.local/hermes
       HERMES_DISABLE_LAZY_INSTALLS: '1'
@@ -318,9 +324,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REF: ${{ matrix.hermes.ref }}
+          RELEASE: ${{ inputs.hermes_release }}
         run: |
           if [ "$REF" = latest ]; then
-            REF=$(gh release view --repo NousResearch/hermes-agent --json tagName --jq .tagName)
+            REF=${RELEASE:-$(gh release view --repo NousResearch/hermes-agent --json tagName --jq .tagName)}
           fi
           echo "ref=$REF" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -349,14 +356,14 @@ jobs:
 
   install:
     needs: lint
-    if: inputs.full || inputs.hermes_latest || github.event_name == 'schedule'
+    if: inputs.full || inputs.hermes_latest || inputs.hermes_release || github.event_name == 'schedule'
     name: Install walkthrough (${{ matrix.hermes }})
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        hermes: ${{ fromJSON((inputs.hermes_latest || github.event_name == 'schedule') && '["main"]' || '["stable"]') }}
+        hermes: ${{ fromJSON(inputs.hermes_release && format('["main","{0}"]', inputs.hermes_release) || (inputs.hermes_latest || github.event_name == 'schedule') && '["main"]' || '["stable"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -369,8 +376,14 @@ jobs:
       - run: uv sync --locked
       - name: Walk a new user's install through real Hermes
         env:
+          GH_TOKEN: ${{ github.token }}
           HERMES_REF: ${{ matrix.hermes }}
-        run: uv run --locked python contrib/install_walkthrough.py --hermes-ref "$HERMES_REF"
+        run: |
+          # Hermes's installer takes a branch or a commit, so a release tag goes in as its commit.
+          if [[ $HERMES_REF == v* ]]; then
+            HERMES_REF=$(gh api "repos/NousResearch/hermes-agent/commits/$HERMES_REF" --jq .sha)
+          fi
+          uv run --locked python contrib/install_walkthrough.py --hermes-ref "$HERMES_REF"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
@@ -433,7 +446,7 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
           FULL: ${{ inputs.full || false }}
           PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
-          NATIVE: ${{ inputs.hermes_latest || github.event_name == 'schedule' }}
+          NATIVE: ${{ inputs.hermes_latest || inputs.hermes_release != '' || github.event_name == 'schedule' }}
         run: |
           python3 - <<'PY'
           import json, os
@@ -448,3 +461,28 @@ jobs:
           assert all(results[name]['result'] == 'success' for name in required), results
           assert all(job['result'] in {'success', 'skipped'} for job in results.values()), results
           PY
+
+  report:
+    name: Report to the owner
+    # Runs nobody started: the nightly one and the release watch's.
+    if: always() && (github.event_name == 'schedule' || inputs.hermes_release)
+    needs: [required, fuzz]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: ${{ inputs.hermes_release && 'CI is failing on a new Hermes release' || 'Nightly CI is failing' }}
+          RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
+          LINK: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DETAIL: ${{ inputs.hermes_release && format('Hermes {0}', inputs.hermes_release) || '' }}
+        run: bash .github/scripts/alert.sh "$TITLE" "$RESULT" "$LINK" "$DETAIL"

@@ -15,6 +15,47 @@ release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release)
 
 
+TITLE = "Nightly CI is failing"
+
+
+@pytest.mark.parametrize(
+    "result,listed,action",
+    [
+        ("failure", [], "issue create --title " + TITLE),
+        ("failure", [{"number": 7, "title": TITLE}], "issue comment 7"),
+        ("success", [{"number": 7, "title": TITLE}], "issue close 7"),
+        # Search matches words; only the exact title is this check's issue.
+        ("success", [{"number": 8, "title": TITLE + " on Firefox"}], None),
+        ("cancelled", [{"number": 7, "title": TITLE}], None),
+    ],
+)
+def test_unattended_checks_keep_one_issue_open_while_failing(tmp_path, result, listed, action):
+    gh = tmp_path / "gh"
+    gh.write_text(
+        '#!/bin/bash\nprintf "%s\\n" "$*" >> "$CALLS"\n'
+        '[ "$1 $2" = "issue list" ] || exit 0\n'
+        'while [ "$1" != --jq ]; do shift; done\njq -r "$2" <<<"$LISTED"\n'
+    )
+    gh.chmod(0o755)
+    calls = tmp_path / "calls"
+    subprocess.run(
+        ["bash", ROOT / ".github/scripts/alert.sh", TITLE, result, "https://ci/run/1"],
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+            "CALLS": str(calls),
+            "LISTED": json.dumps(listed),
+        },
+        check=True,
+        timeout=10,
+    )
+    made = calls.read_text().splitlines() if calls.exists() else []
+    assert (made == []) == (result == "cancelled")
+    changes = [line for line in made if line.startswith("issue ") and "issue list" not in line]
+    assert len(changes) == (action is not None)
+    assert all(line.startswith(action) for line in changes)
+
+
 @pytest.mark.parametrize("failures,attempts,exit_code", [(0, 1, 0), (2, 3, 0), (4, 3, 1)])
 def test_lint_install_retries_download_failures_without_hiding_permanent_errors(
     tmp_path, failures, attempts, exit_code
