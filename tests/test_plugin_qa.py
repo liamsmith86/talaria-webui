@@ -180,6 +180,7 @@ def test_new_model_call_cannot_inherit_prior_usage_or_accept_a_late_hook(tmp_pat
 
 def test_search_reads_an_older_hermes_display_once_per_session():
     from talaria.hermes_plugin.search import conversation_ids
+    from talaria.hermes_plugin.store import Legacy
 
     reads = []
 
@@ -190,5 +191,5 @@ def test_search_reads_an_older_hermes_display_once_per_session():
 
     shown = {}
     for _ in range(3):
-        assert conversation_ids(OlderHermes(), "session", shown) == {1}
+        assert conversation_ids(Legacy(OlderHermes()), "session", shown) == {1}
     assert reads == ["session"]

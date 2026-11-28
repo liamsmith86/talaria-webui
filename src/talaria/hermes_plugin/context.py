@@ -16,6 +16,7 @@ from .runtime import (
     session_request,
     session_runtime,
 )
+from .store import open_store
 
 log = logging.getLogger(__name__)
 MAX_INSTRUCTIONS = 64 * 1024
@@ -190,9 +191,9 @@ async def start_run(adapter, request):
             # inherited instructions and saved model travel in the body instead. They
             # become part of its idempotency fingerprint and admission record.
             if isinstance(data, dict):
-                db = await native._ensure_session_db_async()
+                store = await open_store(native)
                 body = await asyncio.to_thread(
-                    session_request, native, db, data, context.instructions, use_default
+                    session_request, native, store, data, context.instructions, use_default
                 )
                 request = CompletedRequest(request, body)
             return await api_server_runs._handle_runs(native, request, _api_server=api_server)

@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import uuid
+from pathlib import Path
 from unittest.mock import patch
 
 from agent.context_compressor import ContextCompressor
@@ -21,16 +22,19 @@ def verify_lease_recovery(db):
     before = db.get_messages(sid)
     script = """
 import os, sys
-from pathlib import Path
 from types import SimpleNamespace
-from hermes_state import SessionDB
+sys.path.insert(0, sys.argv[3])
+from hermes_fixtures import open_db, plugin_store
 from talaria.hermes_plugin.compression import session_lease
-db = SessionDB(Path(sys.argv[1]))
+store = plugin_store(open_db(sys.argv[1]))
 agent = SimpleNamespace(session_id=sys.argv[2], _touch_activity=lambda _: None)
-with session_lease(agent, db, sys.argv[2]):
+with session_lease(agent, store, sys.argv[2]):
     os._exit(0)  # Simulate process loss before the command's finally can release its lease.
 """
-    subprocess.run([sys.executable, "-c", script, str(db.db_path), sid], check=True, timeout=15)
+    home, tests = Path(db.db_path).parent, Path(__file__).parent
+    subprocess.run(
+        [sys.executable, "-c", script, str(home), sid, str(tests)], check=True, timeout=15
+    )
     assert db.try_acquire_session_turn_lease(sid, "recovered-command"), (
         "A dead Talaria command still owns its unexpired native turn lease"
     )

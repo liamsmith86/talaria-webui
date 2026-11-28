@@ -1,19 +1,13 @@
 """Bounded views over Hermes's native index and message windows; no transcript store."""
 
 import asyncio
-import inspect
 
 FIELDS = ("id", "session_id", "role", "snippet", "timestamp", "source")
 PAGE_SIZE = 20
 
 
-def supported(db, adapter):
-    try:
-        inspect.signature(db.search_messages).bind("query", limit=1, offset=0, fields=FIELDS)
-        inspect.signature(db.get_messages_around).bind("session", 1, window=5)
-        return callable(adapter._message_response)
-    except (AttributeError, TypeError, ValueError):
-        return False
+def supported(store, adapter):
+    return store.searchable(FIELDS) and callable(getattr(adapter, "_message_response", None))
 
 
 def visible(row):
@@ -24,26 +18,11 @@ def visible(row):
     )
 
 
-def displayed(db, sid):
-    """The rows Hermes shows for this session: compaction copies a kept turn to a new row."""
-    return db.get_messages(sid, include_compacted=True)
-
-
-def conversation_ids(db, sid, shown):
-    """Row ids in the display of this session's conversation, read once per search.
-
-    A compaction copies kept turns into a newer row, and rotation into a new session. Hermes's
-    display keeps one row for each; versions before 0.22 can only do so within one session.
-    """
-    lineage = "include_ancestors" in inspect.signature(db.get_messages).parameters
-    key = db.get_compression_tip(sid) if lineage else sid
+def conversation_ids(store, sid, shown):
+    """Row ids in the display of this session's conversation, read once per search."""
+    key, read = store.conversation(sid)
     if key not in shown:
-        rows = (
-            db.get_messages(key, include_compacted=True, include_ancestors=True)
-            if lineage
-            else displayed(db, sid)
-        )
-        shown[key] = {row["id"] for row in rows}
+        shown[key] = {row["id"] for row in read()}
     return shown[key]
 
 
@@ -56,23 +35,23 @@ def compacted(row, session):
     )
 
 
-def search(db, query, offset):
-    rows = db.search_messages(query, limit=PAGE_SIZE, offset=offset, fields=FIELDS)
+def search(store, query, offset):
+    rows = store.search(query, PAGE_SIZE, offset, FIELDS)
     sessions, shown = {}, {}
     result = []
     for row in rows:
         sid = row["session_id"]
         if sid not in sessions:
-            sessions[sid] = db.get_session(sid)
+            sessions[sid] = store.session(sid)
         session = sessions[sid]
         if not session or session.get("hidden"):
             continue
         # The native index excludes rewound rows. Recheck visibility after search:
         # a concurrent rewind must not return a now-hidden match or its snippet.
-        window = db.get_messages_around(sid, row["id"], window=0)["window"]
-        if not window or not visible(window[0]):
+        stored = store.stored(sid, row["id"])
+        if not stored or not visible(stored):
             continue
-        if compacted(window[0], session) and row["id"] not in conversation_ids(db, sid, shown):
+        if compacted(stored, session) and row["id"] not in conversation_ids(store, sid, shown):
             continue
         result.append(
             {
@@ -84,12 +63,12 @@ def search(db, query, offset):
     return {"data": result, "has_more": len(rows) == PAGE_SIZE, "next_offset": offset + len(rows)}
 
 
-def around(db, adapter, sid, mid):
-    session = db.get_session(sid)
+def around(store, adapter, sid, mid):
+    session = store.session(sid)
     if not session or session.get("hidden"):
         return None
     # Row IDs do not follow display order across a compaction, so window the display itself.
-    rows = [row for row in displayed(db, sid) if visible(row)]
+    rows = [row for row in store.displayed(sid) if visible(row)]
     index = next((i for i, row in enumerate(rows) if row["id"] == mid), None)
     if index is None:
         return None
@@ -102,10 +81,10 @@ def around(db, adapter, sid, mid):
     }
 
 
-async def dispatch(request, adapter, db):
+async def dispatch(request, adapter, store):
     from aiohttp import web
 
-    if not supported(db, adapter):
+    if not supported(store, adapter):
         return web.json_response({"error": "Update Hermes to search session history."}, status=404)
     try:
         if request.match_info["action"] == "search":
@@ -113,13 +92,13 @@ async def dispatch(request, adapter, db):
             offset = int(request.query.get("offset", "0"))
             if not query or len(query) > 200 or not 0 <= offset <= 10000:
                 raise ValueError
-            result = await asyncio.to_thread(search, db, query, offset)
+            result = await asyncio.to_thread(search, store, query, offset)
         else:
             mid = int(request.query.get("message_id", "0"))
             if not 0 < mid < 2**63:
                 raise ValueError
             result = await asyncio.to_thread(
-                around, db, adapter, request.match_info["session_id"], mid
+                around, store, adapter, request.match_info["session_id"], mid
             )
             if result is None:
                 return web.json_response(

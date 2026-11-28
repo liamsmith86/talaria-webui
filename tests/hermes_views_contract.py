@@ -7,7 +7,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer, make_mocked_request
 from gateway.config import PlatformConfig
 from gateway.platforms.api_server import APIServerAdapter
-from hermes_state import SessionDB
+from hermes_fixtures import native, open_db, plugin_store
 
 from talaria.hermes import Hermes
 from talaria.hermes_plugin import activity, search
@@ -34,10 +34,11 @@ async def verify_titles(run, db, configure, client, headers):
 
 
 def verify_views(home):
-    db = SessionDB(home / "views.db")
+    db = open_db(home / "views")
+    store = plugin_store(db)
     adapter = APIServerAdapter(PlatformConfig(enabled=True, extra={"key": "fixture-key"}))
     try:
-        assert search.supported(db, adapter)
+        assert search.supported(store, adapter)
         db.create_session("visible", "api_server")
         target = db.append_message("visible", "user", "uncommonneedle 故事")
         db.append_message("visible", "assistant", "An answer")
@@ -46,19 +47,19 @@ def verify_views(home):
         db.create_session("hidden", "api_server")
         db.append_message("hidden", "assistant", "uncommonneedle hidden")
         db.set_session_hidden("hidden", True)
-        hits = search.search(db, "uncommonneedle", 0)["data"]
+        hits = search.search(store, "uncommonneedle", 0)["data"]
         assert [(hit["session_id"], hit["id"]) for hit in hits] == [("visible", target)]
         assert "context" not in hits[0] and "content" not in hits[0]
-        window = search.around(db, adapter, "visible", target)
+        window = search.around(store, adapter, "visible", target)
         assert len(window["data"]) == 2
         assert window["data"][0]["id"] == target
-        assert search.around(db, adapter, "visible", removed) is None
-        assert search.around(db, adapter, "hidden", target) is None
-        assert search.around(db, adapter, "visible", 999999) is None
-        assert search.search(db, "故事", 0)["data"][0]["id"] == target
+        assert search.around(store, adapter, "visible", removed) is None
+        assert search.around(store, adapter, "hidden", target) is None
+        assert search.around(store, adapter, "visible", 999999) is None
+        assert search.search(store, "故事", 0)["data"][0]["id"] == target
         db.archive_and_compact("visible", [{"role": "user", "content": "A compact summary"}])
-        assert search.search(db, "uncommonneedle", 0)["data"][0]["id"] == target
-        assert search.around(db, adapter, "visible", target)["message_id"] == target
+        assert search.search(store, "uncommonneedle", 0)["data"][0]["id"] == target
+        assert search.around(store, adapter, "visible", target)["message_id"] == target
         verify_activity(adapter)
     finally:
         db.close()
@@ -68,9 +69,9 @@ def verify_views(home):
 
 
 async def verify_history(home):
-    db = SessionDB(home / "history.db")
+    db = open_db(home / "history")
     adapter = APIServerAdapter(PlatformConfig(enabled=True, extra={"key": "fixture-key"}))
-    adapter._session_db = db
+    adapter._session_db = native(db)
     app = web.Application()
     app.router.add_get("/api/sessions/{session_id}/messages", adapter._handle_session_messages)
     try:

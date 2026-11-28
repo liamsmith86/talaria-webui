@@ -10,7 +10,7 @@ class CommandError(ValueError):
     """Expected command feedback safe to return to the authenticated client."""
 
 
-def supported(adapter, db):
+def supported(adapter, store):
     try:
         from agent.conversation_compression_manual import compress_now, parse_compress_args
         from agent.turn_facade_lease import DurableTurnLease
@@ -19,7 +19,7 @@ def supported(adapter, db):
         inspect.signature(AIAgent._compress_context).bind(
             None, [], None, force=True, defer_context_engine_notification=True, verbatim_tail=[]
         )
-        return all(
+        return store.compressible() and all(
             callable(value)
             for value in (
                 DurableTurnLease,
@@ -27,8 +27,6 @@ def supported(adapter, db):
                 parse_compress_args,
                 AIAgent._compress_context,
                 getattr(adapter, "_effective_session_runtime_request", None),
-                getattr(db, "try_acquire_session_turn_lease", None),
-                getattr(db, "resolve_resume_session_id", None),
             )
         )
     except (ImportError, AttributeError, TypeError):
@@ -58,20 +56,26 @@ def create_agent(adapter, session):
     return agent
 
 
-@contextmanager
-def session_lease(agent, db, sid):
-    from agent.turn_facade_lease import LEASE_TTL_SECONDS, DurableTurnLease
-
+def namespace_token():
+    """Tells this gateway's lease holders apart from another PID namespace's."""
     try:
-        from hermes_state_pidns import holder_namespace_token
+        from process_identity import holder_namespace_token
     except ImportError:
-        namespace = ""
-    else:
-        namespace = holder_namespace_token()
-    holder = f"pid={os.getpid()}{namespace}:talaria-command={uuid.uuid4().hex}"
-    if not db.try_acquire_session_turn_lease(sid, holder, ttl_seconds=LEASE_TTL_SECONDS):
+        try:  # 0.22.1 to 0.23.2
+            from hermes_state_pidns import holder_namespace_token
+        except ImportError:
+            return ""
+    return holder_namespace_token()
+
+
+@contextmanager
+def session_lease(agent, store, sid):
+    from agent.turn_facade_lease import LEASE_TTL_SECONDS
+
+    holder = f"pid={os.getpid()}{namespace_token()}:talaria-command={uuid.uuid4().hex}"
+    lease = store.turn_lease(agent, sid, holder, LEASE_TTL_SECONDS)
+    if lease is None:
         raise CommandError("This session is busy. Wait for the response to finish.")
-    lease = DurableTurnLease(agent, db, sid, holder)
     agent._active_session_turn_lease_holder = holder
     agent._active_session_turn_lease_ttl_seconds = LEASE_TTL_SECONDS
     try:
@@ -84,21 +88,19 @@ def session_lease(agent, db, sid):
         lease.release()
 
 
-def compress(adapter, db, sid, args):
+def compress(adapter, store, sid, args):
     from agent.conversation_compression import finalize_context_engine_compression_notification
 
-    session = db.get_session(sid)
+    session = store.session(sid)
     if not session or session.get("source") != "api_server":
         raise CommandError("Branch this session into an API session before compressing it.")
     agent = create_agent(adapter, session)
     try:
-        with session_lease(agent, db, sid):
+        with session_lease(agent, store, sid):
             # Resolve only after admission: another client may have rotated this transcript.
-            canonical = db.resolve_resume_session_id(sid)
-            if canonical != sid:
+            if store.resume_target(sid) != sid:
                 raise CommandError("This session has moved. Refresh it before compressing.")
-            db.assert_resume_safe(sid, max_messages=20000, tip_only=True)
-            history = db.get_messages_as_conversation(sid, include_row_ids=True)
+            history = store.replay(sid, 20000)
             text = compress_history(agent, history, args)
             return {"session_id": agent.session_id, "text": text, "changed": changed(agent, sid)}
     finally:

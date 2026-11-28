@@ -20,7 +20,7 @@ from gateway.platforms.api_server import APIServerAdapter
 from gateway.run import _profile_runtime_scope
 from hermes_cli.plugins import PluginContext, get_plugin_manager
 from hermes_cli.plugins_manifest import PluginManifest
-from hermes_state import SessionDB
+from hermes_fixtures import native, open_db
 from run_agent import AIAgent
 
 from talaria.hermes_plugin.bridge import register, wire
@@ -189,9 +189,9 @@ async def main():
     provider = web.Application()
     provider.router.add_post("/v1/chat/completions", complete)
     async with TestServer(provider) as server:
-        db = SessionDB(home / "state.db")
+        db = open_db(home)
         adapter = APIServerAdapter(PlatformConfig(enabled=True, extra={"key": "fixture-key"}))
-        adapter._session_db = db
+        adapter._session_db = native(db)
         assert supports_context_runs(adapter)
         with patch.object(api_server_runs, "_handle_runs", lambda adapter, request: None):
             assert not supports_context_runs(adapter)

@@ -2,12 +2,12 @@
 
 import asyncio
 import hashlib
-import inspect
 import json
 import logging
 
 from .observations import Observations
 from .release import LOADED_REVISION, PLUGIN_VERSION
+from .store import compatible, open_store, user_turn_parts
 
 log = logging.getLogger(__name__)
 PREFIX = "/talaria/v1"
@@ -34,22 +34,6 @@ def enabled():
         return False
 
 
-def supports_rewind(db):
-    try:
-        if not callable(getattr(db, "get_active_message_ids", None)):
-            return False
-        inspect.signature(db.rewind_to_message).bind(
-            "session",
-            1,
-            expected_active_ids=[],
-            preserve_compaction_handoff=False,
-            expected_target_content="",
-        )
-        return True
-    except (AttributeError, TypeError, ValueError):
-        return False
-
-
 def message_identifier(value):
     if type(value) is not int or not 0 < value < 2**63:
         raise ValueError("Choose a saved message.")
@@ -61,28 +45,25 @@ def revision(ids, content):
 
 
 def user_turn(row):
-    from agent.context_compressor import split_user_originated_turn
-
-    handoff, user = split_user_originated_turn(row)
+    handoff, user = user_turn_parts(row)
     if handoff is None and user is None and row.get("display_kind") == "internal_notification":
         # Hermes 0.22.1+ stores each API turn's own message this way; its rewind accepts them.
-        return split_user_originated_turn({**row, "display_kind": None})
+        return user_turn_parts({**row, "display_kind": None})
     return handoff, user
 
 
-def rewind_preview(db, sid, message_id):
+def rewind_preview(store, sid, message_id):
     from agent.memory_manager import sanitize_context
 
-    if (db.get_session(sid) or {}).get("source") != "api_server":
+    if (store.session(sid) or {}).get("source") != "api_server":
         raise ValueError("Only API sessions can be changed here.")
-    from .forks import require_no_pending_turn
+    if store.pending_turn(sid):
+        raise RuntimeError("The session has a pending turn.")
 
-    require_no_pending_turn(db, sid)
-
-    ids = db.get_active_message_ids(sid)
+    ids = store.active_ids(sid)
     if len(ids) > MAX_MESSAGES:
         raise ValueError("This session is too large to rewind here.")
-    rows = db.get_messages(sid, limit=MAX_MESSAGES + 1)
+    rows = store.active(sid, MAX_MESSAGES + 1)
     # Active-id CAS detects messages arriving during the read as well as during confirmation.
     if [row["id"] for row in rows] != ids:
         raise RuntimeError("The session changed. Reopen the action and try again.")
@@ -101,37 +82,30 @@ def rewind_preview(db, sid, message_id):
     content = user.get("content")
     if isinstance(content, str):
         content = sanitize_context(content).strip()
-    return (
-        {
-            "revision": revision(ids, content),
-            "target_id": rows[target]["id"],
-            "message_count": len(rows) - target,
-            "turn_count": sum(user_turn(row)[1] is not None for row in rows[target:]),
-            "user": {"id": rows[target]["id"], "role": "user", "content": content},
-        },
-        ids,
-        {
-            "preserve_compaction_handoff": handoff is not None,
-            # Hermes's content check refuses those API-turn rows; the active IDs still pin the turn.
-            "expected_target_content": None
-            if rows[target].get("display_kind") == "internal_notification"
-            else content,
-        },
-    )
+    preview = {
+        "revision": revision(ids, content),
+        "target_id": rows[target]["id"],
+        "message_count": len(rows) - target,
+        "turn_count": sum(user_turn(row)[1] is not None for row in rows[target:]),
+        "user": {"id": rows[target]["id"], "role": "user", "content": content},
+    }
+    # Hermes's content check refuses those API-turn rows; the active IDs still pin the turn.
+    expected = None if rows[target].get("display_kind") == "internal_notification" else content
+    return preview, (rows, target, handoff, expected)
 
 
-def rewind(db, sid, data):
+def rewind(store, sid, data):
     from hermes_constants import get_hermes_home
 
-    preview, ids, options = rewind_preview(db, sid, data["message_id"])
+    preview, change = rewind_preview(store, sid, data["message_id"])
     if data.get("preview") is True:
         return preview
     if data.get("revision") != preview["revision"]:
         raise RuntimeError("The session changed. Reopen the action and try again.")
-    result = db.rewind_to_message(sid, preview["target_id"], expected_active_ids=ids, **options)
+    removed = store.rewind(sid, *change)
     # A size measured after an earlier compaction no longer describes this transcript.
     Observations(get_hermes_home()).forget_compaction(sid)
-    return {"ok": True, "removed": result["rewound_count"]}
+    return {"ok": True, "removed": removed}
 
 
 def wire(app, adapter, **kwargs):
@@ -143,9 +117,7 @@ def wire(app, adapter, **kwargs):
             "running. Restart the gateway process after active work finishes to activate it."
         )
         return
-    if not callable(getattr(adapter, "_check_auth", None)) or not callable(
-        getattr(adapter, "_ensure_session_db_async", None)
-    ):
+    if not callable(getattr(adapter, "_check_auth", None)) or not compatible(adapter):
         log.warning("Talaria routes unavailable: incompatible Hermes API adapter")
         return
 
@@ -222,7 +194,7 @@ async def dispatch(request, adapter, commands=None):
         )
 
 
-async def capabilities(adapter, db):
+async def capabilities(adapter, store):
     from aiohttp import web
     from hermes_constants import get_hermes_home
 
@@ -248,30 +220,27 @@ async def capabilities(adapter, db):
             "context_runs": context_runs,
             "live_interactions": context_runs and live_supported(adapter),
             "profile_context": context.public() if context else {},
-            "rewind": supports_rewind(db),
+            "rewind": store.rewindable(),
             # Branching a CLI, messaging or scheduled session leaves that session open.
             "external_session_copies": True,
-            "history_search": search_supported(db, adapter),
+            "history_search": search_supported(store, adapter),
             "session_activity": activity_supported(adapter),
             "agent": {"name": name},
         }
     )
 
 
-def still_in_transcript(db, sid, detail):
+def still_in_transcript(store, sid, detail):
     """A rewind removes the reply a context reading came from; compaction only renumbers it."""
-    rows = db.get_messages(sid, after_id=detail["message_id"] - 1, limit=1)
-    if rows and rows[0]["id"] == detail["message_id"]:
+    if store.message(sid, detail["message_id"]):
         return True
     uid = detail.get("uid")
-    return bool(uid) and any(
-        row.get("message_uid") == uid for row in db.get_messages(sid, limit=200, latest=True)
-    )
+    return bool(uid) and any(row.get("message_uid") == uid for row in store.latest(sid, 200))
 
 
-def context_usage(db, sid, observations):
+def context_usage(store, sid, observations):
     detail = observations.read(sid)
-    if detail and not still_in_transcript(db, sid, detail):
+    if detail and not still_in_transcript(store, sid, detail):
         detail = None
     compaction = observations.read_compaction(sid)
     if compaction and (compaction.get("observed_at") or 0) > (
@@ -295,14 +264,13 @@ def context_usage(db, sid, observations):
     }
 
 
-async def session_details(request, db, sid, action):
+async def session_details(request, store, sid, action):
     from aiohttp import web
     from hermes_constants import get_hermes_home
 
-    can_rewind = supports_rewind(db)
     observations = Observations(get_hermes_home())
     if action == "rewind":
-        if not can_rewind:
+        if not store.rewindable():
             return web.json_response(
                 {"error": "Update Hermes to enable session changes."}, status=501
             )
@@ -310,14 +278,13 @@ async def session_details(request, db, sid, action):
         if not isinstance(data, dict):
             raise ValueError("Choose a saved message.")
         message_identifier(data.get("message_id"))
-        return web.json_response(await asyncio.to_thread(rewind, db, sid, data))
+        return web.json_response(await asyncio.to_thread(rewind, store, sid, data))
     message_id = request.query.get("message_id")
     if action == "response":
         message_id = message_identifier(int(message_id))
-        rows = await asyncio.to_thread(db.get_messages, sid, after_id=message_id - 1, limit=1)
-        if not rows or rows[0]["id"] != message_id:
+        row = await asyncio.to_thread(store.message, sid, message_id)
+        if row is None:
             return web.json_response({"error": "Message not found."}, status=404)
-        row = rows[0]
         detail = await asyncio.to_thread(observations.read, sid, message_id, row.get("message_uid"))
         return web.json_response(
             {
@@ -333,7 +300,7 @@ async def session_details(request, db, sid, action):
             }
         )
     return web.json_response(
-        {"context": await asyncio.to_thread(context_usage, db, sid, observations)}
+        {"context": await asyncio.to_thread(context_usage, store, sid, observations)}
     )
 
 
@@ -361,29 +328,29 @@ async def dispatch_action(request, adapter, commands=None):
         from .activity import dispatch as activity_dispatch
 
         return await activity_dispatch(request, adapter)
-    db = await adapter._ensure_session_db_async()
-    if db is None:
+    store = await open_store(adapter)
+    if store is None:
         return web.json_response({"error": "Hermes session storage is unavailable."}, status=503)
     if action in {"search", "around"}:
         from .search import dispatch as search_dispatch
 
-        return await search_dispatch(request, adapter, db)
+        return await search_dispatch(request, adapter, store)
     if action == "commands" and commands is not None:
-        return await commands.dispatch(request, adapter, db)
+        return await commands.dispatch(request, adapter, store)
     if action == "capabilities":
-        return await capabilities(adapter, db)
-    return await dispatch_session(request, adapter, db, action)
+        return await capabilities(adapter, store)
+    return await dispatch_session(request, adapter, store, action)
 
 
-async def dispatch_session(request, adapter, db, action):
+async def dispatch_session(request, adapter, store, action):
     from aiohttp import web
 
     sid = request.match_info["session_id"]
-    session = await asyncio.to_thread(db.get_session, sid)
+    session = await asyncio.to_thread(store.session, sid)
     if session is None:
         return web.json_response({"error": "Session not found."}, status=404)
     if action == "fork":
         from .forks import fork_session
 
-        return await fork_session(adapter, request, db, sid)
-    return await session_details(request, db, sid, action)
+        return await fork_session(adapter, request, store, session)
+    return await session_details(request, store, sid, action)

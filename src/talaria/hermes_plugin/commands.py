@@ -35,13 +35,13 @@ def available(adapter):
         return False
 
 
-def catalog(adapter, db):
+def catalog(adapter, store):
     from hermes_cli.commands import COMMAND_REGISTRY
     from hermes_cli.slash_exec import resolve_executor
 
     if not available(adapter):
         return []
-    can_compress = compression.supported(adapter, db)
+    can_compress = compression.supported(adapter, store)
     result = []
     for command in COMMAND_REGISTRY:
         name = command.name
@@ -67,7 +67,7 @@ def catalog(adapter, db):
     return result
 
 
-def execute(adapter, db, sid, name, args):
+def execute(adapter, store, sid, name, args):
     from gateway.session_context import clear_session_vars
     from hermes_cli.commands import COMMAND_REGISTRY
     from hermes_cli.slash_exec import CommandContext, resolve_executor
@@ -75,7 +75,7 @@ def execute(adapter, db, sid, name, args):
     tokens = adapter._bind_api_server_session(session_id=sid, session_key=f"talaria:{sid}")
     try:
         if name == "compress":
-            return compression.compress(adapter, db, sid, args)
+            return compression.compress(adapter, store, sid, args)
         command = next(command for command in COMMAND_REGISTRY if command.name == name)
         if name not in READ_ONLY or args:
             raise compression.CommandError("This command accepts no arguments in Talaria.")
@@ -95,7 +95,7 @@ class CommandJobs:
         if self.tasks:
             await asyncio.gather(*self.tasks)
 
-    async def dispatch(self, request, adapter, db):
+    async def dispatch(self, request, adapter, store):
         from aiohttp import web
         from hermes_constants import get_hermes_home
 
@@ -104,7 +104,7 @@ class CommandJobs:
             jid = request.match_info.get("command_id")
             if not jid:
                 return web.json_response(
-                    {"commands": await asyncio.to_thread(catalog, adapter, db)}
+                    {"commands": await asyncio.to_thread(catalog, adapter, store)}
                 )
             job = self.jobs.get((scope, jid))
             return web.json_response(
@@ -113,11 +113,11 @@ class CommandJobs:
             )
         data = await request.json()
         try:
-            return await self.submit(data, scope, adapter, db)
+            return await self.submit(data, scope, adapter, store)
         except compression.CommandError as exc:
             return web.json_response({"error": str(exc)}, status=400)
 
-    async def submit(self, data, scope, adapter, db):
+    async def submit(self, data, scope, adapter, store):
         from aiohttp import web
 
         if not isinstance(data, dict):
@@ -129,7 +129,7 @@ class CommandJobs:
             raise compression.CommandError("Invalid command.")
         if not re.fullmatch(r"[a-zA-Z0-9_-]{16,128}", jid) or len(sid) > 256 or len(args) > 2000:
             raise compression.CommandError("Invalid command identifier or arguments.")
-        commands = await asyncio.to_thread(catalog, adapter, db)
+        commands = await asyncio.to_thread(catalog, adapter, store)
         command = next((c for c in commands if name in [c["name"], *c["aliases"]]), None)
         if not command or command["mode"] != "native":
             raise compression.CommandError("This command is unavailable through the Hermes API.")
@@ -154,7 +154,7 @@ class CommandJobs:
         if draining is not None:
             return draining
         with _reserve_pending_api_work(adapter) as reservation:
-            task = asyncio.create_task(self.run(job, adapter, db))
+            task = asyncio.create_task(self.run(job, adapter, store))
             task.add_done_callback(lambda _: _release_pending_api_work(adapter, reservation))
             reservation["detached"] = True
         self.jobs[key] = job
@@ -167,9 +167,9 @@ class CommandJobs:
             if job["result"]["status"] != "running" and time.monotonic() - job["created"] > 3600:
                 del self.jobs[key]
 
-    async def run(self, job, adapter, db):
+    async def run(self, job, adapter, store):
         try:
-            result = await asyncio.to_thread(execute, adapter, db, *job["payload"])
+            result = await asyncio.to_thread(execute, adapter, store, *job["payload"])
             job["result"] = {"status": "completed", **result}
         except compression.CommandError as exc:
             job["result"] = {"status": "failed", "error": str(exc)}

@@ -291,7 +291,7 @@ class Observations:
         interrupted=False,
         **kwargs,
     ):
-        from hermes_state_registry import acquire, release_or_close
+        from .store import newest_row
 
         with self.lock:
             data = self.pending.pop((task_id, turn_id), None)
@@ -303,11 +303,7 @@ class Observations:
             or (not interrupted and not data.get("usage"))
         ):
             return
-        db = acquire(self.home / "state.db")
-        try:
-            rows = db.get_messages(session_id, limit=1, latest=True)
-        finally:
-            release_or_close(db)
+        rows = newest_row(self.home, session_id)
         # Never attribute an observation to an older reply after a failed persistence.
         if not rows or rows[0].get("role") != "assistant":
             return
