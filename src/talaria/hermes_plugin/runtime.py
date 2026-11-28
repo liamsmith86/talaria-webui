@@ -2,6 +2,8 @@
 
 from copy import deepcopy
 
+from .store import open_store_sync
+
 ROUTING_FIELDS = {
     "only": "providers_allowed",
     "ignore": "providers_ignored",
@@ -42,8 +44,6 @@ def session_runtime(adapter, kwargs):
 
 def saved_runtime(adapter, session_id, model_options, store=None):
     """Hermes's resolution of a session's saved selection, and its stored model."""
-    from .store import open_store_sync
-
     resolver = getattr(adapter, "_effective_session_runtime_request", None)
     if not callable(resolver) or not session_id:
         return None

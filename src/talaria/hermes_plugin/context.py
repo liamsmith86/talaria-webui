@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .files import read_text
+from .live import LiveRun, supported
 from .runtime import (
     authority_runs,
     inherit_defaults,
@@ -111,8 +112,6 @@ class ProfileRunAdapter:
         return getattr(self._adapter, name)
 
     def _make_run_event_callback(self, run_id, loop):
-        from .live import LiveRun, supported
-
         original = self._adapter._make_run_event_callback(run_id, loop)
         if not self._live_interactions or not supported(self._adapter):
             return original

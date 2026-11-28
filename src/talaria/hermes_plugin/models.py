@@ -2,6 +2,8 @@
 
 import logging
 
+from .observations import reasoning
+
 log = logging.getLogger(__name__)
 
 
@@ -36,8 +38,6 @@ def model_options(refresh=False):
 
 
 def add_reasoning_defaults(payload):
-    from .observations import reasoning
-
     try:
         from hermes_cli.config import load_config_readonly
         from hermes_constants import resolve_reasoning_config

@@ -1,17 +1,36 @@
-"""Versioned routes through Hermes's native plugin seam; no patched core or second runtime."""
+"""Versioned routes through Hermes's native plugin seam; no patched core or second runtime.
+
+The plugin imports its own modules here, at load. Hermes can load a plugin again in a running
+gateway, and routes it already serves must keep running the code they were loaded with.
+"""
 
 import asyncio
 import hashlib
 import json
 import logging
+from pathlib import Path
 
+from .activity import dispatch as activity_dispatch
+from .activity import supported as activity_supported
+from .commands import CommandJobs
+from .commands import available as available_commands
+from .context import load_context, start_run, supports_context_runs
+from .forks import fork_session
+from .identity import read_name
+from .live import answer
+from .live import supported as live_supported
+from .models import model_options
 from .observations import Observations
-from .release import LOADED_REVISION, PLUGIN_VERSION
+from .release import LOADED_REVISION, PLUGIN_VERSION, fingerprint
+from .search import dispatch as search_dispatch
+from .search import supported as search_supported
 from .store import compatible, open_store, user_turn_parts
 
 log = logging.getLogger(__name__)
 PREFIX = "/talaria/v1"
 MAX_MESSAGES = 20000
+# Features whose detection failed on this Hermes, logged once each.
+BROKEN = set()
 
 
 def enabled():
@@ -117,35 +136,48 @@ def wire(app, adapter, **kwargs):
             "running. Restart the gateway process after active work finishes to activate it."
         )
         return
-    if not callable(getattr(adapter, "_check_auth", None)) or not compatible(adapter):
+    if not callable(getattr(adapter, "_check_auth", None)):
         log.warning("Talaria routes unavailable: incompatible Hermes API adapter")
         return
+    supported = compatible(adapter)
+    if supported:
+        commands = CommandJobs()
+        app.on_cleanup.append(commands.close)
 
-    from .commands import CommandJobs
+        async def dispatch_request(request):
+            return await dispatch(request, adapter, commands)
 
-    commands = CommandJobs()
-    app.on_cleanup.append(commands.close)
+    else:
+        # Answer only the capability check, so Talaria can say why its features are missing.
+        log.warning(
+            "Talaria routes unavailable: this Hermes keeps sessions in a way this plugin doesn't "
+            "support. Update Talaria to a release that supports this Hermes version."
+        )
 
-    async def dispatch_request(request):
-        return await dispatch(request, adapter, commands)
+        async def dispatch_request(request):
+            refused = await refusal(request, adapter)
+            return web_json(identity("unsupported_hermes")) if refused is None else refused
 
     # Keep the native `profile` parameter for Hermes's authentication and request scope.
     # Its earlier /p/{profile}/* catch-all shadows plugin routes in that namespace.
     for prefix in (PREFIX, f"{PREFIX}/profiles/{{profile}}", f"/p/{{profile}}{PREFIX}"):
         app.router.add_get(f"{prefix}/capabilities", dispatch_request)
-        app.router.add_get(f"{prefix}/{{action:commands}}", dispatch_request)
-        app.router.add_post(f"{prefix}/{{action:commands}}", dispatch_request)
-        app.router.add_get(f"{prefix}/{{action:commands}}/{{command_id}}", dispatch_request)
-        app.router.add_get(f"{prefix}/{{action:models|search|activity}}", dispatch_request)
-        app.router.add_post(f"{prefix}/{{action:runs}}", dispatch_request)
-        app.router.add_post(f"{prefix}/runs/{{run_id}}/{{action:clarification}}", dispatch_request)
-        app.router.add_get(
-            f"{prefix}/sessions/{{session_id}}/{{action:context|response|around}}", dispatch_request
-        )
-        app.router.add_post(
-            f"{prefix}/sessions/{{session_id}}/{{action:rewind|fork}}", dispatch_request
-        )
+        if supported:
+            add_routes(app.router, prefix, dispatch_request)
     app["talaria.webui.registered"] = True
+
+
+def add_routes(router, prefix, dispatch_request):
+    router.add_get(f"{prefix}/{{action:commands}}", dispatch_request)
+    router.add_post(f"{prefix}/{{action:commands}}", dispatch_request)
+    router.add_get(f"{prefix}/{{action:commands}}/{{command_id}}", dispatch_request)
+    router.add_get(f"{prefix}/{{action:models|search|activity}}", dispatch_request)
+    router.add_post(f"{prefix}/{{action:runs}}", dispatch_request)
+    router.add_post(f"{prefix}/runs/{{run_id}}/{{action:clarification}}", dispatch_request)
+    router.add_get(
+        f"{prefix}/sessions/{{session_id}}/{{action:context|response|around}}", dispatch_request
+    )
+    router.add_post(f"{prefix}/sessions/{{session_id}}/{{action:rewind|fork}}", dispatch_request)
 
 
 def register(ctx):
@@ -160,17 +192,59 @@ def register(ctx):
     ctx.register_hook("on_session_delete", observations.deleted)
 
 
-async def dispatch(request, adapter, commands=None):
+def web_json(data, status=200):
     from aiohttp import web
 
+    return web.json_response(data, status=status)
+
+
+async def refusal(request, adapter):
+    """Hermes's own authentication, then the profile's opt-in; None when both allow."""
     auth_error = adapter._check_auth(request)
     if auth_error is not None:
         return auth_error
     # Named profiles opt in independently, even when the root listener wires the routes.
     if not await asyncio.to_thread(enabled):
-        return web.json_response(
-            {"error": "Talaria plugin is not enabled for this profile."}, status=404
-        )
+        return web_json({"error": "Talaria plugin is not enabled for this profile."}, 404)
+    return None
+
+
+def identity(state):
+    """What every capability answer reports. ``state`` is ready, restart_required (the files on
+    disk changed after this code loaded) or unsupported_hermes (no features on this Hermes)."""
+    return {
+        "version": 1,
+        "revision": LOADED_REVISION,
+        "plugin_version": PLUGIN_VERSION,
+        "state": state,
+    }
+
+
+def loaded_state():
+    try:
+        changed = fingerprint(Path(__file__).parent) != LOADED_REVISION
+    except OSError:  # Removed since it loaded
+        changed = True
+    return "restart_required" if changed else "ready"
+
+
+def probe(name, check, *args):
+    """Detect one feature. If this Hermes breaks its detection, only that feature turns off."""
+    try:
+        return check(*args)
+    except Exception:
+        if name not in BROKEN:
+            BROKEN.add(name)
+            log.warning("Talaria %s unavailable on this Hermes", name, exc_info=True)
+        return False
+
+
+async def dispatch(request, adapter, commands=None):
+    from aiohttp import web
+
+    refused = await refusal(request, adapter)
+    if refused is not None:
+        return refused
     try:
         return await dispatch_action(request, adapter, commands)
     except (ValueError, TypeError):
@@ -195,37 +269,30 @@ async def dispatch(request, adapter, commands=None):
 
 
 async def capabilities(adapter, store):
-    from aiohttp import web
     from hermes_constants import get_hermes_home
 
-    from .activity import supported as activity_supported
-    from .commands import available
-    from .context import load_context, supports_context_runs
-    from .identity import read_name
-    from .live import supported as live_supported
-    from .search import supported as search_supported
-
-    name = await asyncio.to_thread(read_name, get_hermes_home())
-    context_runs = supports_context_runs(adapter)
-    context = await asyncio.to_thread(load_context) if context_runs else None
-    return web.json_response(
+    name = await asyncio.to_thread(probe, "agent name", read_name, get_hermes_home())
+    context_runs = probe("profile context", supports_context_runs, adapter)
+    context = (
+        await asyncio.to_thread(probe, "profile context", load_context) if context_runs else None
+    )
+    return web_json(
         {
-            "version": 1,
-            "revision": LOADED_REVISION,
-            "plugin_version": PLUGIN_VERSION,
-            "commands": available(adapter),
+            **identity(await asyncio.to_thread(loaded_state)),
+            "commands": probe("commands", available_commands, adapter),
             "response_details": True,
             "context_usage": True,
             "model_details": True,
             "context_runs": context_runs,
-            "live_interactions": context_runs and live_supported(adapter),
+            "live_interactions": context_runs
+            and probe("live interactions", live_supported, adapter),
             "profile_context": context.public() if context else {},
-            "rewind": store.rewindable(),
+            "rewind": probe("rewind", store.rewindable),
             # Branching a CLI, messaging or scheduled session leaves that session open.
             "external_session_copies": True,
-            "history_search": search_supported(store, adapter),
-            "session_activity": activity_supported(adapter),
-            "agent": {"name": name},
+            "history_search": probe("history search", search_supported, store, adapter),
+            "session_activity": probe("session activity", activity_supported, adapter),
+            "agent": {"name": name or ""},
         }
     )
 
@@ -309,31 +376,21 @@ async def dispatch_action(request, adapter, commands=None):
 
     action = request.match_info.get("action", "capabilities")
     if action == "clarification":
-        from .live import answer
-
         return await answer(request, adapter)
     if action == "runs":
-        from .context import start_run, supports_context_runs
-
         if not supports_context_runs(adapter):
             return web.json_response({"error": "Profile context unavailable."}, status=404)
         return await start_run(adapter, request)
     if action == "models":
-        from .models import model_options
-
         return web.json_response(
             await asyncio.to_thread(model_options, request.query.get("refresh") == "1")
         )
     if action == "activity":
-        from .activity import dispatch as activity_dispatch
-
         return await activity_dispatch(request, adapter)
     store = await open_store(adapter)
     if store is None:
         return web.json_response({"error": "Hermes session storage is unavailable."}, status=503)
     if action in {"search", "around"}:
-        from .search import dispatch as search_dispatch
-
         return await search_dispatch(request, adapter, store)
     if action == "commands" and commands is not None:
         return await commands.dispatch(request, adapter, store)
@@ -350,7 +407,5 @@ async def dispatch_session(request, adapter, store, action):
     if session is None:
         return web.json_response({"error": "Session not found."}, status=404)
     if action == "fork":
-        from .forks import fork_session
-
         return await fork_session(adapter, request, store, session)
     return await session_details(request, store, sid, action)

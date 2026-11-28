@@ -5,6 +5,9 @@ import os
 import uuid
 from contextlib import contextmanager
 
+from .context import ProfileRunAdapter, load_context
+from .observations import Observations
+
 
 class CommandError(ValueError):
     """Expected command feedback safe to return to the authenticated client."""
@@ -34,8 +37,6 @@ def supported(adapter, store):
 
 
 def create_agent(adapter, session):
-    from .context import ProfileRunAdapter, load_context
-
     runtime = adapter._effective_session_runtime_request(session=session, body={})
     locked = bool(runtime.get("require_model_lock"))
     model = adapter._stored_session_model(session)
@@ -154,8 +155,6 @@ def record_size(session_id, prior_session, tokens):
     """The size the report prints: Hermes's hook counts only the transcript, not the system prompt
     and tool schemas that every request also sends."""
     from hermes_constants import get_hermes_home
-
-    from .observations import Observations
 
     Observations(get_hermes_home()).compacted(
         session_id=session_id,

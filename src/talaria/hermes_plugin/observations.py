@@ -8,6 +8,8 @@ import time
 from collections import OrderedDict
 from contextlib import closing, suppress
 
+from .store import newest_row
+
 
 def number(value):
     try:
@@ -298,8 +300,6 @@ class Observations:
         interrupted=False,
         **kwargs,
     ):
-        from .store import newest_row
-
         with self.lock:
             data = self.pending.pop((task_id, turn_id), None)
         if (
