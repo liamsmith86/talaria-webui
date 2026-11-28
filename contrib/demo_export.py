@@ -18,6 +18,7 @@ PRELOADS = (
     ("styles/demo.css", "rel=preload; as=style"),
     ("boot.js", "rel=modulepreload"),
     ("app.js", "rel=modulepreload"),
+    ("demo.js", "rel=modulepreload"),
     ("vendor/inter.woff2", "rel=preload; as=font; crossorigin"),
 )
 

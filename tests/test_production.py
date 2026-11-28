@@ -39,7 +39,7 @@ def test_startup_delivery(page, packaged_assets):
         next(path for path in (built / f"{name}.gz", built / name) if path.is_file())
         for name in scripts
     ]
-    assert sum(path.stat().st_size for path in delivered) < 108 * 1024
+    assert sum(path.stat().st_size for path in delivered) < 106 * 1024
 
 
 def test_language_catalog_in_production(page):

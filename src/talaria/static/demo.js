@@ -1,10 +1,10 @@
 // A tab-local transport for the normal chat UI. Visitor input never leaves the browser.
-import { api, RequestError, setTransport } from "./api.js";
-import { randomId } from "./lib.js";
-import { plainContent } from "./content.js";
-import { rememberSession, selectedSession } from "./session-navigation.js";
-import { msg } from "./i18n.js";
-import { describeCall } from "./tool-activity.js";
+// The build ships this as its own script, loaded only by the demo, so it imports the app's
+// modules through app.js: a direct import would bundle a second copy of them.
+import {
+  api, describeCall, msg, plainContent, randomId, RequestError, rememberSession, selectedSession,
+  setTransport,
+} from "./app.js";
 
 const model = "gpt-6.1-sol", provider = "openai";
 const profile = { id: "default", label: "Hermes", profile: "default", server_url: "http://127.0.0.1:8642" };
