@@ -65,6 +65,9 @@ def project_details(action, result):
     return result
 
 
+PLUGIN_STATES = {"ready", "restart_required", "unsupported_hermes"}
+
+
 async def discover(client):
     """The plugin's features: {} without a usable plugin, or None when the check failed."""
     try:
@@ -81,6 +84,8 @@ async def discover(client):
         return {
             "version": 1,
             "release": release_status(result),
+            # A plugin before 1.6.3 reports no state; an unknown one leaves the features to say.
+            "state": result.get("state") if result.get("state") in PLUGIN_STATES else "ready",
             "agent": {"name": name[:80] if isinstance(name, str) else ""},
             "profile_context": {
                 key: context.get(key)

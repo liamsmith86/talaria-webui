@@ -387,8 +387,18 @@ def verify_plugin(client, settings):
         return "connected; extended access unavailable"
     if not isinstance(data, dict) or type(data.get("version")) is not int or data["version"] != 1:
         return "connected; incompatible plugin API"
-    release = release_status(data)
-    return f"connected; extended access available; plugin {release['status']}"
+    release = release_status(data)["status"]
+    if data.get("state") == "unsupported_hermes":
+        return (
+            f"connected; extended access unavailable: plugin {release} doesn't support this "
+            "Hermes version; check for a Talaria update"
+        )
+    if data.get("state") == "restart_required":
+        return (
+            f"connected; extended access available; plugin {release}; restart the gateway "
+            "process after active work finishes to load the updated plugin"
+        )
+    return f"connected; extended access available; plugin {release}"
 
 
 def parser():

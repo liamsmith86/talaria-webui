@@ -18,6 +18,8 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
   const [error, setError] = useState("");
   const [checked, setChecked] = useState(false);
   const available = app.caps.talaria_extensions?.version === 1;
+  const unsupported = available && app.caps.talaria_extensions.state === "unsupported_hermes";
+  const restart = available && app.caps.talaria_extensions.state === "restart_required";
   const inherited = app.caps.talaria_extensions?.context_runs;
   const context = app.caps.talaria_extensions?.profile_context || {};
   const release = app.caps.talaria_extensions?.release;
@@ -46,12 +48,20 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
       ${release?.version && `${release.version} · `}${t(releaseLabels[release?.status] || releaseLabels.unknown)}
     </p>`}
     <div class="access-status" role="status">
-      <${Icon} name=${available ? "check" : "info"} size=${16} /><span
-        >${available
+      <${Icon} name=${available && !unsupported ? "check" : "info"} size=${16} /><span
+        >${unsupported
+          ? t("Talaria plugin can't run on this Hermes version")
+          : available
           ? t("Connected · Talaria plugin")
           : t("Talaria plugin not detected")}</span
       >
     </div>
+    ${unsupported && !needsInstall && html`<p class="field-help">
+      ${t("Check for a Talaria update that supports this Hermes version.")}
+    </p>`}
+    ${restart && html`<p class="field-help" role="status">
+      ${t("Restart Hermes to finish the plugin update.")}
+    </p>`}
     ${available && inherited &&
       (context.instructions === "unavailable" || context.prefill === "unavailable") &&
       html`<p class="field-help" role="status">
@@ -61,7 +71,9 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
     html`<p class="field-help">
       ${t("Install the plugin on your Hermes host, then restart its gateway.")}
     </p>`}
-    ${checked && html`<p class="field-help" role="status">${available
+    ${checked && html`<p class="field-help" role="status">${unsupported
+      ? t("Check complete. Talaria plugin can't run on this Hermes version.")
+      : available
       ? t("Check complete. Talaria plugin is connected.")
       : t("Check complete. Talaria plugin was not detected.")}</p>`}
     ${error && html`<p class="form-error" role="alert">${t(error)}</p>`}
