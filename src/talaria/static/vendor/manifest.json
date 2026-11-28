@@ -17,19 +17,19 @@
     }
   },
   "marked": {
-    "version": "18.1.3",
-    "tarball": "https://registry.npmjs.org/marked/-/marked-18.1.3.tgz",
-    "integrity": "sha512-9ChMH8EVVgjgID49nsL6IWxWk5c6GtAsq/xw7U1ggkjkU5AGuv68oLTVlFRtvcUYZtpbNyjyvGo3YDu0fGapiw==",
+    "version": "18.2.1",
+    "tarball": "https://registry.npmjs.org/marked/-/marked-18.2.1.tgz",
+    "integrity": "sha512-ii4bxCTCqqwpT86XZWgJNs+ZnAIZksmLGYMViWA7PDIXYIeNo1x6cDdX3JOip9NM/cI6p8z57FxliACboTruMA==",
     "files": {
-      "marked.js": "e76f3b37046a5d294159872002e5f6fcda8ed232e1be45ff76b3863f2919dae3"
+      "marked.js": "5371fea86fd0656b4fc7bea7c94c663109d82789b69433eeee78d42895aa44de"
     }
   },
   "dompurify": {
-    "version": "3.4.17",
-    "tarball": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.17.tgz",
-    "integrity": "sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==",
+    "version": "3.4.18",
+    "tarball": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.18.tgz",
+    "integrity": "sha512-ofe3wI/uNm68HInABYFJYqQxRw1EaKAjNdrFVKqjUY+UZurvNd2L/HuQe097s/4RivWiZyP6tT7aoT8atjfhwg==",
     "files": {
-      "purify.js": "60c5d5ccbb466de3de3ba863461a92bf134f8c156cef7992da43e0f659bc5cbd"
+      "purify.js": "1a06b721ad8b46d6174b21f22ea70290aaf3e5a81d65af3b7178113953f7c9b1"
     }
   },
   "@fontsource-variable/inter": {

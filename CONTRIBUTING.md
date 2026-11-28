@@ -17,7 +17,7 @@ Native Hermes tests and the full suite also need Hermes and axe-core:
 git clone --depth 1 --branch v0.23.5 https://github.com/NousResearch/hermes-agent.git .local/hermes
 UV_PROJECT_ENVIRONMENT=$PWD/.local/hermes/venv uv sync --project .local/hermes --frozen --no-dev --extra sms
 git config --local talaria.hermesSource "$PWD/.local/hermes"  # or export HERMES_SOURCE
-curl -fsSL https://cdn.jsdelivr.net/npm/axe-core@4.14.0/axe.min.js -o .local/axe.min.js
+curl -fsSL https://cdn.jsdelivr.net/npm/axe-core@4.14.1/axe.min.js -o .local/axe.min.js
 ```
 
 `uv run --locked talaria demo` serves sample chats at http://127.0.0.1:8768.
