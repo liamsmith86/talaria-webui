@@ -591,6 +591,29 @@ def test_native_hermes_key_reuse_plugin_and_config_preservation(tmp_path):
     assert (home / ".env").stat().st_mode & 0o077 == 0
 
 
+@pytest.mark.hermes
+@pytest.mark.skipif(
+    not os.getenv("HERMES_SOURCE"), reason="Set HERMES_SOURCE for native setup checks"
+)
+@pytest.mark.parametrize("standalone", [False, True])
+def test_native_named_profile_url_follows_the_gateway_that_serves_it(tmp_path, standalone):
+    source = Path(os.environ["HERMES_SOURCE"])
+    python = source / "venv/bin/python"
+    root = tmp_path / "hermes"
+    named = root / "profiles/research"
+    named.mkdir(parents=True)
+    for home, port in ((root, 8650), (named, 8651)):
+        api = {"enabled": True, "host": "127.0.0.1", "port": port, "key": f"key-{port}-" + "x" * 24}
+        gateway = {"standalone": True} if standalone and home == named else {}
+        (home / "config.yaml").write_text(
+            json.dumps({"platforms": {"api_server": api}, "gateway": gateway})
+        )
+    info = wizard.hermes_request(python, named)
+    assert info["key"] == "key-8651-" + "x" * 24
+    expected = "http://127.0.0.1:8651" if standalone else "http://127.0.0.1:8650/p/research"
+    assert wizard.profile_url(python, named, info) == expected
+
+
 def test_passwordless_sudo_selects_system_service_without_user_bus(monkeypatch):
     from talaria import setup_services
 

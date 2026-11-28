@@ -289,18 +289,21 @@ def configure_hermes(args, prompts, settings, home, python, info, *, owner=None)
     info = apply_local_hermes(args, settings, home, python, info, enable, plugin, owner=owner)
     if info.get("changed"):
         print(f"Hermes configuration backup: {home}/config.yaml.before-talaria")
-        print_shared_gateway_note(home, info)
+        if info.get("gateway_home"):
+            print(
+                "This profile answers on the default profile's gateway. Also enable the API "
+                f"server and the Talaria plugin in {info['gateway_home']}."
+            )
     return info
 
 
-def print_shared_gateway_note(home, info):
-    # The default profile hosts a shared gateway, so only a named profile has more to do.
-    if info.get("multiplex") and home.parent.name == "profiles":
-        url = f"{local_url(str(info['host']), int(info['port']))}/p/{home.name}"
-        print(
-            "This profile shares a gateway with your other Hermes profiles. Also enable the "
-            f"plugin in the profile that starts it, and connect with --hermes-url {url}."
-        )
+def profile_url(python, home, info, *, owner=None):
+    """Where Talaria reaches this profile's API. A named profile the default profile's gateway
+    serves answers at /p/<name> on that gateway's listener; its own address has none."""
+    if not info.get("gateway_home"):
+        return local_url(str(info["host"]), int(info["port"]))
+    shared = hermes_request(python, Path(info["gateway_home"]), owner=owner)
+    return f"{local_url(str(shared['host']), int(shared['port']))}/p/{home.name}"
 
 
 def apply_hermes_restart(args, prompts, home, python, info, *, owner=None):
@@ -754,7 +757,7 @@ def apply_local_hermes(args, settings, home, python, info, enable, plugin, *, ow
     info = {**info, "changed": changed}
     if info["enabled"] and info["key"]:
         if not args.hermes_url and not settings.api_key:
-            settings.hermes_url = local_url(str(info["host"]), int(info["port"]))
+            settings.hermes_url = profile_url(python, home, info, owner=owner)
         if not args.hermes_key_file and not settings.api_key and not args.hermes_url:
             settings.api_key = info["key"]
     return info

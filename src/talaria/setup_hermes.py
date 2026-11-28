@@ -52,6 +52,15 @@ def hermes_version():
     return get_version_info().display_version
 
 
+def gateway_home(home):
+    """The default profile's home when its gateway serves this named profile, which then has no
+    listener of its own. Only a profile set to ``gateway.standalone`` runs its own gateway."""
+    from hermes_cli.gateway_runtime_multiplex import implied_host_root
+
+    root = implied_host_root(home)
+    return None if root is None else str(root)
+
+
 def configure(home, request):
     add_hermes_root()
     from hermes_cli.config import load_env, read_raw_config, save_env_value
@@ -94,7 +103,7 @@ def configure(home, request):
         "host": extra.get("host", "127.0.0.1"),
         "port": extra.get("port", 8642),
         "key": key,
-        "multiplex": config.multiplex_profiles,
+        "gateway_home": gateway_home(home),
         "changed": changed,
         "version": hermes_version(),
         "plugin_enabled": bool(

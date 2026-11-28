@@ -56,7 +56,7 @@ def require_supported_hermes(home, python, owner):
 
 
 def restart_and_verify(home, target, command, *, owner=None):
-    from .setup import find_hermes_python, hermes_request, local_url, restart_gateway
+    from .setup import find_hermes_python, hermes_request, profile_url, restart_gateway
 
     owner = owner or select_owner(home)
     python = find_hermes_python(home, command=command)
@@ -68,7 +68,7 @@ def restart_and_verify(home, target, command, *, owner=None):
     # Setup asked first, and an update says it restarts a linked Hermes whose plugin changed.
     restart_gateway(home, command, owner=owner)
     expected = fingerprint(target)
-    url = local_url(str(info["host"]), int(info["port"])) + "/talaria/v1/capabilities"
+    url = profile_url(python, home, info, owner=owner) + "/talaria/v1/capabilities"
     deadline = time.monotonic() + 30
     with httpx.Client(
         trust_env=False, timeout=2, headers={"Authorization": "Bearer " + info["key"]}
