@@ -509,3 +509,6 @@
   color: var(--accent-text);
   background: var(--surface);
 }
+.local-plugin {
+  margin-top: 24px;
+}

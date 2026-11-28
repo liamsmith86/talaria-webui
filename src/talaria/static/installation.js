@@ -36,6 +36,18 @@ function delay(signal) {
   });
 }
 
+// A release's name and version over a few labelled details.
+export function ReleaseSummary({ title, version, level = 3, badge = null, details = [] }) {
+  const Heading = `h${level}`;
+  return html`<div class="section-heading">
+      <${Heading}>${title} ${version && html`<span class="installation-version" aria-label=${t("Version {version}", { version })}>${version}</span>`}<//>
+      ${badge}
+    </div>
+    ${details.length > 0 && html`<dl class="installation-details">
+      ${details.map(([term, value]) => html`<div key=${term}><dt>${term}</dt><dd>${value}</dd></div>`)}
+    </dl>`}`;
+}
+
 export function Installation({ pluginOnly = false, readOnly = false }) {
   const [info, setInfo] = useState(null);
   const [error, setError] = useState("");
@@ -173,14 +185,12 @@ export function Installation({ pluginOnly = false, readOnly = false }) {
   const channel = !pluginOnly && info?.can_update ? info.channel : null;
   const shownChannel = selection ?? channel;
   if (pluginOnly && !info?.updates_local_plugin) return null;
-  return html`${!pluginOnly && html`<div class="section-heading">
-      <h3>Talaria ${info && html`<span class="installation-version" aria-label=${t("Version {version}", { version: info.version })}>${info.version}</span>`}</h3>
-      ${development && html`<span class="environment-badge">${t("Development")}</span>`}
-    </div>
-    ${info && html`<dl class="installation-details">
-      <div><dt>${t("Build")}</dt><dd>${development ? t("Working checkout") : info.commit?.slice(0, 10) || t("Installed package")}</dd></div>
-      ${info.managed && !channel && html`<div><dt>${t("Branch")}</dt><dd>${info.branch}</dd></div>`}
-    </dl>`}`}
+  return html`${!pluginOnly && html`<${ReleaseSummary} title="Talaria" version=${info?.version}
+      badge=${development && html`<span class="environment-badge">${t("Development")}</span>`}
+      details=${info ? [
+        [t("Build"), development ? t("Working checkout") : info.commit?.slice(0, 10) || t("Installed package")],
+        ...(info.managed && !channel ? [[t("Branch"), info.branch]] : []),
+      ] : []} />`}
     ${!development && html`<section class="installation-update" aria-label=${t("Updates")}>
       ${channel && html`<label class="select-control">
         <span>${t("Update channel")}</span>

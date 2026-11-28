@@ -1,4 +1,3 @@
-import getpass
 import json
 import os
 import re
@@ -70,13 +69,12 @@ def test_extended_access_explains_the_plugin_in_the_local_hermes(
     page.get_by_role("tab", name="Connection", exact=True).click()
     access = page.locator(".extended-access")
     expect(access.get_by_text("Hermes isn't loading the Talaria plugin")).to_be_visible()
-    expect(access).to_contain_text(
-        "Plugin installed: version 1.6.2 · Source: Hermes plugin catalog"
-    )
-    expect(access).to_contain_text(f"Update available · Latest: {PLUGIN_VERSION}")
-    expect(access).to_contain_text(
-        "To update the Talaria plugin, run the following commands on Hermes Agent as "
-        f"{getpass.getuser()}:"
+    local = access.locator(".local-plugin")
+    expect(local.locator("h4")).to_have_text("Talaria plugin 1.6.2")
+    expect(local.locator(".installation-details")).to_have_text("SourceHermes plugin catalog")
+    expect(local.get_by_role("status")).to_have_text(f"Update available · Latest: {PLUGIN_VERSION}")
+    expect(local).to_contain_text(
+        "To update the Talaria plugin, run the following commands on Hermes Agent:"
     )
     expect(access.locator(".commands code")).to_have_text(
         [f"{hermes} plugins update talaria-webui", f"{hermes} gateway restart"]
@@ -91,9 +89,8 @@ def test_extended_access_explains_the_plugin_in_the_local_hermes(
     live_app[1].extension = {}
     page.get_by_role("button", name="Check again", exact=True).click()
     expect(page.get_by_text("Connected · Talaria plugin", exact=True)).to_be_visible()
-    expect(access).to_contain_text(
-        f"version {PLUGIN_VERSION} · Source: copied by hand, no automatic updates"
-    )
+    expect(local.locator(".installation-details")).to_have_text("SourceCopied by hand")
+    expect(local.get_by_role("status")).to_have_text("Up to date")
     expect(access.locator("code")).to_have_count(0)
 
 

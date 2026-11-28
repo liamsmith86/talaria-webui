@@ -1,7 +1,7 @@
 import { html, useEffect, useState, Icon } from "./lib.js";
 import { api } from "./api.js";
 import { state, update, useStore } from "./store.js";
-import { Installation } from "./installation.js";
+import { Installation, ReleaseSummary } from "./installation.js";
 import { msg, rich, t } from "./i18n.js";
 
 const releaseLabels = {
@@ -12,39 +12,40 @@ const releaseLabels = {
   unknown: msg("Plugin version not reported"),
 };
 
-const localLabels = {
-  catalog: msg("Plugin installed: version {version} · Source: Hermes plugin catalog"),
-  git: msg("Plugin installed: version {version} · Source: Git, installed with Hermes"),
-  hermes: msg("Plugin installed: version {version} · Source: installed with Hermes"),
-  talaria: msg("Plugin installed: version {version} · Source: Talaria, which keeps it up to date"),
-  manual: msg("Plugin installed: version {version} · Source: copied by hand, no automatic updates"),
+const localSources = {
+  catalog: msg("Hermes plugin catalog"),
+  git: msg("Git, installed by Hermes"),
+  other: msg("Installed by Hermes"),
+  talaria: msg("Installed by Talaria"),
+  manual: msg("Copied by hand"),
+};
+
+const localStatus = {
+  missing: msg("Not installed"),
+  outdated: msg("Update available · Latest: {bundled}"),
+  unknown: msg("Update available · Latest: {bundled}"),
+  current: releaseLabels.current,
+  newer: releaseLabels.newer,
+  different: releaseLabels.different,
 };
 
 // What the plugin files in the Hermes serving this connection need, as steps for their owner.
 function localSteps(local, serving) {
   const stale = ["outdated", "unknown"].includes(local.status);
   if (local.status === "missing")
-    return [[msg("To install it, run as {owner}:"), local.commands.install]];
+    return [[msg("To install it, run the following commands on Hermes Agent:"), local.commands.install]];
   if (local.managed === "hermes" && stale && local.source === "other")
-    return [[msg("Hermes can't update this copy. To replace it with Talaria's copy, which Talaria keeps up to date, run as {owner}:"), local.commands.switch]];
+    return [[msg("Hermes can't update this copy. To replace it with Talaria's copy, which Talaria keeps up to date, run the following commands on Hermes Agent:"), local.commands.switch]];
   if (local.managed === "hermes" && stale)
-    return [[msg("To update the Talaria plugin, run the following commands on Hermes Agent as {owner}:"), local.commands.hermes_update]];
+    return [[msg("To update the Talaria plugin, run the following commands on Hermes Agent:"), local.commands.hermes_update]];
   if (local.managed === "talaria" && local.status !== "current" && local.status !== "newer")
     return [[msg("Talaria keeps this plugin up to date. To update it now, use the button below."), null]];
   if (local.managed === "manual" && local.status !== "current" && local.status !== "newer")
-    return [[msg("To update the Talaria plugin, run the following commands on Hermes Agent as {owner}:"), local.commands.refresh]];
+    return [[msg("To update the Talaria plugin, run the following commands on Hermes Agent:"), local.commands.refresh]];
   if (!serving && local.status === "current")
-    return [[msg("To enable it and restart Hermes, run as {owner}:"), local.commands.enable]];
+    return [[msg("To enable it and restart Hermes, run the following commands on Hermes Agent:"), local.commands.enable]];
   return [];
 }
-
-const localStatus = {
-  outdated: msg("Update available \u00b7 Latest: {bundled}"),
-  unknown: msg("Update available \u00b7 Latest: {bundled}"),
-  current: releaseLabels.current,
-  newer: releaseLabels.newer,
-  different: releaseLabels.different,
-};
 
 // Shell commands for a narrow panel: long ones wrap, and one button copies them all.
 function Commands({ commands }) {
@@ -66,19 +67,22 @@ function Commands({ commands }) {
   </div>`;
 }
 
-// Steps wait while Hermes itself is too old, since it would refuse the plugin.
+// Laid out like Talaria's own release on its settings tab. Steps wait while Hermes itself is too
+// old, since it would refuse the plugin.
 function LocalPlugin({ local, serving, steps }) {
-  const label = local.managed === "hermes" ? localLabels[local.source] || localLabels.hermes : localLabels[local.managed];
-  const values = { version: local.version || t("unknown"), owner: local.owner, bundled: local.bundled_version };
+  const source = localSources[local.managed === "hermes" ? local.source : local.managed];
   return html`<div class="local-plugin">
-    <p class="field-help" role="status">
-      ${label ? t(label, values) : t("Plugin not installed on this server.")}
-      ${localStatus[local.status] && html`<br />${t(localStatus[local.status], values)}`}
-    </p>
-    ${steps && localSteps(local, serving).map(([text, commands]) => html`<div key=${text}>
-      <p class="field-help">${t(text, values)}</p>
-      ${commands && html`<${Commands} commands=${commands} />`}
-    </div>`)}
+    <${ReleaseSummary} level=${4} title=${t("Talaria plugin")} version=${local.version}
+      details=${source ? [[t("Source"), t(source)]] : []} />
+    <section class="installation-update" aria-label=${t("Updates")}>
+      <p class="installation-status" role="status">
+        ${t(localStatus[local.status], { bundled: local.bundled_version })}
+      </p>
+      ${steps && localSteps(local, serving).map(([text, commands]) => html`<div key=${text}>
+        <p class="field-help">${t(text)}</p>
+        ${commands && html`<${Commands} commands=${commands} />`}
+      </div>`)}
+    </section>
   </div>`;
 }
 
