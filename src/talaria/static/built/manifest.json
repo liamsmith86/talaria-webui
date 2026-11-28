@@ -38,7 +38,7 @@
     "src/talaria/static/locales/pt-BR.json": "9842b269689c3b2406e51df8f66f3f1e304993e54503c4a9e564e3c6672d1024",
     "src/talaria/static/locales/zh-Hans.json": "664359fb97e51691783e825985dd4d486695425f263ff1484fb4ed099e219fb4",
     "src/talaria/static/mark.svg": "f370a3a4abb2a2e05e0e39335303041dfce6ee72947491386e9fabfdad8e9fd4",
-    "src/talaria/static/markdown-stream.js": "6ec8d9aef1c164722a752084e311818f84a9a376d023bd14017bfa81913dad55",
+    "src/talaria/static/markdown-stream.js": "cad2fc593b8c75e48dac8039c6b2b1701b9cda1ae678d0242ddd61ee617d558d",
     "src/talaria/static/markdown.js": "7bc0bd51f2159d8a3f88af6c2c94d6afddd4e535415dd2b0b86b7b26d90f42ca",
     "src/talaria/static/message-actions.js": "750f88dc368d9dd2454bf7583067a77c583620f0303379cc9db15dfcde872c5f",
     "src/talaria/static/message-insights.js": "b4b31a619db517dd14d23c5f3072e03c02396c6bc9b710db1f664019deeb5b4e",
@@ -87,9 +87,9 @@
     "src/talaria/static/vendor/purify.js": "1a06b721ad8b46d6174b21f22ea70290aaf3e5a81d65af3b7178113953f7c9b1"
   },
   "outputs": {
-    "app.js": "b4c302452e72c39fb0bc1807044002a3bc0caf4a7b236c95954710d0cb5cce0d",
+    "app.js": "ab7809146a8a23b4eead00d96c16b4ca829051f67f53c2aa7f00321d2c183cab",
     "app.js.LEGAL.txt": "5e8bec2691a57f15156bb556fc6a9433badc707bbf5675c76607b4c43f2ffbf7",
-    "app.js.map": "36d46bb5a331f4faadbdd550f78b663e6c32fa90eed9ca5d0f3cbf12b69725f2",
+    "app.js.map": "b214f546d1592429c2d4c2b110fad21d668d2ff1db21d5cea8930d97e6462c23",
     "appearance.js": "ee72fb422aa49fff0fccb147d55442d115a5bcff3d244e8479d6c696448b213a",
     "boot.js": "1f525fc72f6442a7286e25a1379aa92432e95dc0bb66109240207f4c72c43f3c",
     "index.html": "80820e8146097f515130ebd4edb58ce8178ab9c2762f0b3732eb3b4901fd516c",

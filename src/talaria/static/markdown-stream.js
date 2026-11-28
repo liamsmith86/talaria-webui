@@ -109,11 +109,11 @@ export class MarkdownStream {
         delta.includes(header[1][0])
       )
         return false;
-      next = {
-        ...last,
-        raw,
-        text: raw.slice(header[0].length).replace(/\n$/, ""),
-      };
+      // Marked's own fence rule gives the text, so a marked update can't make
+      // the stream differ from the full parse.
+      const fence = new marked.Lexer().tokenizer.fences(raw);
+      if (fence?.raw !== raw) return false;
+      next = { ...last, raw, text: fence.text };
     } else if (last.type === "table" && last.rows.length > 1) {
       // Whitespace after the final newline belongs to an unfinished blank
       // line, not the last data row. Reparse before replacing any rows.
