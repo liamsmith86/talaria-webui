@@ -168,5 +168,5 @@ export function ProfileConnections({ app, onRefresh, readOnly = false, focusPlug
         <h3>${app.profile?.label || t("Hermes API")}</h3>
         <${Connection} embedded readOnly=${readOnly} onClose=${onRefresh} />
       </section>
-      <${ExtendedAccess} readOnly=${readOnly} onSaved=${onRefresh} focus=${focusPlugin} />`}`;
+      <${ExtendedAccess} readOnly=${readOnly} focus=${focusPlugin} />`}`;
 }

@@ -208,6 +208,13 @@
   margin-left: auto;
   font-size: 12px;
 }
+.extended-access .check-result {
+  margin-top: 10px;
+}
+.extended-access .field-help.check-result {
+  min-height: 1.8em;
+  text-align: right;
+}
 .agent-overview > .access-status {
   margin-bottom: 18px;
 }

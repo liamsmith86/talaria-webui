@@ -110,31 +110,21 @@ def test_extended_access_explains_the_plugin_in_the_local_hermes(
 
 
 @pytest.mark.clock
-@pytest.mark.parametrize("connected", [False, True])
-def test_extended_access_check_confirms_unchanged_result_and_clears_it_on_failure(
-    page, live_app, connected
-):
-    live_app[1].extension = {} if connected else None
+def test_extended_access_check_confirms_unchanged_result_and_clears_it_on_failure(page, live_app):
+    live_app[1].extension = {}
     page.get_by_role("button", name="Settings").click()
     page.get_by_role("tab", name="Connection", exact=True).click()
-    expect(
-        page.get_by_text(
-            "Connected · Talaria plugin"
-            if connected
-            else "Talaria's Hermes Agent helper plugin not detected",
-            exact=True,
-        )
-    ).to_be_visible()
+    expect(page.get_by_text("Connected · Talaria plugin", exact=True)).to_be_visible()
     result = page.get_by_role("status").filter(has_text="Check complete.")
     expect(result).to_have_count(0)
     button = page.get_by_role("button", name="Check again", exact=True)
+    # At the end of the panel, a result that changed its height would scroll or hide.
+    page.locator("#settings-content").evaluate("panel => panel.scrollTo(0, panel.scrollHeight)")
+    position = button.bounding_box()["y"]
     button.click()
-    expect(button).to_be_enabled()
-    expect(result).to_have_text(
-        "Check complete. Talaria plugin is connected."
-        if connected
-        else "Check complete. Talaria's Hermes Agent helper plugin was not detected."
-    )
+    expect(result).to_have_text("Check complete.")
+    expect(result).to_be_in_viewport()
+    assert button.bounding_box()["y"] == position
     page.clock.fast_forward(10000)
     expect(result).to_be_visible()
 

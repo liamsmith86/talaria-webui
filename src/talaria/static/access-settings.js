@@ -112,7 +112,7 @@ export function pluginState(caps) {
     : idle
     ? msg("Hermes isn't loading the Talaria plugin")
     : msg("Talaria's Hermes Agent helper plugin not detected");
-  return { available, unsupported, outdated, idle, ready: available && !unsupported, label };
+  return { available, unsupported, outdated, ready: available && !unsupported, label };
 }
 
 export function PluginStatus({ caps, children }) {
@@ -122,13 +122,13 @@ export function PluginStatus({ caps, children }) {
   </div>`;
 }
 
-export function ExtendedAccess({ onSaved, readOnly = false, focus = false }) {
+export function ExtendedAccess({ readOnly = false, focus = false }) {
   const app = useStore();
   const root = useRef(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [checked, setChecked] = useState(false);
-  const { available, unsupported, outdated, idle } = pluginState(app.caps);
+  const { available, unsupported, outdated } = pluginState(app.caps);
   const restart = available && app.caps.talaria_extensions.state === "restart_required";
   const inherited = app.caps.talaria_extensions?.context_runs;
   const context = app.caps.talaria_extensions?.profile_context || {};
@@ -136,15 +136,16 @@ export function ExtendedAccess({ onSaved, readOnly = false, focus = false }) {
   const hermes = app.caps.talaria_hermes;
   const needsInstall = !outdated && (!available || !["current", "newer"].includes(release?.status));
   const local = app.caps.talaria_local_plugin;
+  // The result fills a line kept free below the button, so a check moves nothing.
   async function refresh() {
+    if (busy) return;
     setBusy(true);
     setError("");
-    setChecked(false);
     try {
       await refreshCapabilities();
       setChecked(true);
-      onSaved?.();
     } catch (e) {
+      setChecked(false);
       setError(e.message);
     } finally {
       setBusy(false);
@@ -185,16 +186,6 @@ export function ExtendedAccess({ onSaved, readOnly = false, focus = false }) {
       ${t("Install the plugin on your Hermes host, then restart its gateway.")}
       ${" "}${rich("To check whether it's installed and enabled, run {command} on that host.", { command: html`<code>hermes plugins show talaria-webui</code>` })}
     </p>`}
-    ${checked && html`<p class="field-help" role="status">${unsupported
-      ? t("Check complete. Talaria plugin can't run on this Hermes version.")
-      : available
-      ? t("Check complete. Talaria plugin is connected.")
-      : outdated
-      ? t("Check complete. Talaria plugin needs a newer Hermes.")
-      : idle
-      ? t("Check complete. Hermes isn't loading the Talaria plugin.")
-      : t("Check complete. Talaria's Hermes Agent helper plugin was not detected.")}</p>`}
-    ${error && html`<p class="form-error" role="alert">${t(error)}</p>`}
     <div class="dialog-actions">
       ${needsInstall && !local && html`<a class="button secondary"
         href="https://github.com/liamsmith86/talaria-webui#hermes-plugin" target="_blank" rel="noopener noreferrer">
@@ -203,10 +194,15 @@ export function ExtendedAccess({ onSaved, readOnly = false, focus = false }) {
       ${(local ? local.status === "missing" : needsInstall) && html`<${CatalogLink} className="button secondary">
         <${Icon} name="link" size=${15} />${t("Hermes plugin catalog")}
       <//>`}
-      <button class="button secondary" disabled=${busy || readOnly} onClick=${refresh}>
-        ${busy ? t("Checking…") : t("Check again")}
+      <button class="button secondary" disabled=${readOnly} aria-busy=${busy} onClick=${refresh}>
+        ${t("Check again")}
       </button>
     </div>
+    ${error && !busy
+      ? html`<p class="form-error check-result" role="alert">${t(error)}</p>`
+      : html`<p class="field-help check-result" role="status">
+        ${busy ? t("Checking…") : checked && t("Check complete.")}
+      </p>`}
     ${needsInstall && html`<${Installation} pluginOnly=${true} readOnly=${readOnly} />`}
   </section>`;
 }
