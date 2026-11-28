@@ -248,7 +248,7 @@ def hermes_request(python, home, *, owner=None, **request):
 
 
 def configure_hermes(args, prompts, settings, home, python, info, *, owner=None):
-    from .plugin_status import installed_status
+    from .plugin_status import installed_status, outdated_hermes
 
     apply_hermes_credentials(args, settings)
     if args.skip_hermes:
@@ -261,6 +261,8 @@ def configure_hermes(args, prompts, settings, home, python, info, *, owner=None)
         f"Found Hermes {info.get('version', '')} at {home} "
         f"(API {'enabled' if info['enabled'] else 'disabled'})."
     )
+    if reason := outdated_hermes(info.get("version")):
+        raise ValueError(reason)
     enable = not info["enabled"] and (
         args.enable_hermes_api or prompts.yes("Enable this Hermes profile's API server?")
     )
@@ -310,11 +312,7 @@ def apply_hermes_restart(args, prompts, home, python, info, *, owner=None):
         try:
             # The user agreed to interrupt active work, which is what Hermes asks for.
             restart_setup_hermes(
-                home,
-                python,
-                owner=owner,
-                plugin_enabled=info.get("plugin_enabled"),
-                unattended=info.get("unattended_restart") is True,
+                home, python, owner=owner, plugin_enabled=info.get("plugin_enabled")
             )
             return False
         except (ValueError, OSError, DeploymentError) as exc:
@@ -329,14 +327,14 @@ def hermes_restart_pending(home):
     )
 
 
-def restart_setup_hermes(home, python, *, owner=None, plugin_enabled=False, unattended=False):
+def restart_setup_hermes(home, python, *, owner=None, plugin_enabled=False):
     owner = owner or select_owner(home)
     if hermes_restart_pending(home) and plugin_enabled:
         from .plugin_updates import restart_and_verify
 
         restart_and_verify(home, home / "plugins/talaria-webui", None, owner=owner)
     else:
-        restart_gateway(home, owner=owner, unattended=unattended)
+        restart_gateway(home, owner=owner)
     if hermes_restart_pending(home):
         hermes_request(python, home, owner=owner, action="clear_restart")
 
@@ -680,10 +678,10 @@ def terminal(interactive, flag="--non-interactive"):
         yield Prompts(stream)
 
 
-def restart_gateway(home, command=None, *, owner=None, unattended=False):
-    """`unattended` restarts Hermes 0.22.3+ the way its own updater does: without asking about
-    live work, which may be interrupted, and with the replacement for a gateway no service
-    manager runs started in the background rather than in this command."""
+def restart_gateway(home, command=None, *, owner=None):
+    """Restart Hermes the way its own updater does: without asking about live work, which may be
+    interrupted (callers ask first), and with the replacement for a gateway no service manager
+    runs started in the background rather than in this command."""
     owner = owner or select_owner(home)
     command = command or shutil.which("hermes")
     if not command:
@@ -693,7 +691,7 @@ def restart_gateway(home, command=None, *, owner=None, unattended=False):
     command = validate_execution(home, command, owner)
     env["HOME"] = owner.pw_dir
     command = [command, "gateway", "restart"] + (["--system"] if owner.pw_uid == 0 else [])
-    command += ["--interrupt", "--detach"] if unattended else []
+    command += ["--interrupt", "--detach"]
     # Restart diagnostics can contain private Hermes configuration; keep them private.
     try:
         result = subprocess.run(

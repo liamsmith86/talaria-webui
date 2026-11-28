@@ -37,7 +37,7 @@ class FakeHermes:
         self.stops = 0
         self.approvals = 0
         self.approval_choices = ["once", "session", "deny"]
-        # Hermes 0.22.1+ session authority: prompts settle by prompt ID and generation.
+        # Hermes's session authority: prompts settle by prompt ID and generation.
         self.native_controls = False
         # ...which also refuses API turns in sessions another surface owns.
         self.session_authority = False
@@ -46,6 +46,7 @@ class FakeHermes:
         self.persist_image_originals = True
         self.discovery_overrides = {}
         self.extension = None
+        self.version = "1.2.3"
         self.rewinds = 0
         # Plugin command jobs by request ID. A test finishes one by replacing its result.
         self.commands = {}
@@ -259,7 +260,7 @@ class FakeHermes:
             return JSONResponse(
                 {
                     "status": "ok",
-                    "version": "1.2.3",
+                    "version": self.version,
                     "gateway_state": "running",
                     "active_agents": 0,
                     "readiness": {"status": "ok", "checks": {}},

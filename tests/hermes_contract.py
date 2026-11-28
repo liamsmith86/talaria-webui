@@ -21,7 +21,6 @@ from providers import get_provider_profile
 from talaria.hermes_plugin.bridge import rewind, rewind_preview, wire
 from talaria.hermes_plugin.models import add_reasoning_defaults, model_options
 from talaria.hermes_plugin.observations import Observations
-from talaria.hermes_plugin.store import Legacy
 
 home = Path(sys.argv[1])
 assert home.is_dir() and str(home).startswith("/tmp/")
@@ -283,13 +282,6 @@ async def http_contract():
         ):
             with patch("hermes_cli.config.load_config", return_value=config):
                 assert (await client.get("/talaria/v1/capabilities", headers=headers)).status == 404
-        # Optional rewind signature drift must not break identity or response details.
-        if isinstance(store, Legacy):
-            with patch.object(
-                db, "rewind_to_message", lambda sid, target, expected_active_ids=None: None
-            ):
-                response = await client.get("/talaria/v1/capabilities", headers=headers)
-                assert response.status == 200 and (await response.json())["rewind"] is False
         for invalid in (-1, 0, 2**63):
             assert (
                 await client.get(

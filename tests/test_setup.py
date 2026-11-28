@@ -759,6 +759,22 @@ def test_current_enabled_plugin_does_not_prompt_or_restart(options, monkeypatch,
     assert not wizard.apply_hermes_restart(options, prompts, home, None, info)
 
 
+def test_setup_refuses_an_older_hermes_before_changing_it(options, monkeypatch, tmp_path):
+    from talaria.config import Settings
+    from talaria.hermes_plugin.release import HERMES_MINIMUM
+
+    options.skip_hermes = False
+    options.plugin = options.enable_hermes_api = True
+    info = {"enabled": False, "plugin_enabled": False, "key": "", "version": "0.1.0"}
+    monkeypatch.setattr(wizard.Prompts, "yes", lambda *a: pytest.fail("Prompted"))
+    monkeypatch.setattr(wizard, "hermes_request", lambda *a, **kw: pytest.fail("Changed Hermes"))
+    with pytest.raises(ValueError, match=f"needs Hermes {HERMES_MINIMUM} or later.*Hermes 0.1.0"):
+        wizard.configure_hermes(
+            options, wizard.Prompts(None), Settings(), tmp_path / "hermes", None, info
+        )
+    assert not (tmp_path / "hermes").exists()
+
+
 @pytest.mark.parametrize("restart", [False, True])
 @pytest.mark.parametrize("marker", ["restart-required", "config-restart-required"])
 def test_pending_plugin_restart_still_requires_consent(

@@ -3,7 +3,31 @@
 import re
 from pathlib import Path
 
-from .hermes_plugin.release import LOADED_REVISION, PLUGIN_VERSION, fingerprint, read_version
+from .hermes_plugin.release import (
+    HERMES_MINIMUM,
+    LOADED_REVISION,
+    PLUGIN_VERSION,
+    fingerprint,
+    read_version,
+)
+
+
+def hermes_supported(version):
+    """Whether a Hermes version meets Talaria's minimum, or None when it can't be read."""
+    match = re.match(r"v?(\d+)\.(\d+)\.(\d+)", version) if isinstance(version, str) else None
+    if not match:
+        return None
+    return tuple(map(int, match.groups())) >= tuple(map(int, HERMES_MINIMUM.split(".")))
+
+
+def outdated_hermes(version):
+    """Why this Hermes can't take Talaria's plugin; None if it can or its version is unknown."""
+    if hermes_supported(version) is not False:
+        return None
+    return (
+        f"Talaria needs Hermes {HERMES_MINIMUM} or later, and this is Hermes {version}. "
+        "Update Hermes, then try again."
+    )
 
 
 def release_status(data):

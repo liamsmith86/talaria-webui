@@ -6,7 +6,7 @@
 [![Linux · macOS · WSL2](https://img.shields.io/badge/platform-Linux%20%C2%B7%20macOS%20%C2%B7%20WSL2-555)](#installation)
 [![Try the demo](https://img.shields.io/badge/demo-fly.withtalaria.com-2563EB)](https://fly.withtalaria.com)
 [![Latest release](https://img.shields.io/github/v/release/liamsmith86/talaria-webui?sort=semver)](https://github.com/liamsmith86/talaria-webui/releases/latest)
-[![Hermes Agent 0.21.5+](https://img.shields.io/badge/Hermes%20Agent-0.21.5%2B-555)](https://github.com/NousResearch/hermes-agent)
+[![Hermes Agent 0.23.5+](https://img.shields.io/badge/Hermes%20Agent-0.23.5%2B-555)](https://github.com/NousResearch/hermes-agent)
 [![Docker image](https://img.shields.io/badge/Docker-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/liamsmith86/talaria-webui/pkgs/container/talaria-webui)
 [![7 languages](https://img.shields.io/badge/languages-7-555)](src/talaria/static/locales)
 

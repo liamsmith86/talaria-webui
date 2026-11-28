@@ -260,7 +260,7 @@ class Observations:
         context_length=None,
         **kwargs,
     ):
-        # The window Hermes compacts against, passed since 0.23.1. Hermes caches a length only
+        # The window Hermes compacts against, when it knows one. Hermes caches a length only
         # for the endpoints it probes.
         context_max = number(context_length) or cached_context_length(model, base_url)
 

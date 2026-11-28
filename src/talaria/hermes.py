@@ -118,7 +118,7 @@ def response_error(status: int, body: dict | None = None) -> APIError:
     if code == "run_not_accepting_steer":
         return APIError("Hermes takes guidance only while it is working.", status, code)
     if code == "permission_denied" and status == 409:
-        # Hermes 0.22.1+ refuses API turns in sessions another surface owns.
+        # Hermes refuses API turns in sessions another surface owns.
         return APIError(
             "Hermes accepts new messages here only in sessions started through its API. "
             "Continue this conversation in a new branch.",

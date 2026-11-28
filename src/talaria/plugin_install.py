@@ -152,7 +152,8 @@ def main(argv, *, owner=None, report=print):
         help=argparse.SUPPRESS,
     )
     args = parser.parse_args(argv)
-    from .plugin_updates import register, restart_and_verify, run_as_owner
+    from .plugin_updates import register, require_supported_hermes, restart_and_verify, run_as_owner
+    from .setup import find_hermes_python
 
     home = args.home.expanduser().absolute()
     owner = owner or select_owner(home)
@@ -164,6 +165,8 @@ def main(argv, *, owner=None, report=print):
     if os.geteuid() == 0 and owner.pw_uid != 0:
         run_as_owner(home, args.source, args.restart, args.hermes_command, owner=owner)
         return
+    if python := find_hermes_python(home, command=args.hermes_command):
+        require_supported_hermes(home, python, owner)
     restart = (
         (lambda target: restart_and_verify(home, target, args.hermes_command, owner=owner))
         if args.restart

@@ -6,8 +6,8 @@ FIELDS = ("id", "session_id", "role", "snippet", "timestamp", "source")
 PAGE_SIZE = 20
 
 
-def supported(store, adapter):
-    return store.searchable(FIELDS) and callable(getattr(adapter, "_message_response", None))
+def supported(adapter):
+    return callable(getattr(adapter, "_message_response", None))
 
 
 def visible(row):
@@ -84,7 +84,7 @@ def around(store, adapter, sid, mid):
 async def dispatch(request, adapter, store):
     from aiohttp import web
 
-    if not supported(store, adapter):
+    if not supported(adapter):
         return web.json_response({"error": "Update Hermes to search session history."}, status=404)
     try:
         if request.match_info["action"] == "search":

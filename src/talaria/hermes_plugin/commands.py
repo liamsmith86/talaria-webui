@@ -35,13 +35,13 @@ def available(adapter):
         return False
 
 
-def catalog(adapter, store):
+def catalog(adapter):
     from hermes_cli.commands import COMMAND_REGISTRY
     from hermes_cli.slash_exec import resolve_executor
 
     if not available(adapter):
         return []
-    can_compress = compression.supported(adapter, store)
+    can_compress = compression.supported(adapter)
     result = []
     for command in COMMAND_REGISTRY:
         name = command.name
@@ -103,9 +103,7 @@ class CommandJobs:
         if request.method in {"GET", "HEAD"}:
             jid = request.match_info.get("command_id")
             if not jid:
-                return web.json_response(
-                    {"commands": await asyncio.to_thread(catalog, adapter, store)}
-                )
+                return web.json_response({"commands": await asyncio.to_thread(catalog, adapter)})
             job = self.jobs.get((scope, jid))
             return web.json_response(
                 job["result"] if job else {"error": "Command result expired or Hermes restarted."},
@@ -129,7 +127,7 @@ class CommandJobs:
             raise compression.CommandError("Invalid command.")
         if not re.fullmatch(r"[a-zA-Z0-9_-]{16,128}", jid) or len(sid) > 256 or len(args) > 2000:
             raise compression.CommandError("Invalid command identifier or arguments.")
-        commands = await asyncio.to_thread(catalog, adapter, store)
+        commands = await asyncio.to_thread(catalog, adapter)
         command = next((c for c in commands if name in [c["name"], *c["aliases"]]), None)
         if not command or command["mode"] != "native":
             raise compression.CommandError("This command is unavailable through the Hermes API.")

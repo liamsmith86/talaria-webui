@@ -1,4 +1,4 @@
-"""Talaria runs through a real gateway's session authority, as Hermes 0.22.1+ serves them."""
+"""Talaria runs through a real gateway's session authority."""
 
 import asyncio
 import importlib.util

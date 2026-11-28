@@ -1,7 +1,6 @@
 """Native restart accounting with a synthetic API task; no services or signals."""
 
 import asyncio
-from importlib.util import find_spec
 from types import SimpleNamespace
 
 from gateway.config import Platform
@@ -36,7 +35,7 @@ class Runner(GatewayShutdownMixin):
         self.stops.append(options)
 
 
-async def verify(drain_budget, finish):
+async def verify(drain_budget):
     release = asyncio.Event()
     work = asyncio.create_task(release.wait())
     state = SimpleNamespace(
@@ -51,16 +50,15 @@ async def verify(drain_budget, finish):
         assert runner.request_restart(via_service=True)
         assert runner._restart_requested
         assert not runner.request_restart(via_service=True)
-        if finish:
-            await asyncio.sleep(0.15)
-            assert not runner.stops and not work.done()
-            release.set()
-            await work
+        await asyncio.sleep(0.15)
+        assert not runner.stops and not work.done()
+        release.set()
+        await work
         await asyncio.wait_for(runner._restart_task, 3)
         assert runner.stops == [
             {"restart": True, "detached_restart": False, "service_restart": True}
         ]
-        assert work.done() == finish
+        assert work.done()
     finally:
         release.set()
         await work
@@ -70,11 +68,7 @@ async def verify(drain_budget, finish):
 
 
 async def main():
-    await verify(2, True)
-    # Before 0.23.2 the after-turn timeout ends the wait and stop() interrupts the run. From
-    # 0.23.2 a restart waits for idle, and that timeout only warns.
-    if find_spec("gateway.restart_when_idle") is None:
-        await verify(0.01, False)
+    await verify(2)
 
 
 asyncio.run(main())

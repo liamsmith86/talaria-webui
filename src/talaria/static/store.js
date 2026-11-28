@@ -742,7 +742,7 @@ export function newConversation(replace = false) {
 export function supports(feature) {
   return state.caps.features?.[feature] === true;
 }
-// Hermes 0.22.1+ takes API turns only in its API's own sessions and group rooms.
+// Hermes takes API turns only in its API's own sessions and group rooms.
 // Its session authority is also what advertises unknown-run resolution.
 export function externalSource(session) {
   const source = session?.source;

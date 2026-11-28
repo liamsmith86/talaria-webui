@@ -1,6 +1,6 @@
 """A real gateway restarted while a turn runs, the way Talaria's setup and plugin updates do it.
 
-From 0.22.3, with no terminal and no service manager, plain `hermes gateway restart` refuses while
+With no terminal and no service manager, plain `hermes gateway restart` refuses while
 work runs, and with `--interrupt` alone it becomes the replacement gateway, so setup would wait
 until it timed out and killed it. `setup.restart_gateway` passes `--interrupt --detach`, as Hermes's
 own updater does: the command must return and leave a gateway that answers.
@@ -20,10 +20,6 @@ from pathlib import Path
 import httpx
 
 from talaria.hermes_plugin import bridge
-from talaria.setup_hermes import unattended_restart
-
-if not unattended_restart():
-    sys.exit(0)  # Older Hermes restarts without these flags and never refuses.
 
 temporary = Path(sys.argv[1])
 source = Path(os.environ["HERMES_SOURCE"])

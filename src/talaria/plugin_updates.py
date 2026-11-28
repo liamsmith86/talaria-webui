@@ -34,6 +34,7 @@ def run_as_owner(home, source, restart=True, command=None, *, owner=None):
     python = find_hermes_python(home, command=command)
     if python is None:
         raise DeploymentError("Cannot locate Hermes's Python for local plugin maintenance.")
+    require_supported_hermes(home, python, owner)
     python = validate_execution(home, python, owner)
     python, _ = hermes_runtime(python, env=env, cwd=home, identity=identity)
     python = validate_execution(home, python, owner)
@@ -43,6 +44,15 @@ def run_as_owner(home, source, restart=True, command=None, *, owner=None):
         else None
     )
     run(python, home, source, owner, identity, env, verify)
+
+
+def require_supported_hermes(home, python, owner):
+    """Refuse before changing files: Hermes wouldn't load a plugin that requires a newer one."""
+    from .plugin_status import outdated_hermes
+    from .setup import hermes_request
+
+    if reason := outdated_hermes(hermes_request(python, home, owner=owner).get("version")):
+        raise DeploymentError(reason)
 
 
 def restart_and_verify(home, target, command, *, owner=None):
@@ -56,7 +66,7 @@ def restart_and_verify(home, target, command, *, owner=None):
     if not info.get("enabled") or not info.get("key"):
         raise DeploymentError("Enable this local Hermes API before managing its plugin.")
     # Setup asked first, and an update says it restarts a linked Hermes whose plugin changed.
-    restart_gateway(home, command, owner=owner, unattended=info.get("unattended_restart") is True)
+    restart_gateway(home, command, owner=owner)
     expected = fingerprint(target)
     url = local_url(str(info["host"]), int(info["port"])) + "/talaria/v1/capabilities"
     deadline = time.monotonic() + 30

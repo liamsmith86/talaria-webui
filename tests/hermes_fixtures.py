@@ -1,63 +1,51 @@
-"""Session fixtures for the native contracts, on every supported Hermes.
+"""Session fixtures for the native contracts, through the store handle Hermes gives its adapter.
 
-Before 0.23.3 a fixture is Hermes's own ``SessionDB``. Hermes 0.23.3 moved storage behind a store
-handle, keeping ``SessionDB`` as a smaller shim until 0.27, so ``StoreFixtures`` offers the same
-fixture calls through the store's verbs. Drop it with ``Legacy`` once the plugin requires 0.23.3.
+``StoreFixtures`` offers the fixture calls the contracts make through the store's verbs, in the
+row shapes Hermes's API serves.
 """
 
-import warnings
 from pathlib import Path
 
-from talaria.hermes_plugin.store import Legacy, Store
+from persistence_assembly import open_persistence, profile_scope
 
-try:
-    from persistence_assembly import open_persistence, profile_scope
-except ImportError:  # Before 0.23.3
-    open_persistence = None
+from talaria.hermes_plugin.store import Store
 
 
 def open_db(home):
     """Fixtures for the profile at ``home``: one ``state.db`` per profile folder."""
     home = Path(home)
     home.mkdir(parents=True, exist_ok=True)
-    if open_persistence is not None:
-        return StoreFixtures(open_persistence(profile_scope(home=home)), home)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        from hermes_state import SessionDB
-    return SessionDB(home / "state.db")
+    return StoreFixtures(open_persistence(profile_scope(home=home)), home)
 
 
 def native(db):
     """What this Hermes's API adapter holds as its store, for ``adapter._session_db``."""
-    return db.handle if isinstance(db, StoreFixtures) else db
+    return db.handle
 
 
 def plugin_store(db):
     """The plugin's view of the same store."""
-    return Store(db.handle) if isinstance(db, StoreFixtures) else Legacy(db)
+    return Store(db.handle)
 
 
 def serve(adapter_class, db):
-    """Give a stand-in API adapter this Hermes's store accessor, answering ``db``."""
+    """Give a stand-in API adapter Hermes's store accessors, answering ``db``."""
 
-    async def ensure(self):
-        return native(db)
+    async def ensure_async(self):
+        return db.handle
 
-    name = "_ensure_store_async" if isinstance(db, StoreFixtures) else "_ensure_session_db_async"
-    setattr(adapter_class, name, ensure)
+    adapter_class._ensure_store_async = ensure_async
+    adapter_class._ensure_store = lambda self: db.handle
     return adapter_class
 
 
 def adapter_db(adapter):
     """Fixtures over the store the API adapter answers for the active profile."""
-    if callable(getattr(adapter, "_ensure_store", None)):
-        return StoreFixtures(adapter._ensure_store(), None)
-    return adapter._ensure_session_db()
+    return StoreFixtures(adapter._ensure_store(), None)
 
 
 class StoreFixtures:
-    """The ``SessionDB`` calls the contracts make, over a store handle; ``SessionDB`` shapes."""
+    """The fixture calls the contracts make, named and shaped as Hermes's former ``SessionDB``."""
 
     def __init__(self, handle, home):
         from persistence.conversation.sessions import MAX_TITLE_LENGTH

@@ -95,12 +95,6 @@ class LiveRun:
         agent.stream_delta_callback = text
 
     def clarification_callback(self, agent):
-        from tools.clarify_tool import clarify_tool
-
-        if "question" in inspect.signature(clarify_tool).parameters:
-            return lambda question, choices, multi_select=False: self.clarify(
-                agent, question, choices, multi_select
-            )
         return lambda questions: self.clarify_batch(agent, questions)
 
     async def cancel_when_stopped(self, agent, request_id):
@@ -113,15 +107,6 @@ class LiveRun:
                 await asyncio.sleep(0.1)
         finally:
             clarify_gateway.resolve_gateway_clarify(request_id, "")
-
-    def clarify(self, agent, question, choices, multi_select):
-        from tools.clarify_tool import TIMEOUT_RESPONSE
-
-        with self.question_lock:
-            if getattr(agent, "_interrupt_requested", False):
-                return ""
-            response = self.ask(agent, question, choices, multi_select)
-            return TIMEOUT_RESPONSE if response is None else response
 
     def clarify_batch(self, agent, questions):
         from tools import clarify_gateway
