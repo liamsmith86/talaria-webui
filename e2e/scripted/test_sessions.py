@@ -10,11 +10,12 @@ from scripted_model import ECHO, plan, terminal, tool
 
 CREATE_LAUNCH_STUB = """
 import sys
-from hermes_state import SessionDB
-db = SessionDB()
-db.create_session(sys.argv[1], "tui")
-db.end_session(sys.argv[1], "tui_close")
-db.close()
+from persistence.conversation.sessions import NewSession
+from persistence_assembly import open_persistence, profile_scope
+store = open_persistence(profile_scope(), eager=True)
+store.sessions.create(NewSession(session_id=sys.argv[1], source="tui"))
+store.sessions.end(sys.argv[1], "tui_close")
+store.close()
 """
 
 

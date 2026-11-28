@@ -1,4 +1,4 @@
-"""Public search fixtures. Native FTS/visibility is checked separately against SessionDB."""
+"""Public search fixtures. Native search and visibility are checked against Hermes's store."""
 
 from starlette.responses import JSONResponse
 
