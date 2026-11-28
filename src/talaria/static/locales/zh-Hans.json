@@ -388,7 +388,7 @@
   "Research": "研究",
   "Resized · {size} KB": "已调整尺寸 · {size} KB",
   "Response details": "回复详情",
-  "Restart Hermes to finish the plugin update.": "请重启 Hermes 以完成插件更新。",
+  "Restart the Hermes gateway after active work finishes to load the updated plugin.": "请在当前工作完成后重启 Hermes 网关，以加载更新后的插件。",
   "Restarting Talaria…": "正在重启 Talaria…",
   "Restoring previous release…": "正在恢复上一版本…",
   "Result": "结果",

@@ -21,7 +21,7 @@ from .live import answer
 from .live import supported as live_supported
 from .models import model_options
 from .observations import Observations
-from .release import LOADED_REVISION, PLUGIN_VERSION, fingerprint
+from .release import LOADED_REVISION, PLUGIN_VERSION, fingerprint, read_version
 from .search import dispatch as search_dispatch
 from .search import supported as search_supported
 from .store import compatible, open_store, user_turn_parts
@@ -156,7 +156,7 @@ def wire(app, adapter, **kwargs):
 
         async def dispatch_request(request):
             refused = await refusal(request, adapter)
-            return web_json(identity("unsupported_hermes")) if refused is None else refused
+            return web_json(await identity(supported=False)) if refused is None else refused
 
     # Keep the native `profile` parameter for Hermes's authentication and request scope.
     # Its earlier /p/{profile}/* catch-all shadows plugin routes in that namespace.
@@ -209,23 +209,23 @@ async def refusal(request, adapter):
     return None
 
 
-def identity(state):
-    """What every capability answer reports. ``state`` is ready, restart_required (the files on
-    disk changed after this code loaded) or unsupported_hermes (no features on this Hermes)."""
-    return {
-        "version": 1,
-        "revision": LOADED_REVISION,
-        "plugin_version": PLUGIN_VERSION,
-        "state": state,
-    }
+async def identity(supported=True):
+    """What every capability answer reports. ``state`` is ready, unsupported_hermes (no features
+    on this Hermes) or restart_required: the files a restart loads, reported as ``installed``
+    (None once removed), differ from this code."""
+    data = {"version": 1, "revision": LOADED_REVISION, "plugin_version": PLUGIN_VERSION}
+    installed = await asyncio.to_thread(installed_files)
+    if installed is None or installed["revision"] != LOADED_REVISION:
+        return {**data, "state": "restart_required", "installed": installed}
+    return {**data, "state": "ready" if supported else "unsupported_hermes"}
 
 
-def loaded_state():
+def installed_files():
+    directory = Path(__file__).parent
     try:
-        changed = fingerprint(Path(__file__).parent) != LOADED_REVISION
-    except OSError:  # Removed since it loaded
-        changed = True
-    return "restart_required" if changed else "ready"
+        return {"revision": fingerprint(directory), "plugin_version": read_version(directory)}
+    except OSError:
+        return None
 
 
 def probe(name, check, *args):
@@ -278,7 +278,7 @@ async def capabilities(adapter, store):
     )
     return web_json(
         {
-            **identity(await asyncio.to_thread(loaded_state)),
+            **(await identity()),
             "commands": probe("commands", available_commands, adapter),
             "response_details": True,
             "context_usage": True,

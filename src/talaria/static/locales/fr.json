@@ -394,7 +394,7 @@
   "Research": "Recherche",
   "Resized · {size} KB": "Redimensionnée · {size} Ko",
   "Response details": "Détails de la réponse",
-  "Restart Hermes to finish the plugin update.": "Redémarrez Hermes pour terminer la mise à jour du plugin.",
+  "Restart the Hermes gateway after active work finishes to load the updated plugin.": "Redémarrez la passerelle Hermes une fois le travail en cours terminé pour charger le plugin mis à jour.",
   "Restarting Talaria…": "Redémarrage de Talaria…",
   "Restoring previous release…": "Restauration de la version précédente…",
   "Result": "Résultat",

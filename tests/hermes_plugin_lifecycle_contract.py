@@ -223,7 +223,9 @@ async def update_on_disk():
             async with client.get(base + "/talaria/v1/models", headers=headers) as response:
                 assert response.status == 200 and "NEW" not in await response.text()
             async with client.get(base + "/talaria/v1/capabilities", headers=headers) as response:
-                assert (await response.json())["state"] == "restart_required"
+                caps = await response.json()
+                assert caps["state"] == "restart_required", caps
+                assert caps["installed"]["revision"] != caps["revision"], caps
     finally:
         models.write_text(original)
         await adapter.disconnect()

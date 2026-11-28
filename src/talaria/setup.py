@@ -367,7 +367,7 @@ def verify_plugin(client, settings):
     import httpx
 
     from .hermes import api_url
-    from .plugin_status import release_status
+    from .plugin_status import reported_status
 
     try:
         response = client.get(
@@ -387,7 +387,7 @@ def verify_plugin(client, settings):
         return "connected; extended access unavailable"
     if not isinstance(data, dict) or type(data.get("version")) is not int or data["version"] != 1:
         return "connected; incompatible plugin API"
-    release = release_status(data)["status"]
+    release = reported_status(data)["status"]
     if data.get("state") == "unsupported_hermes":
         return (
             f"connected; extended access unavailable: plugin {release} doesn't support this "

@@ -60,7 +60,7 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
       ${t("Check for a Talaria update that supports this Hermes version.")}
     </p>`}
     ${restart && html`<p class="field-help" role="status">
-      ${t("Restart Hermes to finish the plugin update.")}
+      ${t("Restart the Hermes gateway after active work finishes to load the updated plugin.")}
     </p>`}
     ${available && inherited &&
       (context.instructions === "unavailable" || context.prefill === "unavailable") &&
