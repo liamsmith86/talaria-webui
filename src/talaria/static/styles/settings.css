@@ -204,6 +204,13 @@
   font-size: 12px;
   line-height: 1.7;
 }
+.access-status .text-button {
+  margin-left: auto;
+  font-size: 12px;
+}
+.agent-overview > .access-status {
+  margin-bottom: 18px;
+}
 .access-status svg {
   margin-top: 2px;
   color: var(--accent-text);

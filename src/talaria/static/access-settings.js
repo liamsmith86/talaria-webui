@@ -1,6 +1,5 @@
-import { html, useEffect, useState, Icon } from "./lib.js";
-import { api } from "./api.js";
-import { state, update, useStore } from "./store.js";
+import { html, useEffect, useRef, useState, Icon } from "./lib.js";
+import { refreshCapabilities, useStore } from "./store.js";
 import { Installation, ReleaseSummary } from "./installation.js";
 import { msg, rich, t } from "./i18n.js";
 
@@ -95,48 +94,68 @@ function LocalPlugin({ local, serving, steps }) {
   </div>`;
 }
 
-export function ExtendedAccess({ onSaved, readOnly = false }) {
+// The plugin's state for this connection, which Connection and the agent overview both show.
+export function pluginState(caps) {
+  const available = caps.talaria_extensions?.version === 1;
+  const unsupported = available && caps.talaria_extensions.state === "unsupported_hermes";
+  // Hermes refuses a plugin that requires a newer Hermes, so offer the Hermes update instead.
+  const outdated = caps.talaria_hermes?.supported === false;
+  const local = caps.talaria_local_plugin;
+  // Installed on this machine, yet Hermes answers as if there were no plugin.
+  const idle = !available && !outdated && !!local && local.status !== "missing";
+  const label = unsupported
+    ? msg("Talaria plugin can't run on this Hermes version")
+    : available
+    ? msg("Connected · Talaria plugin")
+    : outdated
+    ? msg("Talaria plugin needs a newer Hermes")
+    : idle
+    ? msg("Hermes isn't loading the Talaria plugin")
+    : msg("Talaria's Hermes Agent helper plugin not detected");
+  return { available, unsupported, outdated, idle, ready: available && !unsupported, label };
+}
+
+export function PluginStatus({ caps, children }) {
+  const { ready, label } = pluginState(caps);
+  return html`<div class="access-status" role="status">
+    <${Icon} name=${ready ? "check" : "info"} size=${16} /><span>${t(label)}</span>${children}
+  </div>`;
+}
+
+export function ExtendedAccess({ onSaved, readOnly = false, focus = false }) {
   const app = useStore();
+  const root = useRef(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [checked, setChecked] = useState(false);
-  const available = app.caps.talaria_extensions?.version === 1;
-  const unsupported = available && app.caps.talaria_extensions.state === "unsupported_hermes";
+  const { available, unsupported, outdated, idle } = pluginState(app.caps);
   const restart = available && app.caps.talaria_extensions.state === "restart_required";
   const inherited = app.caps.talaria_extensions?.context_runs;
   const context = app.caps.talaria_extensions?.profile_context || {};
   const release = app.caps.talaria_extensions?.release;
-  // Hermes refuses a plugin that requires a newer Hermes, so offer the Hermes update instead.
   const hermes = app.caps.talaria_hermes;
-  const outdated = hermes?.supported === false;
   const needsInstall = !outdated && (!available || !["current", "newer"].includes(release?.status));
   const local = app.caps.talaria_local_plugin;
-  // Installed on this machine, yet Hermes answers as if there were no plugin.
-  const idle = !available && !outdated && local && local.status !== "missing";
-  async function refresh(quiet = false) {
+  async function refresh() {
     setBusy(true);
     setError("");
     setChecked(false);
     try {
-      const caps = await api("/capabilities");
-      update({ caps, agent: caps.talaria_agent || state.agent });
-      if (!quiet) {
-        setChecked(true);
-        onSaved?.();
-      }
+      await refreshCapabilities();
+      setChecked(true);
+      onSaved?.();
     } catch (e) {
-      if (!quiet) setError(e.message);
+      setError(e.message);
     } finally {
       setBusy(false);
     }
   }
-  // What Talaria learned when the page loaded can predate a Hermes update or restart.
   useEffect(() => {
-    refresh(true);
-    // Once per opening; refresh only uses stable setters.
+    if (focus) root.current?.scrollIntoView({ block: "start" });
+    // Once per opening, from "Your agent".
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return html`<section class="extended-access">
+  return html`<section class="extended-access" ref=${root}>
     <div class="section-heading">
       <h3>${t("Extended access")}</h3>
       <span class="quiet-badge">${t("Optional")}</span>
@@ -144,19 +163,7 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
     ${available && !local && html`<p class="field-help" role="status">
       ${release?.version && `${release.version} · `}${t(releaseLabels[release?.status] || releaseLabels.unknown)}
     </p>`}
-    <div class="access-status" role="status">
-      <${Icon} name=${available && !unsupported ? "check" : "info"} size=${16} /><span
-        >${unsupported
-          ? t("Talaria plugin can't run on this Hermes version")
-          : available
-          ? t("Connected · Talaria plugin")
-          : outdated
-          ? t("Talaria plugin needs a newer Hermes")
-          : idle
-          ? t("Hermes isn't loading the Talaria plugin")
-          : t("Talaria's Hermes Agent helper plugin not detected")}</span
-      >
-    </div>
+    <${PluginStatus} caps=${app.caps} />
     ${unsupported && !needsInstall && html`<p class="field-help">
       ${t("Check for a Talaria update that supports this Hermes version.")}
     </p>`}
@@ -196,7 +203,7 @@ export function ExtendedAccess({ onSaved, readOnly = false }) {
       ${(local ? local.status === "missing" : needsInstall) && html`<${CatalogLink} className="button secondary">
         <${Icon} name="link" size=${15} />${t("Hermes plugin catalog")}
       <//>`}
-      <button class="button secondary" disabled=${busy || readOnly} onClick=${() => refresh()}>
+      <button class="button secondary" disabled=${busy || readOnly} onClick=${refresh}>
         ${busy ? t("Checking…") : t("Check again")}
       </button>
     </div>

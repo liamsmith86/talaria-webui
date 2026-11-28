@@ -70,8 +70,16 @@ def test_extended_access_explains_the_plugin_in_the_local_hermes(
     hermes = f"HERMES_HOME={home} hermes"
 
     page.get_by_role("button", name="Settings").click()
-    page.get_by_role("tab", name="Connection", exact=True).click()
+    overview = page.locator(".agent-overview")
+    expect(overview.get_by_role("status").first).to_contain_text(
+        "Hermes isn't loading the Talaria plugin"
+    )
+    overview.get_by_role("button", name="Set up", exact=True).click()
+    expect(page.get_by_role("tab", name="Connection", exact=True)).to_have_attribute(
+        "aria-selected", "true"
+    )
     access = page.locator(".extended-access")
+    expect(access).to_be_in_viewport()
     expect(access.get_by_text("Hermes isn't loading the Talaria plugin")).to_be_visible()
     local = access.locator(".local-plugin")
     expect(local.locator("h4")).to_have_text("Talaria plugin 1.6.2")

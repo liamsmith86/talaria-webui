@@ -62,7 +62,7 @@ export function ProfilePicker({ app, onClose }) {
   </${Dialog}>`;
 }
 
-export function ProfileConnections({ app, onRefresh, readOnly = false }) {
+export function ProfileConnections({ app, onRefresh, readOnly = false, focusPlugin = false }) {
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -168,5 +168,5 @@ export function ProfileConnections({ app, onRefresh, readOnly = false }) {
         <h3>${app.profile?.label || t("Hermes API")}</h3>
         <${Connection} embedded readOnly=${readOnly} onClose=${onRefresh} />
       </section>
-      <${ExtendedAccess} readOnly=${readOnly} onSaved=${onRefresh} />`}`;
+      <${ExtendedAccess} readOnly=${readOnly} onSaved=${onRefresh} focus=${focusPlugin} />`}`;
 }
