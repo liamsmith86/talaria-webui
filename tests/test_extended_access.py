@@ -165,7 +165,7 @@ def test_turns_a_compaction_archived_offer_no_changes(page, live_app):
     expect(messages).to_have_count(4)
     expect(messages.nth(0).get_by_role("button", name="Edit and resend")).to_have_count(0)
     expect(messages.nth(1).get_by_role("button", name="Regenerate response")).to_have_count(0)
-    expect(messages.nth(1).get_by_role("button", name="Delete turn")).to_have_count(0)
+    expect(messages.nth(1).get_by_role("button", name="Remove turn")).to_have_count(0)
     expect(messages.nth(2).get_by_role("button", name="Edit and resend")).to_have_count(1)
     expect(messages.nth(3).get_by_role("button", name="Regenerate response")).to_have_count(1)
 
@@ -173,12 +173,12 @@ def test_turns_a_compaction_archived_offer_no_changes(page, live_app):
 def test_stale_edits_and_missing_images_never_rewind(page, live_app):
     peer = live_app[1]
     sid = open_seed(page, peer)
-    page.get_by_role("button", name="Delete turn", exact=True).first.click()
-    dialog = page.get_by_role("dialog", name="Delete turn", exact=True)
+    page.get_by_role("button", name="Remove turn", exact=True).first.click()
+    dialog = page.get_by_role("dialog", name="Remove turn", exact=True)
     expect(dialog).to_contain_text("this prompt, its response")
     expect(dialog).to_contain_text("and 1 later turn")
     peer.messages[sid].append({"id": 10, "role": "user", "content": "Arrived elsewhere"})
-    dialog.get_by_role("button", name="Delete turn", exact=True).click()
+    dialog.get_by_role("button", name="Remove turn", exact=True).click()
     # The plugin says why, in words written for people.
     expect(dialog.get_by_role("alert")).to_have_text(PLUGIN_BUSY)
     assert peer.rewinds == 0 and len(peer.messages[sid]) == 5
@@ -209,9 +209,9 @@ def test_regenerate_delete_and_mobile_toolbar(page, live_app):
     expect(dialog).to_have_count(0)
     expect(page.get_by_text("What would you like to explore next?", exact=True)).to_be_visible()
     assert list(peer.runs.values())[-1]["input"] == "Message 000"
-    page.get_by_role("button", name="Delete turn", exact=True).first.click()
+    page.get_by_role("button", name="Remove turn", exact=True).first.click()
     expect(page.get_by_role("dialog")).to_contain_text("this prompt and its response")
-    page.get_by_role("dialog").get_by_role("button", name="Delete turn", exact=True).click()
+    page.get_by_role("dialog").get_by_role("button", name="Remove turn", exact=True).click()
     expect(page.get_by_role("dialog")).to_have_count(0)
     expect(page.locator(".message")).to_have_count(0)
     expect(page.get_by_text("This session has no chat history.", exact=True)).to_be_visible()

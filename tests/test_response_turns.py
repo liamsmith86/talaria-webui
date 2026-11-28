@@ -161,7 +161,7 @@ def test_tool_rounds_settle_to_one_ordered_response(page, live_app, monkeypatch,
     expect(response.locator(".tool-card")).to_have_count(2)
     expect(response.get_by_role("button", name="Response details", exact=True)).to_have_count(1)
     expect(response.get_by_role("button", name="Regenerate response", exact=True)).to_have_count(1)
-    expect(response.get_by_role("button", name="Delete turn", exact=True)).to_have_count(1)
+    expect(response.get_by_role("button", name="Remove turn", exact=True)).to_have_count(1)
     for summary in response.locator(".tool-card summary").all():
         summary.click()
     text = response.inner_text()
@@ -192,8 +192,8 @@ def test_tool_rounds_settle_to_one_ordered_response(page, live_app, monkeypatch,
     page.reload()
     expect(page.locator(".message.assistant")).to_have_count(1)
     expect(page.locator(".message.assistant .tool-card")).to_have_count(2)
-    page.locator(".message.assistant").get_by_role("button", name="Delete turn", exact=True).click()
-    page.get_by_role("dialog").get_by_role("button", name="Delete turn", exact=True).click()
+    page.locator(".message.assistant").get_by_role("button", name="Remove turn", exact=True).click()
+    page.get_by_role("dialog").get_by_role("button", name="Remove turn", exact=True).click()
     expect(page.locator(".message")).to_have_count(0)
     assert peer.rewinds == 1
 
