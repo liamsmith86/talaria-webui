@@ -62,6 +62,17 @@ try:
     raise AssertionError("Stale confirmation was not rejected")
 except RuntimeError:
     pass
+# A row written after the read (a compaction's, or a background report) refuses the rewind.
+db.create_session("late-row", "api_server")
+db.append_message("late-row", "user", "Ask")
+_, change = rewind_preview(store, "late-row", db.append_message("late-row", "assistant", "Reply"))
+late = db.append_message("late-row", "assistant", "Background report")
+try:
+    store.rewind("late-row", *change)
+    raise AssertionError("A row written after the read was rewound")
+except RuntimeError:
+    pass
+assert late in db.get_active_message_ids("late-row")
 preview, _ = rewind_preview(store, "contract", reply)
 assert preview["turn_count"] == 2
 result = rewind(store, "contract", {"message_id": reply, "revision": preview["revision"]})

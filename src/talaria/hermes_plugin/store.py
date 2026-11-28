@@ -2,7 +2,8 @@
 
 Hermes 0.23.3 moved storage behind a store handle (``persistence``); earlier releases hand out a
 ``SessionDB``. Both offer the plugin the same reads, as the row dictionaries Hermes's API serves,
-and the same guarded rewind. Drop ``Legacy`` once the plugin requires Hermes 0.23.3.
+and a rewind (see ``Store.rewind`` for how its guard differs). Drop ``Legacy`` once the plugin
+requires Hermes 0.23.3.
 """
 
 import inspect
@@ -294,15 +295,21 @@ class Store:
     def rewind(self, sid, active, target, handoff, content):
         """Hermes's store rewinds only by user-turn ordinal, which skips the rows API turns are
         saved as. Replace the active transcript with the rows before the target instead: the store
-        keeps that prefix in place and marks the rest rewound, as its own rewind does. Its write
-        refuses while a turn or compaction holds the session. The caller read ``active`` just
-        before; a row written in between without a lease (a background task's report) is rewound
-        too."""
+        keeps that prefix in place and marks the rest rewound, as its own rewind does.
+
+        Unlike ``Legacy``, the write can't pin the active rows, so they're checked again just
+        before it, and a compaction holding its lock refuses; the write itself refuses while a turn
+        or compaction holds the session. Something written between that check and the write is
+        rewound too: a Hermes limitation."""
         from persistence.conversation.messages import NewMessage, ReplaceMode
 
         kept = [NewMessage.from_live(row) for row in active[:target]]
         if handoff is not None:
             kept.append(NewMessage.from_live(handoff))
+        if self.active_ids(sid) != [row["id"] for row in active]:
+            raise RuntimeError("The session changed. Reopen the action and try again.")
+        if self.handle.coordination.get_compression_lock_holder(session_id=sid) is not None:
+            raise RuntimeError("The session is being compressed.")
         self.handle.messages.replace_transcript(
             sid, kept, ReplaceMode.ARCHIVE_DROPPED, reject_active_turn_lease=True
         )

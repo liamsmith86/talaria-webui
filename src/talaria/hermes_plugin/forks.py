@@ -15,6 +15,10 @@ from .store import Legacy
 API_SOURCES = {"api_server"}
 
 
+class TitleTaken(ValueError):
+    """Another session took the branch's title after it was checked."""
+
+
 class BranchStore:
     """Before 0.23.3 the native handler branches through this wrapper around its ``SessionDB``."""
 
@@ -81,7 +85,10 @@ def branch(store, source, title, ends_parent):
     try:
         rows = [NewMessage.from_live(row.as_wire_row()) for row in messages.read_transcript(sid)]
         messages.replace_transcript(child, rows, ReplaceMode.DESTRUCTIVE)
-        sessions.set_title(child, title)
+        try:
+            sessions.set_title(child, title)
+        except ValueError as exc:
+            raise TitleTaken(str(exc)) from exc
         if ends_parent:
             sessions.end(sid, "branched")
     except Exception:
@@ -102,6 +109,12 @@ async def native_branch(handler, adapter, request, store, sid, ends_parent):
         await asyncio.shield(asyncio.to_thread(branch_store.finish, succeeded))
 
 
+def title_refused(exc):
+    from aiohttp import web
+
+    return web.json_response({"error": {"code": "invalid_title", "message": str(exc)}}, status=400)
+
+
 async def fork_session(adapter, request, store, source):
     from aiohttp import web
 
@@ -116,17 +129,18 @@ async def fork_session(adapter, request, store, source):
     try:
         # Before 0.23.3 this only checks the title: the native handler names the branch itself.
         title = await asyncio.to_thread(store.branch_title, source, data.get("title"))
-        if ends_parent and await asyncio.to_thread(store.pending_turn, sid):
-            return web.json_response(
-                {"error": "Wait for this session's pending turn to finish, then branch it."},
-                status=409,
-            )
-        if legacy:
-            return await native_branch(handler, adapter, request, store, sid, ends_parent)
-        row = await asyncio.to_thread(branch, store, source, title, ends_parent)
     except ValueError as exc:
+        return title_refused(exc)
+    if ends_parent and await asyncio.to_thread(store.pending_turn, sid):
         return web.json_response(
-            {"error": {"code": "invalid_title", "message": str(exc)}}, status=400
+            {"error": "Wait for this session's pending turn to finish, then branch it."},
+            status=409,
         )
+    if legacy:
+        return await native_branch(handler, adapter, request, store, sid, ends_parent)
+    try:
+        row = await asyncio.to_thread(branch, store, source, title, ends_parent)
+    except TitleTaken as exc:
+        return title_refused(exc)
     session = adapter._session_response(row)
     return web.json_response({"object": "hermes.session", "session": session}, status=201)
