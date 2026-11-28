@@ -356,7 +356,7 @@ wheels = [
 
 [[package]]
 name = "talaria-webui"
-version = "0.3.28"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
