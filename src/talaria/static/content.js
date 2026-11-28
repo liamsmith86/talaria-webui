@@ -23,9 +23,11 @@ export function plainContent(content) {
 // Hermes stores its own events (subagent results, finished background
 // processes, resumed turns, model changes) as user-role rows of these kinds.
 // Since 0.23 a prompt the provider's safety filter refused stays on screen as
-// one too: Hermes drops it and its reply from what the model reads.
+// one too: Hermes drops it and its reply from what the model reads. A card a
+// plugin posts is saved as one as well, its body kept from the API.
 export const NOTICE_KINDS = [
   "async_delegation_complete", "process_complete", "auto_continue", "model_switch", "content_refused",
+  "plugin_card",
 ];
 export const isNotice = (row) => row?.role === "user" && NOTICE_KINDS.includes(row.display_kind);
 // Guidance sent while Hermes works is delivered inside that turn as a user row,

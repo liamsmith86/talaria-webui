@@ -78,6 +78,7 @@ NOTICE_KINDS = (
     "auto_continue",
     "model_switch",
     "content_refused",
+    "plugin_card",
 )
 # Guidance sent during a turn, in the marker Hermes delivers it with (static/content.js).
 GUIDANCE = re.compile(
